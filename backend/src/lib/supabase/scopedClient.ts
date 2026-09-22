@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { fetchWithTimeout } from '../fetchTimeout.js'
 
 export function getScopedClient(jwt: string): SupabaseClient {
   const url = process.env.SUPABASE_URL
@@ -8,6 +9,8 @@ export function getScopedClient(jwt: string): SupabaseClient {
   }
   return createClient(url, anonKey, {
     auth: { persistSession: false },
-    global: { headers: { Authorization: `Bearer ${jwt}` } },
+    // Without this, a stalled PostgREST connection hangs the invocation indefinitely — see
+    // lib/fetchTimeout.ts.
+    global: { headers: { Authorization: `Bearer ${jwt}` }, fetch: fetchWithTimeout() },
   })
 }

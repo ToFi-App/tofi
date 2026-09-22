@@ -114,8 +114,10 @@ TaskManager.defineTask(BUDGET_ALERT_TASK, async () => {
     // Transient by assumption (network, expired wake window); the next wake retries with the
     // same cursors, and planSyncMerge's idempotency makes a half-applied round harmless. But
     // the assumption is what needs checking: unreported, a permanently broken background wake
-    // is indistinguishable from one that has nothing to say, in either case forever.
-    reportError('budget-alert-task', err)
+    // is indistinguishable from one that has nothing to say, in either case forever. Awaited,
+    // not fire-and-forget: the OS can suspend this process the instant this callback's promise
+    // settles, and an un-awaited report has no guaranteed window left to actually send.
+    await reportError('budget-alert-task', err)
     return BackgroundTask.BackgroundTaskResult.Failed
   }
 })

@@ -15,7 +15,10 @@ describe('getScopedClient', () => {
       'https://example.supabase.co',
       'anon-key',
       expect.objectContaining({
-        global: { headers: { Authorization: 'Bearer user-jwt-123' } },
+        global: expect.objectContaining({
+          headers: { Authorization: 'Bearer user-jwt-123' },
+          fetch: expect.any(Function),
+        }),
       }),
     )
   })

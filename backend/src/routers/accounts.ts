@@ -25,6 +25,15 @@ export const accountsRouter = router({
         // never fetched; one fetch resolves it to the logo or '' (institution has none), so
         // logo-less banks are never re-queried. Best-effort: a failure just leaves it NULL for
         // the next list to retry.
+        //
+        // This makes `list` a query with a side effect, which the frontend's fetchWithNetworkRetry
+        // (lib/api/client.ts) doesn't know about — it retries any GET whose fetch() rejected,
+        // on the assumption that a GET is a pure read. A lost-response retry here re-runs this
+        // Plaid call and the write below a second time. Accepted rather than special-cased: the
+        // write converges to the same institution logo either time (last-write-wins is fine for
+        // a value that isn't computed from anything but Plaid's own current answer), so the only
+        // real cost is one duplicate Plaid call on an already-rare race — cheaper than plumbing
+        // per-procedure retry-safety through a link that batches multiple procedures per request.
         let institutionLogo = item.institutionLogo
         if (institutionLogo === null) {
           try {

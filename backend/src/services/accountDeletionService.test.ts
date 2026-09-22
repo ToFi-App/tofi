@@ -105,4 +105,20 @@ describe('accountDeletionService.deleteAccount', () => {
       'service role key rejected',
     )
   })
+
+  // The auth-user delete is the one step that can't be retried or undone, so whether it failed
+  // because Supabase's admin API is genuinely down matters — errorLogging.ts's networkErrorOf
+  // can only tell that apart from a real rejection if the original error survives as the cause.
+  it('keeps the original error as the cause, not just its message', async () => {
+    const authRetryableFetchError = Object.assign(new Error('AbortError'), {
+      name: 'AuthRetryableFetchError',
+      status: 0,
+    })
+    deleteUser.mockResolvedValue({ error: authRetryableFetchError })
+    const { accountDeletionService } = await import('./accountDeletionService.js')
+
+    await expect(accountDeletionService.deleteAccount('user-1')).rejects.toMatchObject({
+      cause: authRetryableFetchError,
+    })
+  })
 })
