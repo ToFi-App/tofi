@@ -193,9 +193,11 @@ describe('investmentRepository.getTransactions', () => {
           // Dividends and interest are real income, but have no counterpart to pair against.
           row('drop-dividend', 'cash', 'dividend'),
           row('drop-interest', 'cash', 'interest'),
-          // A share transfer is type 'transfer', not cash — the type gate catches it even though
-          // its subtype is on the whitelist.
-          row('drop-share-transfer', 'transfer', 'transfer'),
+          // A share transfer shares both its type and its subtype with an institution's external
+          // cash funding, so neither one can separate them: what does is that this moves UNITS.
+          // Carries no security_id on purpose — the quantity has to be enough on its own, since
+          // that is the case the previous `type === 'cash'` rule got wrong in the other direction.
+          { ...row('drop-share-transfer', 'transfer', 'transfer'), quantity: 12 },
           // An unrecognised future subtype is dropped: money stays counted, the safe direction.
           row('drop-unknown', 'cash', 'some future subtype'),
         ],
@@ -415,5 +417,64 @@ describe('investmentRepository.getHoldings price staleness', () => {
     const client = clientReturning({})
     const [holding] = await investmentRepository.getHoldings(client, 't', 'acc')
     expect(holding.priceAsOf).toBeNull()
+  })
+})
+
+describe('investmentRepository.getTransactions: transfer-typed cash', () => {
+  const row = (over: Record<string, unknown>) => ({
+    investment_transaction_id: 'id',
+    account_id: 'acc-brokerage',
+    security_id: null,
+    date: '2026-09-14',
+    name: 'Electronic Funds Transfer',
+    amount: -2000,
+    quantity: 0,
+    type: 'transfer',
+    subtype: 'transfer',
+    ...over,
+  })
+
+  const clientReturning = (rows: ReturnType<typeof row>[]) =>
+    ({
+      investmentsTransactionsGet: vi.fn().mockResolvedValue({
+        data: { investment_transactions: rows, securities: [], total_investment_transactions: rows.length },
+      }),
+    }) as unknown as PlaidApi
+
+  // Institutions disagree on vocabulary for the same event: one reports external funding as
+  // `cash`/`transfer`, another as `transfer`/`transfer`. Both are household money crossing the
+  // brokerage boundary and both have a counterpart in a linked checking account, which is the
+  // entire reason this endpoint is read.
+  it('keeps a cash movement an institution types as transfer rather than cash', async () => {
+    const transactions = await investmentRepository.getTransactions(
+      clientReturning([row({ investment_transaction_id: 'keep-funding' })]),
+      'token-1',
+      '2024-09-22',
+      '2026-09-22',
+    )
+    expect(transactions.map((t) => t.investmentTransactionId)).toEqual(['keep-funding'])
+  })
+
+  // The case the type gate used to cover. Quantity is what actually separates the two: moving
+  // units is portfolio activity, moving only cash is not — and unlike security_id, quantity is
+  // non-nullable, so this holds even when an institution omits the security.
+  it('still drops a share transfer, which moves units rather than cash', async () => {
+    const transactions = await investmentRepository.getTransactions(
+      clientReturning([row({ investment_transaction_id: 'drop-shares', quantity: 12 })]),
+      'token-1',
+      '2024-09-22',
+      '2026-09-22',
+    )
+    expect(transactions).toEqual([])
+  })
+
+  it('drops a share transfer reported with a negative quantity', async () => {
+    const transactions = await investmentRepository.getTransactions(
+      clientReturning([row({ investment_transaction_id: 'drop-shares-out', quantity: -12 })]),
+      'token-1',
+      '2024-09-22',
+      '2026-09-22',
+    )
+    expect(transactions).toEqual([])
   })
 })

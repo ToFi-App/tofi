@@ -102,7 +102,7 @@ export function applySweepExclusion(feed: FeedItem[]): FeedItem[] {
     const bucket = inflowsByAmount.get(centsKey(item)) ?? []
     return bucket.some(
       (candidate) =>
-        candidate.accountId !== item.accountId && daysBetween(item.date, candidate.date) <= AUTO_MATCH_WINDOW_DAYS,
+        candidate.accountId !== item.accountId && daysBetween(item.postedDate, candidate.postedDate) <= AUTO_MATCH_WINDOW_DAYS,
     )
   }
 
@@ -123,7 +123,7 @@ export function applySweepExclusion(feed: FeedItem[]): FeedItem[] {
 
     const bucket = inflowsByAccountAmount.get(`${item.accountId}::${centsKey(item)}`) ?? []
     const match = bucket.find(
-      (candidate) => !consumed.has(candidate.id) && daysBetween(item.date, candidate.date) <= SWEEP_WINDOW_DAYS,
+      (candidate) => !consumed.has(candidate.id) && daysBetween(item.postedDate, candidate.postedDate) <= SWEEP_WINDOW_DAYS,
     )
     if (!match) return item
 

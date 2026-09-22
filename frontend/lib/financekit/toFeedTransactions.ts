@@ -1,3 +1,4 @@
+import { toDateKey } from '@/lib/dates/dateKey'
 import type { PlaidTransaction } from '@/types/domain'
 import type { AdaptedTransaction } from './adaptTransaction'
 import { mccToPfc } from './mccToPfc'
@@ -31,6 +32,11 @@ export function toFeedTransactions(transactions: AdaptedTransaction[]): FeedTran
       amount: txn.amount,
       iso_currency_code: txn.iso_currency_code,
       date: txn.date,
+      // Date only, not the full timestamp adaptTransaction carries: resolveFeed prefers this over
+      // `date` for display and groupByDay uses the result verbatim as its bucket key and day
+      // header, so a timestamp here would give every row its own "day" and print on screen.
+      // Local, for the same reason adaptTransaction's `date` is — see toDateKey.
+      authorized_date: toDateKey(new Date(txn.transactionDate)),
       pending: txn.pending,
       // Null rather than a fabricated code when the MCC is unmapped, so the row falls through the
       // resolution chain to Uncategorized exactly as a Plaid transaction with no PFC does.

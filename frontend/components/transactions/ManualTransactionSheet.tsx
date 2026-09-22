@@ -12,21 +12,9 @@ import { formatAmount } from '@/lib/format/money'
 import { TRANSFER_TYPES } from '@/lib/transfers/registry'
 import type { FeedItem } from '@/lib/transactions/resolveFeed'
 import type { Category, ManualTransaction, Subcategory, TransferKind } from '@/types/domain'
-
-// `date` is a calendar day (YYYY-MM-DD) with no timezone. DateTimePicker works in the device's
-// LOCAL timezone, so converting via Date.toISOString()/new Date(string) — both UTC — shifts the
-// day by one for any non-UTC device. These helpers keep the round-trip local.
-function toDateKey(date: Date): string {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-function fromDateKey(dateKey: string): Date {
-  const [year, month, day] = dateKey.split('-').map(Number)
-  return new Date(year, month - 1, day)
-}
+// DateTimePicker works in the device's LOCAL timezone, which is the basis these helpers keep —
+// see dateKey.ts for what goes wrong with the UTC conversions that look equivalent.
+import { fromDateKey, toDateKey } from '@/lib/dates/dateKey'
 
 interface ManualTransactionSheetProps {
   /** Still meaningful after the single-host change: this sheet stays MOUNTED while hidden (the

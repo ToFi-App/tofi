@@ -122,12 +122,12 @@ export function suggestReimbursements(
   for (const candidate of candidates) {
     const score = startingFromExpense
       ? scoreReimbursement(
-          { amount: options?.remainingOverride ?? remainingExpense(item), date: item.date },
-          { amount: Math.abs(candidate.amount), date: candidate.date, merchantName: candidate.merchantName },
+          { amount: options?.remainingOverride ?? remainingExpense(item), date: item.postedDate },
+          { amount: Math.abs(candidate.amount), date: candidate.postedDate, merchantName: candidate.merchantName },
         )
       : scoreReimbursement(
-          { amount: remainingExpense(candidate), date: candidate.date },
-          { amount: Math.abs(item.amount), date: item.date, merchantName: item.merchantName },
+          { amount: remainingExpense(candidate), date: candidate.postedDate },
+          { amount: Math.abs(item.amount), date: item.postedDate, merchantName: item.merchantName },
         )
     if (score !== null && score >= SCORE_CUTOFF) scored.push({ item: candidate, score })
   }

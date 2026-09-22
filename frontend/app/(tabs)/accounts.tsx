@@ -81,8 +81,9 @@ export default function AccountsTab() {
         title: 'Cash',
         balance: cashOnHand,
         variant: 'cashOnHand' as const,
-        // The built-in cash row has no institution behind it, so no item either.
+        // The built-in cash row has no institution behind it, so no item either — and so no logo.
         itemId: null,
+        logo: null,
         items: feed.filter((item) => item.source === 'manual'),
         emptyLabel: 'No cash transactions yet',
       }
@@ -91,6 +92,7 @@ export default function AccountsTab() {
       title: detailTarget.name,
       balance: detailTarget.balances?.current ?? 0,
       itemId: detailTarget.itemId,
+      logo: detailTarget.institutionLogo,
       variant: isLiabilityAccount(detailTarget) ? ('credit' as const) : isInvestmentAccount(detailTarget) ? ('investment' as const) : ('cash' as const),
       items: feed.filter((item) => item.accountId === detailTarget.account_id),
       emptyLabel: 'No transactions for this account',
@@ -364,6 +366,7 @@ export default function AccountsTab() {
         balance={detail?.balance ?? 0}
         variant={detail?.variant ?? 'cash'}
         itemId={detail?.itemId ?? null}
+        logo={detail?.logo ?? null}
         items={detail?.items ?? []}
         feed={feed}
         emptyLabel={detail?.emptyLabel}

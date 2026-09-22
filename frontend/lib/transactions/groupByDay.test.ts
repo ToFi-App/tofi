@@ -8,6 +8,7 @@ function item(id: string, date: string): FeedItem {
     source: 'plaid',
     amount: 10,
     date,
+    postedDate: date,
     merchantName: 'x',
     categoryId: null,
     subcategoryId: null,

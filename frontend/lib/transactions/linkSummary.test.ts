@@ -28,6 +28,9 @@ function item(overrides: Partial<FeedItem> & Pick<FeedItem, 'id' | 'amount'>): F
     hasCrossAccountCounterpart: false,
     links: [],
     ...overrides,
+    // Tracks `date`: these cases care about the display/bucketing date, and letting the
+    // two drift would quietly change what any proximity assertion means.
+    postedDate: overrides.postedDate ?? overrides.date ?? '2026-08-12',
   }
 }
 

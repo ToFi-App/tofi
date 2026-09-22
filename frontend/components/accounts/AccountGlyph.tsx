@@ -18,11 +18,16 @@ export function AccountGlyph({
   icon,
   iconColor,
   size,
+  background,
 }: {
   logo?: string | null
   icon?: { name: string; color: string } | null
   iconColor?: string
   size: number
+  /** Surface behind the fallback glyph. Defaults to the neutral raised surface; a caller whose
+   *  own layout already tints this spot passes that tint instead, so swapping a hand-rolled
+   *  circle for this component leaves the logo-less case looking identical. */
+  background?: string
 }) {
   if (logo) {
     return (
@@ -40,7 +45,7 @@ export function AccountGlyph({
         width: size,
         height: size,
         borderRadius: size / 2,
-        backgroundColor: colors.surfaceRaised,
+        backgroundColor: background ?? colors.surfaceRaised,
         alignItems: 'center',
         justifyContent: 'center',
         flexShrink: 0,

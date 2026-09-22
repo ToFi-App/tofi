@@ -9,6 +9,7 @@ function manual(amount: number, id = `m-${amount}`): FeedItem {
     source: 'manual',
     amount, // Plaid convention: positive = money out
     date: '2026-07-01',
+    postedDate: '2026-07-01',
     merchantName: 'Cash',
     categoryId: null,
     subcategoryId: null,
