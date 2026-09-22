@@ -94,10 +94,30 @@ const CASH_TRANSFER_SUBTYPES = new Set(['contribution', 'deposit', 'withdrawal',
  * The bias is deliberate. Dropping a real transfer leaves its checking-side leg counted as
  * spending — the mild, self-correcting direction this codebase prefers. Admitting a corporate
  * action invents income, or lets the matcher pair it away against unrelated real money.
+ *
+ * `type` is NOT part of the test, deliberately. Institutions disagree on vocabulary for the same
+ * event: Fidelity reports external funding as `cash`/`transfer`, Robinhood as `transfer`/
+ * `transfer`. Requiring `cash` silently dropped every Robinhood contribution and withdrawal —
+ * their whole visible history — while keeping Fidelity's identical rows.
+ *
+ * `quantity` is what covers the case the `type` check was really there for: a SHARE transfer,
+ * which is portfolio activity rather than household money. Moving units means non-zero quantity
+ * (negative when leaving), moving only cash means zero. It is the better test on two counts —
+ * it is non-nullable, so it holds even when an institution omits the security_id that a share
+ * transfer ought to carry, and it describes what actually distinguishes the two events rather
+ * than which word one institution happened to use.
  */
-function isCashTransfer(txn: { type: string; subtype: string; security_id?: string | null }): boolean {
+const CASH_TRANSFER_TYPES = new Set(['cash', 'transfer'])
+
+function isCashTransfer(txn: {
+  type: string
+  subtype: string
+  security_id?: string | null
+  quantity?: number
+}): boolean {
   if (txn.security_id) return false
-  if (txn.type.toLowerCase() !== 'cash') return false
+  if (txn.quantity) return false
+  if (!CASH_TRANSFER_TYPES.has(txn.type.toLowerCase())) return false
   return CASH_TRANSFER_SUBTYPES.has(txn.subtype.toLowerCase())
 }
 

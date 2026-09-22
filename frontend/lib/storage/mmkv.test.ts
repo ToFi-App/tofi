@@ -100,6 +100,12 @@ describe('mmkv storage', () => {
       // v2: subtype-filtered, but security-linked corporate actions slipped through.
       backing.set('investment-transfers:item-1', JSON.stringify([{ investmentTransactionId: 'itx-crwd-dist' }]))
       backing.set('investment-transfers-backfilled-through:item-1', '2026-08-08')
+      // v3: required type 'cash', so it never ingested the transfer-typed funding some
+      // institutions report. Its backfilled-through marker has to go with its rows — left
+      // behind, it would cap the next fetch at the 30-day overlap and the older funding rows
+      // the v4 filter now admits would stay permanently out of range.
+      backing.set('investment-transfers-v3:item-1', JSON.stringify([{ investmentTransactionId: 'itx-3' }]))
+      backing.set('investment-transfers-v3-backfilled-through:item-1', '2026-08-08')
 
       await import('./mmkv')
 
@@ -107,15 +113,15 @@ describe('mmkv storage', () => {
     })
 
     it('leaves the current namespace and unrelated keys untouched', async () => {
-      backing.set('investment-transfers-v3:item-1', JSON.stringify([{ investmentTransactionId: 'itx-1' }]))
-      backing.set('investment-transfers-v3-backfilled-through:item-1', '2026-08-08')
+      backing.set('investment-transfers-v4:item-1', JSON.stringify([{ investmentTransactionId: 'itx-1' }]))
+      backing.set('investment-transfers-v4-backfilled-through:item-1', '2026-08-08')
       backing.set('transactions:item-1', JSON.stringify([{ transaction_id: 't1' }]))
       backing.set('cursor:item-1', 'cursor-abc')
 
       await import('./mmkv')
 
-      expect(backing.has('investment-transfers-v3:item-1')).toBe(true)
-      expect(backing.has('investment-transfers-v3-backfilled-through:item-1')).toBe(true)
+      expect(backing.has('investment-transfers-v4:item-1')).toBe(true)
+      expect(backing.has('investment-transfers-v4-backfilled-through:item-1')).toBe(true)
       expect(backing.has('transactions:item-1')).toBe(true)
       expect(backing.has('cursor:item-1')).toBe(true)
     })

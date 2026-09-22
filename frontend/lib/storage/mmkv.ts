@@ -93,15 +93,22 @@ export function appendPendingRemovedTransactionIds(ids: string[]): void {
  * anything a previous filter admitted stays on disk and is replayed forever: visible in the feed
  * and the account sheet, and offered to the matcher as a pairing candidate.
  *
- * **Bump this version whenever the backend filter gets stricter.** That is what makes the filter
- * retroactive; every device then re-backfills once from the now-filtered endpoint.
+ * **Bump this version whenever the backend filter changes what it admits** — looser as well as
+ * stricter. That is what makes the filter retroactive. Stricter needs it because rows a previous
+ * filter admitted are already on disk; looser needs it because the backfilled-through markers
+ * live under this same prefix, so dropping them is what makes the next launch re-request the full
+ * 24 months instead of the 30-day overlap. Without the bump, a loosened filter only ever admits
+ * rows inside that rolling window and everything older stays permanently unreachable.
  *
  * v1 (`investment-txns`) ingested full activity, trades included.
  * v2 (`investment-transfers`) filtered by subtype, but let security-linked corporate actions
  *    through — Plaid types a distribution or spinoff as `cash`/`deposit`.
  * v3 also requires `security_id` to be absent.
+ * v4 stopped requiring `type: 'cash'` and excludes share transfers by quantity instead, which
+ *    admits the external funding institutions report as `transfer`/`transfer` (Robinhood) rather
+ *    than `cash`/`transfer` (Fidelity).
  */
-const INVESTMENT_KEY_PREFIX = 'investment-transfers-v3'
+const INVESTMENT_KEY_PREFIX = 'investment-transfers-v4'
 
 /** Every investment cache key shares this stem, which is what makes the purge below exhaustive. */
 const INVESTMENT_KEY_STEM = 'investment-'
