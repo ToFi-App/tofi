@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { colors, hexToRgba } from '@/constants/theme'
 import { appleIcon } from '@/components/accounts/AccountRow'
+import { AccountGlyph } from '@/components/accounts/AccountGlyph'
 import { FINANCEKIT_ITEM_ID } from '@/lib/financekit/mergeAccounts'
 import { formatMaskableAmount } from '@/lib/format/money'
 import { groupByDay } from '@/lib/transactions/groupByDay'
@@ -39,6 +40,9 @@ interface AccountDetailSheetProps {
   emptyLabel?: string
   /** The account's item. Only read to spot Apple accounts, which wear the Apple mark. */
   itemId?: string | null
+  /** The institution's logo, base64. Null for Apple accounts and the built-in Cash row, which
+   *  fall back to the tinted glyph this sheet has always shown. */
+  logo?: string | null
 }
 
 const variantIcons: Record<AccountDetailVariant, { name: string; color: string }> = {
@@ -61,14 +65,15 @@ export function AccountDetailSheet({
   onClose,
   emptyLabel = 'No transactions for this account',
   itemId,
+  logo,
 }: AccountDetailSheetProps) {
   const sheetScroll = useSheetScroll()
 
   // The caller clears its selection the moment it closes the sheet, which would blank the
   // content out mid-animation. Holding the last open values keeps the exit readable.
-  const lastShown = useRef({ title, balance, variant, items, emptyLabel, itemId })
-  if (visible) lastShown.current = { title, balance, variant, items, emptyLabel, itemId }
-  const shown = visible ? { title, balance, variant, items, emptyLabel, itemId } : lastShown.current
+  const lastShown = useRef({ title, balance, variant, items, emptyLabel, itemId, logo })
+  if (visible) lastShown.current = { title, balance, variant, items, emptyLabel, itemId, logo }
+  const shown = visible ? { title, balance, variant, items, emptyLabel, itemId, logo } : lastShown.current
 
   return (
     <BottomSheet visible={visible} onClose={onClose} contentScroll={sheetScroll}>
@@ -93,6 +98,7 @@ type ShownAccount = {
   items: FeedItem[]
   emptyLabel: string
   itemId?: string | null
+  logo?: string | null
 }
 
 /**
@@ -184,8 +190,11 @@ function AccountDetailSheetBody({
       </View>
 
       <View className="mx-5 mb-4 items-center rounded-xl p-5" style={{ backgroundColor: hexToRgba(tint.color, 0.08) }}>
-        <View className="mb-3 h-12 w-12 items-center justify-center rounded-full" style={{ backgroundColor: hexToRgba(tint.color, 0.18) }}>
-          <Ionicons name={icon.name as any} size={24} color={icon.color} />
+        {/* Same component, and so the same rounded-square treatment, the accounts list gives the
+            identical artwork. The tint is passed through as the fallback's surface so an account
+            with no logo — Apple, the built-in Cash row — is unchanged. */}
+        <View className="mb-3">
+          <AccountGlyph logo={shown.logo} icon={icon} size={48} background={hexToRgba(tint.color, 0.18)} />
         </View>
         <Text className="font-display text-xl" style={{ color: balanceColor }}>
           {formatMaskableAmount(shown.balance, isMasked)}

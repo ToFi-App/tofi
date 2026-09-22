@@ -44,6 +44,9 @@ describe('accounts router', () => {
           balances: { current: 4821 },
           institutionName: 'Chase',
           itemId: 'item-1',
+          // Explicit rather than absent: the field is always present in the response, and this
+          // institution has neither a Plaid logo nor a bundled one.
+          institutionLogo: null,
         },
       ],
       itemErrors: [],
@@ -77,7 +80,7 @@ describe('accounts router', () => {
     const result = await caller.list()
 
     expect(result.accounts).toEqual([
-      { account_id: 'acc-1', name: 'Sapphire', institutionName: 'Chase', itemId: 'item-ok' },
+      { account_id: 'acc-1', name: 'Sapphire', institutionName: 'Chase', itemId: 'item-ok', institutionLogo: null },
     ])
     expect(result.itemErrors).toEqual([
       {

@@ -6,6 +6,7 @@ import { createPlaidClient } from '../lib/plaid/client.js'
 import { plaidItemErrorDetail } from '../lib/plaid/errors.js'
 import { accountRepository } from '../repositories/accountRepository.js'
 import { preconditionError } from '../trpc/errors.js'
+import { resolveInstitutionLogo } from '../lib/plaid/fallbackLogos.js'
 
 export const accountsRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
@@ -48,7 +49,7 @@ export const accountsRouter = router({
             ...account,
             itemId: item.itemId,
             institutionName: item.institutionName,
-            institutionLogo: institutionLogo === '' ? null : institutionLogo,
+            institutionLogo: resolveInstitutionLogo(item.institutionId, institutionLogo),
           }))
           return { itemAccounts, itemError: null }
         } catch (err) {
