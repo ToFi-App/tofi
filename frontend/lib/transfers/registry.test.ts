@@ -29,6 +29,9 @@ function item(overrides: Partial<FeedItem> & Pick<FeedItem, 'id' | 'amount' | 'd
     hasCrossAccountCounterpart: false,
     links: [],
     ...overrides,
+    // Defaults to the case's own `date` so proximity cases can keep saying `date` and still
+    // mean it. Cases that need the display and matching dates to diverge set it explicitly.
+    postedDate: overrides.postedDate ?? overrides.date,
   }
 }
 

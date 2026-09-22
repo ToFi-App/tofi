@@ -36,15 +36,24 @@ function item(overrides: Partial<FeedItem> & Pick<FeedItem, 'id' | 'amount' | 'd
     hasCrossAccountCounterpart: false,
     links: [],
     ...overrides,
+    // Defaults to the case's own `date` so proximity cases can keep saying `date` and still
+    // mean it. Cases that need the display and matching dates to diverge set it explicitly.
+    postedDate: overrides.postedDate ?? overrides.date,
   }
 }
 
 // The canonical pair: tagged $500 payment out of checking, $500 landing on the visa.
-const paymentOut = item({
+// Kept as plain override specs, not built FeedItems, because cases below re-spread them and
+// change `date`. Spreading a built item would carry its postedDate along, so the row's matching
+// date would silently stay behind while its display date moved — and a window case written that
+// way passes no matter what the window does.
+const paymentOutSpec = {
   id: 'pay-out', amount: 500, date: '2026-08-01',
-  accountId: 'checking', pfcDetailed: 'LOAN_PAYMENTS_CREDIT_CARD_PAYMENT',
-})
-const paymentIn = item({ id: 'pay-in', amount: -500, date: '2026-08-03', accountId: 'visa' })
+  accountId: 'checking', pfcDetailed: 'LOAN_PAYMENTS_CREDIT_CARD_PAYMENT' as const,
+}
+const paymentInSpec = { id: 'pay-in', amount: -500, date: '2026-08-03', accountId: 'visa' }
+const paymentOut = item(paymentOutSpec)
+const paymentIn = item(paymentInSpec)
 
 function detect(feed: FeedItem[], extra?: { deltaIds?: Set<string> | null; dismissedIds?: Set<string> }) {
   return detectTransfers({ feed, accounts, ...extra })
@@ -101,7 +110,7 @@ describe('detectTransfers: credit-card payments', () => {
   })
 
   it('produces one draft when both legs arrive in the same delta and drive from both sides', () => {
-    const taggedIn = item({ ...paymentIn, pfcDetailed: 'LOAN_PAYMENTS_CREDIT_CARD_PAYMENT' })
+    const taggedIn = item({ ...paymentInSpec, pfcDetailed: 'LOAN_PAYMENTS_CREDIT_CARD_PAYMENT' })
     const { autoApply, suggestions } = detect([paymentOut, taggedIn], { deltaIds: new Set(['pay-out', 'pay-in']) })
     expect(autoApply).toHaveLength(1)
     expect(suggestions).toEqual([])
@@ -200,62 +209,62 @@ describe('detectTransfers: account transfers', () => {
 
 describe('detectTransfers: gates', () => {
   it('requires the exact amount to the cent', () => {
-    const offByOne = item({ ...paymentIn, id: 'in', amount: -500.01 })
+    const offByOne = item({ ...paymentInSpec, id: 'in', amount: -500.01 })
     const { autoApply, suggestions } = detect([paymentOut, offByOne])
     expect(autoApply).toEqual([])
     expect(suggestions).toEqual([])
   })
 
   it('matches at the window boundary and refuses past it', () => {
-    const day7 = item({ ...paymentIn, id: 'in-7', date: '2026-08-08' })
+    const day7 = item({ ...paymentInSpec, id: 'in-7', date: '2026-08-08' })
     expect(detect([paymentOut, day7]).autoApply).toHaveLength(1)
 
-    const day8 = item({ ...paymentIn, id: 'in-8', date: '2026-08-09' })
+    const day8 = item({ ...paymentInSpec, id: 'in-8', date: '2026-08-09' })
     expect(detect([paymentOut, day8]).autoApply).toEqual([])
     expect(detect([paymentOut, day8]).suggestions).toEqual([])
   })
 
   it('never pairs two legs on the same account', () => {
-    const sameAccountIn = item({ ...paymentIn, id: 'in', accountId: 'checking' })
+    const sameAccountIn = item({ ...paymentInSpec, id: 'in', accountId: 'checking' })
     const result = detect([paymentOut, sameAccountIn])
     expect(result.autoApply).toEqual([])
     expect(result.suggestions).toEqual([])
   })
 
   it('skips pending legs entirely: their ids are replaced when they post', () => {
-    const pendingIn = item({ ...paymentIn, id: 'in', pending: true })
+    const pendingIn = item({ ...paymentInSpec, id: 'in', pending: true })
     expect(detect([paymentOut, pendingIn]).autoApply).toEqual([])
 
-    const pendingOut = item({ ...paymentOut, id: 'out', pending: true })
+    const pendingOut = item({ ...paymentOutSpec, id: 'out', pending: true })
     expect(detect([pendingOut, paymentIn]).autoApply).toEqual([])
   })
 
   it('skips legs already in a transfer', () => {
-    const alreadyLinked = item({ ...paymentIn, id: 'in', transferId: 't1', transferKind: 'credit_card_payment', transferRole: 'income' })
+    const alreadyLinked = item({ ...paymentInSpec, id: 'in', transferId: 't1', transferKind: 'credit_card_payment', transferRole: 'income' })
     expect(detect([paymentOut, alreadyLinked]).autoApply).toEqual([])
   })
 
   it('skips reimbursement-linked legs', () => {
-    const reimbursed = item({ ...paymentOut, id: 'out', reimbursedAmount: 100, netAmount: 400 })
+    const reimbursed = item({ ...paymentOutSpec, id: 'out', reimbursedAmount: 100, netAmount: 400 })
     expect(detect([reimbursed, paymentIn]).autoApply).toEqual([])
   })
 
   it('never re-creates a dismissed pair, from either side', () => {
     expect(detect([paymentOut, paymentIn], { dismissedIds: new Set(['pay-out']) }).autoApply).toEqual([])
     // Even when the income leg drives (delta), the dismissed expense is not a candidate.
-    const taggedIn = item({ ...paymentIn, pfcDetailed: 'LOAN_PAYMENTS_CREDIT_CARD_PAYMENT' })
+    const taggedIn = item({ ...paymentInSpec, pfcDetailed: 'LOAN_PAYMENTS_CREDIT_CARD_PAYMENT' })
     const driven = detect([paymentOut, taggedIn], { deltaIds: new Set(['pay-in']), dismissedIds: new Set(['pay-out']) })
     expect(driven.autoApply).toEqual([])
     expect(driven.suggestions).toEqual([])
   })
 
   it('ignores manual transactions on both sides', () => {
-    const manualOut = item({ ...paymentOut, id: 'm-out', source: 'manual', accountId: null })
+    const manualOut = item({ ...paymentOutSpec, id: 'm-out', source: 'manual', accountId: null })
     expect(detect([manualOut, paymentIn]).autoApply).toEqual([])
   })
 
   it('ignores items with unknown accounts', () => {
-    const unknownIn = item({ ...paymentIn, id: 'in', accountId: 'not-linked' })
+    const unknownIn = item({ ...paymentInSpec, id: 'in', accountId: 'not-linked' })
     expect(detect([paymentOut, unknownIn]).autoApply).toEqual([])
   })
 
@@ -855,7 +864,27 @@ describe('detectPendingPreviews', () => {
     expect(
       detectPendingPreviews({ feed: [pendingOut, postedIn], accounts, dismissedIds: new Set(['pend-out']) }),
     ).toHaveLength(0)
-    const lateIn = { ...postedIn, date: '2026-08-25' }
+    const lateIn = { ...postedIn, date: '2026-08-25', postedDate: '2026-08-25' }
     expect(detectPendingPreviews({ feed: [pendingOut, lateIn], accounts })).toHaveLength(0)
+  })
+})
+
+describe('detectTransfers date basis', () => {
+  // Cross-institution is the one place the two legs' authorized dates can be unevenly populated:
+  // the card knows when it was swiped, the bank only knows when the ACH landed. Matching on the
+  // display date would measure the gap between two different bases and blow the 7-day window on a
+  // payment that posted a day apart.
+  it('pairs legs on their posted dates even when their displayed dates are weeks apart', () => {
+    const out = item({ ...paymentOutSpec, id: 'out', date: '2026-08-01', postedDate: '2026-08-01' })
+    const cardIn = item({ ...paymentInSpec, id: 'in', date: '2026-07-18', postedDate: '2026-08-02' })
+    expect(detect([out, cardIn]).autoApply).toHaveLength(1)
+  })
+
+  it('refuses legs whose posted dates are outside the window however close they display', () => {
+    const out = item({ ...paymentOutSpec, id: 'out', date: '2026-08-01', postedDate: '2026-08-01' })
+    const lateIn = item({ ...paymentInSpec, id: 'in', date: '2026-08-02', postedDate: '2026-09-15' })
+    const { autoApply, suggestions } = detect([out, lateIn])
+    expect(autoApply).toEqual([])
+    expect(suggestions).toEqual([])
   })
 })

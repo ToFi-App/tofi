@@ -250,7 +250,7 @@ export function detectTransfers(input: AutoMatchInput): AutoMatchResult {
     restrict: AutoTransferKind | null,
   ): boolean {
     if (outflow.accountId === inflow.accountId) return false
-    if (daysBetween(outflow.date, inflow.date) > AUTO_MATCH_WINDOW_DAYS) return false
+    if (daysBetween(outflow.postedDate, inflow.postedDate) > AUTO_MATCH_WINDOW_DAYS) return false
     // Income leg on a loan account is a mortgage/car payment landing — real spending on
     // the outflow side, out of scope by design.
     const incomeAccount = accountById.get(inflow.accountId!)
@@ -333,7 +333,7 @@ export function detectTransfers(input: AutoMatchInput): AutoMatchResult {
   function nearestUnclaimed(item: FeedItem, candidates: FeedItem[]): FeedItem | undefined {
     return [...candidates]
       .filter((candidate) => !suggestedItemIds.has(candidate.id))
-      .sort((a, b) => daysBetween(item.date, a.date) - daysBetween(item.date, b.date) || a.id.localeCompare(b.id))[0]
+      .sort((a, b) => daysBetween(item.postedDate, a.postedDate) - daysBetween(item.postedDate, b.postedDate) || a.id.localeCompare(b.id))[0]
   }
 
   /** nearestUnclaimed + suggest, the pairing every caller below wants. */
@@ -463,13 +463,13 @@ export function detectPendingPreviews(input: Omit<AutoMatchInput, 'deltaIds'>): 
       // At least one pending leg — fully posted pairs belong to detectTransfers.
       if (!outflow.pending && !inflow.pending) return false
       if (outflow.accountId === inflow.accountId) return false
-      if (daysBetween(outflow.date, inflow.date) > AUTO_MATCH_WINDOW_DAYS) return false
+      if (daysBetween(outflow.postedDate, inflow.postedDate) > AUTO_MATCH_WINDOW_DAYS) return false
       if (accountById.get(inflow.accountId!)?.type === 'loan') return false
       return hasTransferSignal(outflow, inflow)
     })
     if (candidates.length === 0) continue
     const inflow = [...candidates].sort(
-      (a, b) => daysBetween(outflow.date, a.date) - daysBetween(outflow.date, b.date) || a.id.localeCompare(b.id),
+      (a, b) => daysBetween(outflow.postedDate, a.postedDate) - daysBetween(outflow.postedDate, b.postedDate) || a.id.localeCompare(b.id),
     )[0]
     used.add(outflow.id)
     used.add(inflow.id)

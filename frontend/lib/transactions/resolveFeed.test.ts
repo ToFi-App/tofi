@@ -627,3 +627,65 @@ describe('mergeFeed with investment transactions', () => {
 
 
 })
+
+describe('mergeFeed date basis', () => {
+  // Plaid's `date` is the POSTED date for settled transactions; `authorized_date` is the day the
+  // user actually made the transaction. The feed displays the latter and matches on the former —
+  // see the FeedItem.postedDate doc comment for why the two roles are split.
+  const plaidTxn = (over: Record<string, unknown>) =>
+    [
+      {
+        transaction_id: 'p1',
+        account_id: 'acc-1',
+        amount: 35.5,
+        name: 'PANDA EXPRESS #123',
+        merchant_name: 'Panda Express',
+        pending: false,
+        personal_finance_category: null,
+        ...over,
+      },
+    ] as unknown as PlaidTransaction[]
+
+  it('shows authorized_date as the item date when Plaid supplies one', () => {
+    const feed = mergeFeed(plaidTxn({ date: '2026-06-23', authorized_date: '2026-06-21' }), [], [], [])
+    expect(feed[0].date).toBe('2026-06-21')
+  })
+
+  it('carries the posted date as postedDate even when authorized_date is earlier', () => {
+    const feed = mergeFeed(plaidTxn({ date: '2026-06-23', authorized_date: '2026-06-21' }), [], [], [])
+    expect(feed[0].postedDate).toBe('2026-06-23')
+  })
+
+  it('falls back to the posted date for both fields when authorized_date is null', () => {
+    const feed = mergeFeed(plaidTxn({ date: '2026-06-23', authorized_date: null }), [], [], [])
+    expect(feed[0]).toMatchObject({ date: '2026-06-23', postedDate: '2026-06-23' })
+  })
+
+  it('falls back to the posted date when authorized_date is absent entirely', () => {
+    // FinanceKit rows predating the authorized_date wiring, and every cached row written before
+    // it, arrive with the property missing rather than null.
+    const feed = mergeFeed(plaidTxn({ date: '2026-06-23' }), [], [], [])
+    expect(feed[0]).toMatchObject({ date: '2026-06-23', postedDate: '2026-06-23' })
+  })
+
+  it('places a month-straddling charge in the month it was authorized', () => {
+    const feed = mergeFeed(plaidTxn({ date: '2026-07-01', authorized_date: '2026-06-30' }), [], [], [])
+    expect(feed[0].date.startsWith('2026-06')).toBe(true)
+  })
+
+  it('gives manual transactions the same date and postedDate', () => {
+    const manual = [
+      { id: 'm1', amount: '5.00', type: 'expense', categoryId: null, subcategoryId: null, date: '2026-06-20', note: 'Cash' },
+    ] as ManualTransaction[]
+    const feed = mergeFeed([], manual, [], [])
+    expect(feed[0]).toMatchObject({ date: '2026-06-20', postedDate: '2026-06-20' })
+  })
+
+  it('gives investment transactions the same date and postedDate', () => {
+    const investments = [
+      { investmentTransactionId: 'i1', accountId: 'acc-9', amount: 500, date: '2026-06-18', name: 'CASH TRANSFER' },
+    ] as unknown as InvestmentTransaction[]
+    const feed = mergeFeed([], [], [], [], [], [], investments)
+    expect(feed[0]).toMatchObject({ date: '2026-06-18', postedDate: '2026-06-18' })
+  })
+})

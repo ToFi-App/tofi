@@ -80,7 +80,7 @@ describe('dailyAllowance', () => {
 describe('suggestBudgetAmount', () => {
   function spend(id: string, date: string, amount: number, categoryId = 'food'): FeedItem {
     return {
-      id, date, amount, categoryId,
+      id, date, postedDate: date, amount, categoryId,
       source: 'plaid', merchantName: 'x', subcategoryId: null, categorySource: 'plaid_pfc',
       confidenceLevel: null, pfcDetailed: null, accountId: 'a', pending: false, note: null,
       reimbursedAmount: null, netAmount: null, isReimbursementIncome: false, reimbursementCategoryId: null,

@@ -60,6 +60,7 @@ function spend(id: string, categoryId: string, amount: number, date = '2026-08-1
     source: 'plaid',
     amount,
     date,
+    postedDate: date,
     merchantName: 'Somewhere',
     categoryId,
     subcategoryId: null,

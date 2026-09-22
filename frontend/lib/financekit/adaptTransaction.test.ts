@@ -65,3 +65,25 @@ describe('adaptTransaction', () => {
     expect(adaptTransaction(base).transactionDate).toBe('2026-08-20T14:03:00.000Z')
   })
 })
+
+describe('adaptTransaction date basis', () => {
+  // Inputs are built from LOCAL components and then converted to ISO, so every assertion here is
+  // "the local calendar day of this instant" and holds in any timezone. Slicing the UTC string
+  // instead lands on the next day west of UTC and the previous day east of it, so the two cases
+  // below cover both directions — only one of them can fail on any given machine.
+  it('buckets a late-evening purchase on the local day, not the UTC one', () => {
+    const postedDate = new Date(2026, 7, 20, 20, 30).toISOString()
+    expect(adaptTransaction({ ...base, postedDate }).date).toBe('2026-08-20')
+  })
+
+  it('buckets an early-morning purchase on the local day, not the UTC one', () => {
+    const postedDate = new Date(2026, 7, 20, 0, 30).toISOString()
+    expect(adaptTransaction({ ...base, postedDate }).date).toBe('2026-08-20')
+  })
+
+  it('applies the same local basis to the fallback while a charge is still unposted', () => {
+    const transactionDate = new Date(2026, 7, 20, 23, 15).toISOString()
+    const unposted = { ...base, status: 'pending' as const, postedDate: null, transactionDate }
+    expect(adaptTransaction(unposted).date).toBe('2026-08-20')
+  })
+})

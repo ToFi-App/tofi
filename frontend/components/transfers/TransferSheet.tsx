@@ -81,7 +81,7 @@ export function TransferSheet({ sheetScroll, item, candidateItems, accounts, for
     return candidateItems
       .filter((candidate) => selectedType.matches(item, candidate, { accounts }))
       .sort((a, b) => {
-        const dayDelta = daysBetween(item.date, a.date) - daysBetween(item.date, b.date)
+        const dayDelta = daysBetween(item.postedDate, a.postedDate) - daysBetween(item.postedDate, b.postedDate)
         if (dayDelta !== 0) return dayDelta
         const target = Math.abs(item.amount)
         return Math.abs(Math.abs(a.amount) - target) - Math.abs(Math.abs(b.amount) - target)
@@ -203,7 +203,7 @@ export function TransferSheet({ sheetScroll, item, candidateItems, accounts, for
         ) : (
           matches.map((candidate) => {
             const isSelected = selectedIds.includes(candidate.id)
-            const daysApart = daysBetween(item.date, candidate.date)
+            const daysApart = daysBetween(item.postedDate, candidate.postedDate)
             return (
               <Pressable
                 key={candidate.id}

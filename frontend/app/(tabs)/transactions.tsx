@@ -25,6 +25,7 @@ import { formatAmount } from '@/lib/format/money'
 import { filterByMonth, shiftMonth } from '@/lib/transactions/filterByMonth'
 import { useSelectedMonth } from '@/hooks/useSelectedMonth'
 import { aggregateMonth } from '@/lib/transactions/aggregateMonth'
+import { toDateKey } from '@/lib/dates/dateKey'
 import type { TransferSuggestion } from '@/hooks/useTransactionFeed'
 
 type TransactionFeedState = ReturnType<typeof useTransactionFeed>
@@ -87,8 +88,7 @@ function TransactionsScreenContent({ feedState }: { feedState: TransactionFeedSt
 
   const daysInMonth = new Date(month.year, month.month, 0).getDate()
   const firstWeekday = new Date(month.year, month.month - 1, 1).getDay()
-  const now = new Date()
-  const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  const todayKey = toDateKey(new Date())
 
   const calendarDays = useMemo(() => {
     const days: Array<{ day: number; dateKey: string } | null> = []

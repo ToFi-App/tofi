@@ -37,7 +37,7 @@ export function exactAmount(a: FeedItem, b: FeedItem): boolean {
 }
 
 export function withinDays(days: number) {
-  return (a: FeedItem, b: FeedItem): boolean => daysBetween(a.date, b.date) <= days
+  return (a: FeedItem, b: FeedItem): boolean => daysBetween(a.postedDate, b.postedDate) <= days
 }
 
 export function differentAccount(a: FeedItem, b: FeedItem): boolean {

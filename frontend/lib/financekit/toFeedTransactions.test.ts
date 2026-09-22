@@ -68,3 +68,33 @@ describe('an Apple Card transaction through the whole feed chain', () => {
     expect(feed[0]).toMatchObject({ categoryId: 'cat-food', categorySource: 'mcc_pfc' })
   })
 })
+
+describe('toFeedTransactions date basis', () => {
+  // FinanceKit gives both dates on every row: postedDate (nullable) and transactionDate (the
+  // authorization, always present). adaptTransaction folds the first into `date`; this carries the
+  // second as authorized_date so resolveFeed treats an Apple Card row exactly like a Plaid one
+  // instead of falling back to the posted date for the whole account.
+  it('carries the authorization date as authorized_date', () => {
+    const [row] = toFeedTransactions([adapted({ date: '2026-08-21', transactionDate: '2026-08-20T14:03:00.000Z' })])
+    expect(row.authorized_date).toBe('2026-08-20')
+  })
+
+  it('reduces the authorization timestamp to a date, since groupByDay buckets on it verbatim', () => {
+    const [row] = toFeedTransactions([adapted({ transactionDate: '2026-08-20T14:03:00.000Z' })])
+    expect(row.authorized_date).not.toContain('T')
+  })
+
+  it('shows the authorized date once the row reaches the feed', () => {
+    const rows = toFeedTransactions([adapted({ date: '2026-08-21', transactionDate: '2026-08-20T14:03:00.000Z' })])
+    const [feedItem] = mergeFeed(rows, [], [], [])
+    expect(feedItem).toMatchObject({ date: '2026-08-20', postedDate: '2026-08-21' })
+  })
+})
+
+describe('toFeedTransactions authorized_date basis', () => {
+  it('derives authorized_date from the local calendar day of the authorization', () => {
+    const transactionDate = new Date(2026, 7, 20, 21, 5).toISOString()
+    const [row] = toFeedTransactions([adapted({ transactionDate })])
+    expect(row.authorized_date).toBe('2026-08-20')
+  })
+})

@@ -3,15 +3,24 @@ import { applySweepExclusion } from './sweepExclusion'
 import { countsTowardTotals } from './totals'
 import type { FeedItem } from './resolveFeed'
 
+// postedDate defaults to whatever `date` the case set, so a case that only cares about proximity
+// can keep saying `date` and still mean it. Cases that need the two to diverge — an authorized
+// date on one leg only — set postedDate explicitly.
 function item(overrides: Partial<FeedItem> & { id: string }): FeedItem {
+  const merged = { ...base(), ...overrides }
+  return { ...merged, postedDate: overrides.postedDate ?? merged.date }
+}
+
+function base() {
   return {
-    source: 'plaid',
+    source: 'plaid' as const,
     amount: 0,
     date: '2026-07-31',
+    postedDate: '2026-07-31',
     merchantName: 'Fidelity',
     categoryId: null,
     subcategoryId: null,
-    categorySource: 'plaid_pfc',
+    categorySource: 'plaid_pfc' as const,
     confidenceLevel: null,
     pfcDetailed: 'TRANSFER_OUT_ACCOUNT_TRANSFER',
     accountId: 'cma',
@@ -29,7 +38,6 @@ function item(overrides: Partial<FeedItem> & { id: string }): FeedItem {
     isSweptOutflow: false,
     hasCrossAccountCounterpart: false,
     links: [],
-    ...overrides,
   }
 }
 
@@ -304,5 +312,30 @@ describe('applySweepExclusion: what counts as a sweep outflow', () => {
     ])
 
     expect(find(result, 'unknown').isSweptOutflow).toBe(false)
+  })
+})
+
+describe('applySweepExclusion date basis', () => {
+  // The hazard that made postedDate a separate field. A sweep's two legs are different KINDS of
+  // event on one account: the outflow can be a card or ACH debit carrying an authorized_date,
+  // while the paired inflow is an institution-generated money-market redemption carrying none.
+  // Matched on the display date, the legs would sit 2 days apart — past the 1-day window — and a
+  // swept outflow would start counting as real spending.
+  it('still pairs a sweep when only the outflow leg carries an authorized date', () => {
+    const result = applySweepExclusion([
+      item({ id: 'redemption', amount: -6.55, pfcDetailed: 'INCOME_DIVIDENDS', date: '2026-07-31', postedDate: '2026-07-31' }),
+      item({ id: 'sweep', amount: 6.55, date: '2026-07-29', postedDate: '2026-07-31' }),
+    ])
+
+    expect(find(result, 'sweep').isSweptOutflow).toBe(true)
+  })
+
+  it('does not pair legs that are far apart when posted, however close their authorized dates look', () => {
+    const result = applySweepExclusion([
+      item({ id: 'redemption', amount: -6.55, pfcDetailed: 'INCOME_DIVIDENDS', date: '2026-07-31', postedDate: '2026-07-31' }),
+      item({ id: 'purchase', amount: 6.55, date: '2026-07-31', postedDate: '2026-07-20' }),
+    ])
+
+    expect(find(result, 'purchase').isSweptOutflow).toBe(false)
   })
 })

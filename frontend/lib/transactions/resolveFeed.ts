@@ -111,7 +111,29 @@ export interface FeedItem {
   id: string
   source: 'plaid' | 'manual' | 'investment'
   amount: number // Plaid convention: positive = money out (expense), negative = money in (income)
+  /**
+   * The day the user actually made the transaction: Plaid's `authorized_date` when the institution
+   * supplies one, its posted `date` otherwise. This is the DISPLAY and BUCKETING date — day
+   * headers, month filtering, aggregation. It is deliberately not the matching date; see
+   * `postedDate`.
+   *
+   * Preferring authorized also makes a row's date stable across settlement. Plaid's `date` means
+   * "occurred" while pending and flips to "posted" once settled, so a row keyed on it can jump a
+   * day or two — and across a month boundary, between months — after the user has already seen it.
+   */
   date: string
+  /**
+   * Plaid's `date` verbatim, i.e. the posted date (the occurred date while still pending).
+   *
+   * Every transaction-to-transaction date comparison reads THIS field, never `date`. The reason is
+   * that `authorized_date` is nullable and unevenly populated: within a single pair, one leg can
+   * carry it while the other does not, so the two would be measured on different bases and the
+   * apparent gap between them would be off by however long the institution took to post. Sweep
+   * exclusion compares on amount alone inside a 1-day window, so a drift that small is enough to
+   * make it miss and let a swept outflow count as real spending. Plaid guarantees `date`, so
+   * matching on it is the basis that cannot go asymmetric.
+   */
+  postedDate: string
   merchantName: string
   categoryId: string | null
   subcategoryId: string | null
@@ -185,7 +207,8 @@ export function mergeFeed(
       id: txn.transaction_id,
       source: 'plaid',
       amount: txn.amount,
-      date: txn.date,
+      date: txn.authorized_date ?? txn.date,
+      postedDate: txn.date,
       merchantName: txn.merchant_name ?? txn.name,
       categoryId: resolved.categoryId,
       subcategoryId: resolved.subcategoryId,
@@ -217,6 +240,7 @@ export function mergeFeed(
     source: 'manual',
     amount: txn.type === 'expense' ? Number(txn.amount) : -Number(txn.amount),
     date: txn.date,
+    postedDate: txn.date,
     merchantName: txn.note ?? (txn.type === 'expense' ? 'Manual expense' : 'Manual income'),
     categoryId: txn.categoryId,
     subcategoryId: txn.subcategoryId,
@@ -262,6 +286,7 @@ export function mergeFeed(
       // No sign flip: Plaid's investment amount is already positive-is-money-out.
       amount: txn.amount,
       date: txn.date,
+      postedDate: txn.date,
       merchantName,
       categoryId: resolved.categoryId,
       subcategoryId: resolved.subcategoryId,

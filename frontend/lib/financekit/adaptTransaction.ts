@@ -1,3 +1,4 @@
+import { toDateKey } from '@/lib/dates/dateKey'
 import type { RawTransaction } from './types'
 
 /**
@@ -52,7 +53,12 @@ export function adaptTransaction(raw: RawTransaction): AdaptedTransaction {
     // Date only, not a timestamp: Plaid's `date` is YYYY-MM-DD and groupByDay uses it verbatim as
     // its bucket key and day header. A full ISO string gives every transaction its own "day" and
     // prints the raw timestamp on screen.
-    date: (raw.postedDate ?? raw.transactionDate).slice(0, 10),
+    //
+    // Via toDateKey rather than slicing the ISO string: the string is UTC (financeKitModule builds
+    // it with toISOString), so slicing it filed an 8pm purchase under tomorrow for any device
+    // behind UTC. The day the user experienced is the LOCAL one, which is also the basis manual
+    // transactions and the "today" highlight already use.
+    date: toDateKey(new Date(raw.postedDate ?? raw.transactionDate)),
     transactionDate: raw.transactionDate,
     pending: raw.status !== 'posted' && raw.status !== 'booked',
     personal_finance_category: null,
