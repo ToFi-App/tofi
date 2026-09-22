@@ -411,6 +411,31 @@ describe('brokerage contributions', () => {
     expect(result.suggestions).toEqual([])
   })
 
+  // The same redemption, tagged with the generic account-transfer code instead. The institution
+  // uses both for the identical event, so the guard above has to recognise both or it only holds
+  // on the days the brokerage happened to be specific. Untreated, the redemption pairs with
+  // whatever unrelated outflow shares its amount — which is exactly how a $4 core-fund redemption
+  // ended up linked to a $4 payment on a different account.
+  it('does not let a generically-tagged brokerage redemption compete either', () => {
+    const cmaAccounts = [
+      { account_id: 'acc-cma', type: 'depository', subtype: 'cash management' },
+      { account_id: 'acc-bank', type: 'depository', subtype: 'checking' },
+    ] as unknown as Account[]
+    const unrelatedOutflow = item({
+      id: 'bank-out', accountId: 'acc-bank', amount: 4, date: '2026-05-04',
+      pfcDetailed: 'TRANSFER_OUT_ACCOUNT_TRANSFER',
+    })
+    const redemption = item({
+      id: 'cma-redemption', accountId: 'acc-cma', amount: -4, date: '2026-05-04',
+      pfcDetailed: 'TRANSFER_IN_ACCOUNT_TRANSFER', isBrokerageCashAccount: true,
+    })
+
+    const result = detectTransfers({ feed: [unrelatedOutflow, redemption], accounts: cmaAccounts })
+
+    expect(result.autoApply).toEqual([])
+    expect(result.suggestions).toEqual([])
+  })
+
   // Money sent out of a brokerage cash account arrives at the receiving bank tagged INCOME_*: from
   // that bank's side an inbound ACH from a brokerage looks like being paid. isEligible drops
   // income-tagged inflows from the index, so such an outflow has no candidates at all — not an
