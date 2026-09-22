@@ -9,6 +9,37 @@ import type { FeedItem } from './resolveFeed'
  */
 const SWEEP_WINDOW_DAYS = 1
 
+/**
+ * What an outflow must be tagged as before the amount match below is allowed to drop it.
+ *
+ * The rule's signal — an equal inflow, same account, same day — is also the exact shape of a bill
+ * paid FROM a brokerage cash account: the institution funds the payment by redeeming the core
+ * money-market position, and that redemption posts as an inflow of precisely the payment's size.
+ * Amount alone therefore cannot tell a sweep into holdings from the spending it was raised to
+ * cover, and without this gate the second is dropped as often as the first. Whether a real expense
+ * survived came down to whether the institution redeemed in one slice or two.
+ *
+ * The outflow's own code is what separates them: a sweep moves money into holdings and is tagged
+ * as a transfer, while a payment names a merchant and carries that merchant's category.
+ *
+ * A WHITELIST, and a prefix test would not do: TRANSFER_OUT_TRANSFER_OUT_FROM_APPS is Venmo or
+ * Cash App to a person — real money leaving, sharing the prefix. TRANSFER_OUT_WITHDRAWAL is cash
+ * out, which gets spent later. Both are deliberately absent.
+ *
+ * The two narrow codes are here for completeness rather than need: INTERNAL_MOVEMENT_PFC already
+ * excludes them on this account type (totals.ts). The generic pair is what this rule is actually
+ * for — the codes an institution substitutes for a sweep, which are too broad to exclude globally.
+ *
+ * An untagged outflow (null) is not admitted. No code is not evidence of a sweep, and leaving the
+ * money counted is the mild, self-correcting direction this codebase prefers.
+ */
+const SWEEP_OUTFLOW_PFC = new Set([
+  'TRANSFER_OUT_ACCOUNT_TRANSFER',
+  'TRANSFER_OUT_OTHER_TRANSFER_OUT',
+  'TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS',
+  'TRANSFER_OUT_SAVINGS',
+])
+
 /** Integer cents, so float amounts are safe as map keys. */
 function centsKey(item: FeedItem): number {
   return Math.round(Math.abs(item.amount) * 100)
@@ -86,6 +117,8 @@ export function applySweepExclusion(feed: FeedItem[]): FeedItem[] {
     // equal outflow elsewhere is the expected shape of a REAL investment, not evidence against one.
     if (item.amount <= 0) return item
     if (item.transferKind !== null) return item // autoMatch already decided this one
+    // Before the amount match: a named purchase is spending whatever inflow it happens to mirror.
+    if (item.pfcDetailed === null || !SWEEP_OUTFLOW_PFC.has(item.pfcDetailed)) return item
     if (hasCrossAccountMatch(item)) return { ...item, hasCrossAccountCounterpart: true } // a transfer to pair, not a sweep
 
     const bucket = inflowsByAccountAmount.get(`${item.accountId}::${centsKey(item)}`) ?? []

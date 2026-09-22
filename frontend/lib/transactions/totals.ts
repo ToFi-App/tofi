@@ -24,8 +24,9 @@ export function isTransfer(item: FeedItem): boolean {
  * unpaired leg is left counted on purpose — the design's stated bias is to leave money counted
  * rather than wrongly hide it. Excluding globally would silently override that.
  *
- * All four codes are byte-identical across PFCv1 and PFCv2, verified against Plaid's published
- * taxonomy. transactionRepository.sync pins v2, but the check still matters: an Item synced before
+ * The four *_INVESTMENT_AND_RETIREMENT_FUNDS / *_SAVINGS codes are byte-identical across PFCv1 and
+ * PFCv2, verified against Plaid's published taxonomy; TRANSFER_IN_ACCOUNT_TRANSFER is the v2
+ * spelling. transactionRepository.sync pins v2, but the check still matters: an Item synced before
  * the pin cached rows categorized under v1, and those rows stay in MMKV.
  *
  * Kept deliberately narrow. Each of these is money the user still holds, with no purchase
@@ -36,16 +37,28 @@ export function isTransfer(item: FeedItem): boolean {
  *  - TRANSFER_IN_DEPOSIT — "Cash, checks, and ATM deposits into a bank account": money arriving
  *    from outside, not shifted between the user's own accounts.
  *  - TRANSFER_OUT_WITHDRAWAL — "Withdrawals from a bank account"; the cash gets spent later.
- *  - *_ACCOUNT_TRANSFER — "General inbound/outbound transfers". Plaid's taxonomy has no
+ *  - TRANSFER_OUT_ACCOUNT_TRANSFER — "General outbound transfers". Plaid's taxonomy has no
  *    peer-to-peer code at all, so Venmo/Zelle to a person lands here next to genuine internal
- *    moves, as does ACH rent. Excluding it wholesale would hide real spending; pairing handles
- *    the account-to-account case, and that path sets transferKind.
+ *    moves, as does ACH rent. Excluding it would hide real spending; pairing handles the
+ *    account-to-account case, and that path sets transferKind.
+ *
+ * Its inbound twin IS in the set, and the asymmetry is the point. A brokerage funds what you spend
+ * from its cash account by redeeming the core money-market position, and tags the resulting inflow
+ * inconsistently — the same institution used TRANSFER_IN_INVESTMENT_AND_RETIREMENT_FUNDS on some
+ * days and the generic code on others for the identical event. Nothing arriving INTO a brokerage
+ * cash account under a generic account-transfer code is somebody else's money, so the objection
+ * above (hiding real spending) has no inbound equivalent: the worst case is understating income by
+ * the size of a redemption the user still holds. Pairing cannot be relied on to catch it either —
+ * a redemption is sized to the payment it funds, so it collides on amount with unrelated movements
+ * and gets mislinked to them (autoMatch's pairAllowed reads this predicate to refuse exactly that).
  */
 const INTERNAL_MOVEMENT_PFC = new Set([
   'TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS',
   'TRANSFER_IN_INVESTMENT_AND_RETIREMENT_FUNDS',
   'TRANSFER_OUT_SAVINGS',
   'TRANSFER_IN_SAVINGS',
+  // Inbound only — see the asymmetry note above.
+  'TRANSFER_IN_ACCOUNT_TRANSFER',
 ])
 
 /**

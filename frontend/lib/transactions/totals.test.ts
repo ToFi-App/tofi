@@ -99,6 +99,31 @@ describe('isInternalMovement', () => {
     expect(isInternalMovement(item({ pfcDetailed: 'TRANSFER_IN_SAVINGS', amount: -500 }))).toBe(false)
   })
 
+  // A brokerage redeems the core money-market position to fund what you spend from the cash
+  // account, and tags the resulting inflow inconsistently: the same institution used
+  // TRANSFER_IN_INVESTMENT_AND_RETIREMENT_FUNDS on some days and the generic account-transfer code
+  // on others for the identical event. The generic code left the redemption looking like income.
+  it('is true for a generic transfer-in on a brokerage cash account', () => {
+    expect(isInternalMovement(sweepItem({ pfcDetailed: 'TRANSFER_IN_ACCOUNT_TRANSFER', amount: -4 }))).toBe(true)
+    expect(countsTowardTotals(sweepItem({ pfcDetailed: 'TRANSFER_IN_ACCOUNT_TRANSFER', amount: -4 }))).toBe(false)
+  })
+
+  it('badges that redemption as an investment rather than leaving it bare', () => {
+    expect(isInvestmentSweep(sweepItem({ pfcDetailed: 'TRANSFER_IN_ACCOUNT_TRANSFER', amount: -4 }))).toBe(true)
+  })
+
+  // IN only, deliberately. The outbound twin covers ACH rent and p2p payments made FROM the same
+  // account, and hiding those understates spending — the dangerous direction. Hiding an inbound
+  // leg understates income, and on a brokerage cash account a generic transfer-in is the user's
+  // own money almost by definition.
+  it('does not exclude the outbound twin, which covers real spending', () => {
+    expect(isInternalMovement(sweepItem({ pfcDetailed: 'TRANSFER_OUT_ACCOUNT_TRANSFER' }))).toBe(false)
+  })
+
+  it('leaves a generic transfer-in on an ordinary checking account counted', () => {
+    expect(isInternalMovement(item({ pfcDetailed: 'TRANSFER_IN_ACCOUNT_TRANSFER', amount: -4 }))).toBe(false)
+  })
+
   it('still excludes a paired transfer on a checking account, via its transfer record', () => {
     expect(isInternalMovement(item({ pfcDetailed: 'TRANSFER_OUT_SAVINGS', transferKind: 'account_transfer', transferRole: 'expense' }))).toBe(true)
   })

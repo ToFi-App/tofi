@@ -161,9 +161,11 @@ describe('applySweepExclusion', () => {
 
     const expenseTotal = result.filter((i) => i.amount > 0 && countsTowardTotals(i)).reduce((s, i) => s + i.amount, 0)
     expect(expenseTotal).toBe(0)
-    // Income is untouched: 6.55 + 14.78 + 2033.45
+    // Real income is untouched: the two dividends, 6.55 + 14.78. The third inflow is the user's own
+    // money arriving from another account under a generic transfer code, which isInternalMovement
+    // excludes on this account type — it was never income, and counting it overstated the day.
     const incomeTotal = result.filter((i) => i.amount < 0 && countsTowardTotals(i)).reduce((s, i) => s + Math.abs(i.amount), 0)
-    expect(incomeTotal).toBeCloseTo(2054.78, 2)
+    expect(incomeTotal).toBeCloseTo(21.33, 2)
   })
 
   // A round trip through a linked bank: money leaves the brokerage cash account, comes back, then
@@ -238,5 +240,69 @@ describe('applySweepExclusion: investment rows', () => {
     const result = applySweepExclusion([deposit, sweep])
 
     expect(find(result, 'sweep-2').isSweptOutflow).toBe(true)
+  })
+})
+
+describe('applySweepExclusion: what counts as a sweep outflow', () => {
+  // A brokerage cash account funds the payments made from it by redeeming the core money-market
+  // position, and the redemption posts as an inflow of exactly the payment's size on the same day
+  // and the same account. That is the shape this rule matches on, so without a check on what the
+  // OUTFLOW actually is, every bill paid from such an account is indistinguishable from a sweep.
+  // The outflow's own PFC is what separates them: a sweep moves money into holdings, a payment
+  // names a merchant.
+  it('leaves a utility bill counted when a same-day redemption mirrors it', () => {
+    const result = applySweepExclusion([
+      item({ id: 'redemption', amount: -25, pfcDetailed: 'TRANSFER_IN_INVESTMENT_AND_RETIREMENT_FUNDS' }),
+      item({ id: 'bill', amount: 25, pfcDetailed: 'RENT_AND_UTILITIES_INTERNET_AND_CABLE' }),
+    ])
+
+    expect(find(result, 'bill').isSweptOutflow).toBe(false)
+    expect(countsTowardTotals(find(result, 'bill'))).toBe(true)
+  })
+
+  // Plaid's own code for a p2p app, which is real money leaving for another person. It shares the
+  // TRANSFER_OUT_ prefix with the codes a sweep uses, so the gate has to be a whitelist of codes
+  // rather than a prefix test.
+  it('leaves a peer-to-peer app payment counted', () => {
+    const result = applySweepExclusion([
+      item({ id: 'redemption', amount: -4, pfcDetailed: 'TRANSFER_IN_ACCOUNT_TRANSFER' }),
+      item({ id: 'p2p', amount: 4, pfcDetailed: 'TRANSFER_OUT_TRANSFER_OUT_FROM_APPS' }),
+    ])
+
+    expect(find(result, 'p2p').isSweptOutflow).toBe(false)
+  })
+
+  // The same shape at a size where silently dropping it would badly distort a month. Survived
+  // before this gate only because the institution happened to redeem in two slices rather than
+  // one, which is not a property anything should depend on.
+  it('leaves a large merchant payment counted', () => {
+    const result = applySweepExclusion([
+      item({ id: 'redemption', amount: -6727, pfcDetailed: 'TRANSFER_IN_INVESTMENT_AND_RETIREMENT_FUNDS' }),
+      item({ id: 'tuition', amount: 6727, pfcDetailed: 'GENERAL_SERVICES_EDUCATION' }),
+    ])
+
+    expect(find(result, 'tuition').isSweptOutflow).toBe(false)
+  })
+
+  // The case the rule exists for still works: an institution that tags its sweep with the generic
+  // account-transfer code, which INTERNAL_MOVEMENT_PFC deliberately does not cover.
+  it('still drops a sweep tagged with the generic account-transfer code', () => {
+    const result = applySweepExclusion([
+      item({ id: 'dividend', amount: -6.55, pfcDetailed: 'INCOME_DIVIDENDS' }),
+      item({ id: 'sweep', amount: 6.55, pfcDetailed: 'TRANSFER_OUT_ACCOUNT_TRANSFER' }),
+    ])
+
+    expect(find(result, 'sweep').isSweptOutflow).toBe(true)
+  })
+
+  // No code at all is not evidence of a sweep. Leaving it counted is the mild, self-correcting
+  // direction; dropping it hides money on nothing more than an amount collision.
+  it('leaves an untagged outflow counted', () => {
+    const result = applySweepExclusion([
+      item({ id: 'dividend', amount: -6.55, pfcDetailed: 'INCOME_DIVIDENDS' }),
+      item({ id: 'unknown', amount: 6.55, pfcDetailed: null }),
+    ])
+
+    expect(find(result, 'unknown').isSweptOutflow).toBe(false)
   })
 })
