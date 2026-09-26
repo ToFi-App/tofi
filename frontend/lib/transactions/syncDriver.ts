@@ -21,6 +21,8 @@ export type SyncResponse = SyncResultShape & { itemErrors?: SyncItemError[] }
  *  own authed client — never depend on how the default one is constructed. */
 export type SyncCaller = (input: { cursors: Record<string, string> }) => Promise<SyncResponse>
 
+export type MigrateIdsCaller = (input: { migrations: Array<{ oldId: string; newId: string }> }) => Promise<void>
+
 export interface SyncSnapshot {
   /** Bumped after every round's MMKV writes land, and by notifyCacheMutated. Consumers key
    *  their cache re-reads off this, because those writes happen outside React. */
@@ -48,6 +50,7 @@ export interface SyncNowOptions {
    */
   onRound?: (response: SyncResponse) => void
   call?: SyncCaller
+  callMigrateIds?: MigrateIdsCaller
 }
 
 /**
@@ -99,6 +102,7 @@ let resolveFirstRound: (() => void) | null = null
 let lastAttemptKey: string | null = null
 let lastAttemptAt = 0
 let defaultCaller: SyncCaller | null = null
+let defaultMigrateCaller: MigrateIdsCaller | null = null
 
 function publish(patch: Partial<SyncSnapshot>): void {
   snapshot = { ...snapshot, ...patch }
@@ -120,6 +124,15 @@ function resolveCaller(explicit?: SyncCaller): SyncCaller {
     defaultCaller = (input) => client.transactions.sync.mutate(input)
   }
   return defaultCaller
+}
+
+function resolveMigrateCaller(explicit?: MigrateIdsCaller): MigrateIdsCaller {
+  if (explicit) return explicit
+  if (!defaultMigrateCaller) {
+    const client = createHeadlessApiClient()
+    defaultMigrateCaller = (input) => client.transactions.migrateIds.mutate(input)
+  }
+  return defaultMigrateCaller
 }
 
 function backoffFor(consecutiveThrottles: number): number {
@@ -164,6 +177,14 @@ async function drain(options: SyncNowOptions): Promise<void> {
       // after the merge above the transaction is gone from the cache — this queue is the only
       // remaining evidence a transfer referencing it must be dissolved (orphan sweep).
       appendPendingRemovedTransactionIds(plan.removedIds)
+
+      if (plan.pendingToPosted.length > 0) {
+        try {
+          await resolveMigrateCaller(options.callMigrateIds)({ migrations: plan.pendingToPosted })
+        } catch (err) {
+          reportError('transaction-id-migration', err, { count: plan.pendingToPosted.length })
+        }
+      }
 
       options.onRound?.(response)
 
@@ -262,5 +283,6 @@ export const syncDriver = {
     lastAttemptKey = null
     lastAttemptAt = 0
     defaultCaller = null
+    defaultMigrateCaller = null
   },
 }

@@ -43,4 +43,18 @@ export const transactionOverrideRepository = {
     const { error } = await client.from('transaction_overrides').delete().eq('id', id)
     if (error) throw error
   },
+
+  async migrateTransactionIds(jwt: string, migrations: Array<{ oldId: string; newId: string }>): Promise<number> {
+    const client = getScopedClient(jwt)
+    let migrated = 0
+    for (const { oldId, newId } of migrations) {
+      const { count, error } = await client
+        .from('transaction_overrides')
+        .update({ plaid_transaction_id: newId })
+        .eq('plaid_transaction_id', oldId)
+      if (error) throw error
+      if (count) migrated += count
+    }
+    return migrated
+  },
 }

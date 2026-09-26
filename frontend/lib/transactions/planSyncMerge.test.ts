@@ -93,4 +93,27 @@ describe('planSyncMerge', () => {
     expect(planSyncMerge(result({}), [], ACCOUNT_TO_ITEM, new Map()).rateLimitedItemIds).toEqual([])
   })
 
+  it('collects pending-to-posted ID migrations when a posted transaction replaces a removed pending one', () => {
+    const posted = { ...txn('posted-1', 'acc-1'), pending_transaction_id: 'pending-1' } as PlaidTransaction
+    const plan = planSyncMerge(
+      result({ added: [posted], removed: [{ transaction_id: 'pending-1' }] }),
+      ['item-1'],
+      ACCOUNT_TO_ITEM,
+      new Map([['item-1', [{ ...txn('pending-1', 'acc-1'), pending: true } as PlaidTransaction]]]),
+    )
+    expect(plan.pendingToPosted).toEqual([{ oldId: 'pending-1', newId: 'posted-1' }])
+  })
+
+  it('does not collect migrations when pending_transaction_id is absent or its id was not removed', () => {
+    const noLink = txn('t1', 'acc-1')
+    const dangling = { ...txn('t2', 'acc-1'), pending_transaction_id: 'not-removed' } as PlaidTransaction
+    const plan = planSyncMerge(
+      result({ added: [noLink, dangling] }),
+      ['item-1'],
+      ACCOUNT_TO_ITEM,
+      new Map(),
+    )
+    expect(plan.pendingToPosted).toEqual([])
+  })
+
 })

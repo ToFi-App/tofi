@@ -23,6 +23,12 @@ export interface SyncMergePlan {
    * whether to keep draining but about how long to wait first — see syncDriver's backoff.
    */
   rateLimitedItemIds: string[]
+  /**
+   * Pending-to-posted ID migrations: when a pending transaction settles, Plaid removes the
+   * pending ID and adds a new posted transaction whose `pending_transaction_id` points back.
+   * Overrides and transfer legs keyed on the old ID must be repointed to survive settlement.
+   */
+  pendingToPosted: Array<{ oldId: string; newId: string }>
 }
 
 /**
@@ -63,11 +69,19 @@ export function planSyncMerge(
   const mergedByItem = new Map<string, PlaidTransaction[]>()
   for (const [itemId, map] of mergedMaps) mergedByItem.set(itemId, Array.from(map.values()))
 
+  const pendingToPosted: Array<{ oldId: string; newId: string }> = []
+  for (const txn of result.added) {
+    if (txn.pending_transaction_id && removedIds.has(txn.pending_transaction_id)) {
+      pendingToPosted.push({ oldId: txn.pending_transaction_id, newId: txn.transaction_id })
+    }
+  }
+
   return {
     mergedByItem,
     cursors: result.cursors,
     removedIds: result.removed.map((r) => r.transaction_id),
     hasMore: Object.values(result.hasMore ?? {}).some(Boolean),
     rateLimitedItemIds: Object.keys(result.rateLimited ?? {}),
+    pendingToPosted,
   }
 }
