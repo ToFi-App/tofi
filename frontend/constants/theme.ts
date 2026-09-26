@@ -88,6 +88,21 @@ export const assetClassColors = {
  */
 export const liabilityColors = { fill: '#C2676C', text: '#841428' } as const
 
+/**
+ * Cash-flow hub: one color per kind of money movement, used for the headline chips, account-node
+ * bars and the ribbons between accounts. Spending ribbons take their category's own color instead.
+ * Invested is indigo rather than violet so it can't be read as `reimbursed`.
+ */
+export const flowColors = {
+  income: colors.income,
+  saved: colors.primary,
+  invested: '#4F46E5',
+  debtPaid: colors.warning,
+  moved: colors.textSecondary,
+  unlinked: colors.textMuted,
+  spending: colors.expense,
+} as const
+
 // Fallback channels for malformed input. category.color is a free-text DB column (validated
 // only as a non-empty string), so a value like 'red' or '#f00' would otherwise parse to NaN
 // channels and crash React Native at render time. Falls back to `textMuted` (#A8A89C).
