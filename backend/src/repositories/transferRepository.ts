@@ -166,4 +166,20 @@ export const transferRepository = {
     const { error } = await client.from('transfers').delete().eq('id', id)
     if (error) throw error
   },
+
+  async migrateTransactionIds(jwt: string, migrations: Array<{ oldId: string; newId: string }>): Promise<void> {
+    const client = getScopedClient(jwt)
+    for (const { oldId, newId } of migrations) {
+      const { error: expenseErr } = await client
+        .from('transfers')
+        .update({ expense_plaid_transaction_id: newId })
+        .eq('expense_plaid_transaction_id', oldId)
+      if (expenseErr) throw expenseErr
+      const { error: incomeErr } = await client
+        .from('transfers')
+        .update({ income_plaid_transaction_id: newId })
+        .eq('income_plaid_transaction_id', oldId)
+      if (incomeErr) throw incomeErr
+    }
+  },
 }
