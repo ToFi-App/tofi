@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Pressable, ScrollView, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { router } from 'expo-router'
 import { colors } from '@/constants/theme'
 import { useTransactionFeed } from '@/hooks/useTransactionFeed'
 import { usePullToRefresh } from '@/hooks/usePullToRefresh'
@@ -153,7 +154,13 @@ export default function DashboardScreen() {
       </View>
       <MonthNavigator month={month} onPrevious={() => setMonth(shiftMonth(month, -1))} onNext={() => setMonth(shiftMonth(month, 1))} onSelect={setMonth} />
       <View className="flex-1 items-end">
-        <Ionicons name="paw" size={22} color={colors.textMuted} style={{ opacity: 0.4 }} />
+        <Pressable
+          onPress={() => router.push({ pathname: '/(tabs)/cash-flow', params: { year: String(month.year), month: String(month.month) } })}
+          hitSlop={10}
+          accessibilityLabel="Cash flow"
+        >
+          <Ionicons name="git-network-outline" size={22} color={colors.primary} />
+        </Pressable>
       </View>
     </View>
   )

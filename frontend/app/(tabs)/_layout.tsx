@@ -94,6 +94,9 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, size }) => <Ionicons name="settings" color={color} size={size} />,
         }}
       />
+      {/* Opened from Home's top bar rather than the tab bar. A hidden tab rather than a root stack
+          screen because it needs the feed and editor providers mounted here. */}
+      <Tabs.Screen name="cash-flow" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       </Tabs>
       </AuthedShell>
     </TransactionFeedProvider>
