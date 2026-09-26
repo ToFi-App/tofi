@@ -30,7 +30,7 @@ export function CategoryForm({ category, mappings, categories, isSaving, onSave,
 
   const [selectedCodes, setSelectedCodes] = useState<Set<string>>(initialSelectedCodes)
 
-  const canSave = name.trim().length > 0 && icon.trim().length > 0 && selectedCodes.size > 0
+  const canSave = name.trim().length > 0 && icon.trim().length > 0
 
   return (
     <ScrollView className="flex-1 bg-background" contentContainerClassName="gap-6 px-5 py-6">
@@ -57,7 +57,7 @@ export function CategoryForm({ category, mappings, categories, isSaving, onSave,
 
       <View className="gap-2">
         <Text className="font-sansMed text-sm text-textSecondary">
-          Plaid categories for this category (required)
+          Plaid categories for this category
         </Text>
         <PlaidPfcPicker
           mappings={mappings}
