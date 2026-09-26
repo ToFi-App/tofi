@@ -84,7 +84,7 @@ describe('buildFlowGraph', () => {
 
   it('splits the net into parts that sum back to it', () => {
     const h = graph.headline
-    expect(h.saved + h.invested + h.debtPaid + h.checkingChange + h.unlinked).toBeCloseTo(h.net, 2)
+    expect(h.saved + h.invested + h.debtPaid + h.checkingChange + h.unlinked + h.reimbursements).toBeCloseTo(h.net, 2)
     expect(h.saved).toBe(300) // 500 in, 200 back out, netted
     expect(h.invested).toBe(1000)
     // 250 paid + 20 refund - 40 net dinner - 200 groceries
@@ -181,6 +181,24 @@ describe('reimbursements', () => {
     expect(flow.outNodes.map((n) => n.id)).toEqual(['spend:food'])
   })
 
+  it('books a repayment in the month it arrived, not the expense\'s month', () => {
+    const rows = [
+      item({ id: 'concert', amount: 90, netAmount: 30, reimbursedAmount: 60, categoryId: 'fun', date: '2026-06-28', links: [reimbLink('pay-back', 60)] }),
+      // Repaid next month, into the same account: different months, so it doesn't cancel.
+      item({ id: 'pay-back', amount: -60, date: '2026-07-03', isReimbursementIncome: true, links: [link('concert')] }),
+    ]
+    const june = buildFlowGraph({ feed: rows, accounts, month })
+    const july = buildFlowGraph({ feed: rows, accounts, month: { year: 2026, month: 7 } })
+    expect(june.edges.find((e) => e.kind === 'covered')?.amount).toBe(60)
+    expect(june.edges.some((e) => e.kind === 'paidBack')).toBe(false)
+    expect(june.headline.reimbursements).toBe(60)
+    expect(july.edges.find((e) => e.kind === 'paidBack')).toMatchObject({ to: 'account:checking', amount: 60 })
+    expect(july.headline.reimbursements).toBe(-60)
+    for (const h of [june.headline, july.headline]) {
+      expect(h.saved + h.invested + h.debtPaid + h.checkingChange + h.unlinked + h.reimbursements).toBeCloseTo(h.net, 2)
+    }
+  })
+
   it('splits a partly reimbursed expense into your share and the covered part', () => {
     const rows = [
       item({ id: 'dinner2', accountId: 'card', amount: 100, netAmount: 40, reimbursedAmount: 60, categoryId: 'food', links: [reimbLink('zelle', 60)] }),
@@ -191,7 +209,7 @@ describe('reimbursements', () => {
     expect(g.headline.debtPaid).toBe(-100) // the card was charged the full 100
     expect(g.headline.checkingChange).toBe(60)
     const h = g.headline
-    expect(h.saved + h.invested + h.debtPaid + h.checkingChange + h.unlinked).toBeCloseTo(h.net, 2)
+    expect(h.saved + h.invested + h.debtPaid + h.checkingChange + h.unlinked + h.reimbursements).toBeCloseTo(h.net, 2)
   })
 })
 
@@ -226,9 +244,23 @@ describe('household flow', () => {
   })
 
   describe('layout', () => {
-    const layout = layoutHousehold(flow, {
-      labelWidth: 150, barWidth: 8, ribbonSpan: 70, cardWidth: 132, trackGap: 26, minCard: 56, cardGap: 18,
+    const options = {
+      inLabelWidth: 150, outLabelWidth: 150, barWidth: 8, ribbonSpan: 70, cardWidth: 132, trackGap: 26, minCard: 56, cardGap: 18,
       portGap: 16, minSlot: 36, targetHeight: 260, laneMin: 2, laneMax: 8,
+    }
+    // Every fixture lane touches checking, so selecting it draws them all.
+    const layout = layoutHousehold(flow, options, 'account:checking')
+
+    it('draws no lanes until a card is selected, then only that card\'s', () => {
+      expect(layoutHousehold(flow, options).lanes).toHaveLength(0)
+      const savingsLanes = layoutHousehold(flow, options, 'account:savings').lanes.map((l) => l.id)
+      expect(savingsLanes.sort()).toEqual(['account:checking->account:savings', 'account:savings->account:checking'])
+    })
+
+    it('does not move anything when a card is selected', () => {
+      const idle = layoutHousehold(flow, options)
+      expect(layout.cards).toEqual(idle.cards)
+      expect(layout.width).toBe(idle.width)
     })
 
     it('never stacks two lanes on one track where their spans overlap', () => {

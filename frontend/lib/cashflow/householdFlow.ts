@@ -180,7 +180,9 @@ export function buildHouseholdFlow(graph: CashFlowGraph, options: { maxIncome: n
 // Layout
 
 export interface LayoutOptions {
-  labelWidth: number
+  /** Room for the income labels left of their bars, and the spending labels right of theirs. */
+  inLabelWidth: number
+  outLabelWidth: number
   barWidth: number
   /** Horizontal run of a ribbon between a side bar and the account column (or the lane gutter). */
   ribbonSpan: number
@@ -240,8 +242,6 @@ export interface HouseholdLayout {
   cards: PlacedCard[]
   ribbons: PlacedRibbon[]
   lanes: PlacedLane[]
-  /** Bounding box of the account column and its lanes, which the default zoom fits. */
-  focus: { x: number; y: number; width: number; height: number }
 }
 
 const CARD_PADDING = 10
@@ -281,11 +281,27 @@ function assignTracks(lanes: Lane[], indexOf: Map<string, number>): Map<string, 
   return track
 }
 
-export function layoutHousehold(flow: HouseholdFlow, o: LayoutOptions): HouseholdLayout {
+/**
+ * Lanes are drawn for one account at a time — `activeCardId`, the card the user tapped — and none
+ * by default: every lane has to cross the income ribbons on its way between cards, so drawing them
+ * all at once always tangled. Everything that takes space is sized for ALL lanes regardless (card
+ * heights, the gutter), so selecting a card draws its arrows without moving anything.
+ */
+export function layoutHousehold(flow: HouseholdFlow, o: LayoutOptions, activeCardId: string | null = null): HouseholdLayout {
   const indexOf = new Map(flow.cards.map((card, i) => [card.id, i]))
-  const lanes = flow.lanes.filter((lane) => indexOf.has(lane.from) && indexOf.has(lane.to))
+  const allLanes = flow.lanes.filter((lane) => indexOf.has(lane.from) && indexOf.has(lane.to))
+  const touches = (id: string) => (lane: Lane) => lane.from === id || lane.to === id
+  const lanes = activeCardId ? allLanes.filter(touches(activeCardId)) : []
   const track = assignTracks(lanes, indexOf)
-  const trackCount = lanes.length > 0 ? Math.max(...track.values()) + 1 : 0
+  // The gutter fits the busiest card's lanes, whichever card ends up selected.
+  const trackCount = Math.max(
+    0,
+    ...flow.cards.map((card) => {
+      const own = allLanes.filter(touches(card.id))
+      return own.length > 0 ? Math.max(...assignTracks(own, indexOf).values()) + 1 : 0
+    }),
+  )
+  const reservedPorts = (id: string) => allLanes.filter(touches(id)).length
 
   // One scale for every ribbon, fitted to whichever column carries the most money.
   const sum = (ids: (r: Ribbon) => boolean) => flow.ribbons.filter(ids).reduce((t, r) => t + r.amount, 0)
@@ -317,7 +333,7 @@ export function layoutHousehold(flow: HouseholdFlow, o: LayoutOptions): Househol
   // A card is as tall as its content — name, balance line, lane ports — and money plays no part.
   // Ribbons adapt to the card instead: each edge's ribbons are scaled to fill it (see scaleAt).
   const cardHeight = (id: string) => {
-    const portCount = ports.get(id)?.length ?? 0
+    const portCount = reservedPorts(id)
     const portRoom = portCount > 0 ? 8 + portCount * o.portGap : 0
     return Math.max(o.minCard, CARD_PADDING * 2 + MIN_RIBBON_BAND + portRoom)
   }
@@ -333,17 +349,19 @@ export function layoutHousehold(flow: HouseholdFlow, o: LayoutOptions): Househol
   const height = Math.max(o.targetHeight, cardsHeight, inHeight, outHeight)
 
   // Columns, left to right: labels | income bars | ribbons | lane gutter | accounts | ribbons | spending bars | labels
-  const inBarX = o.labelWidth
+  const inBarX = o.inLabelWidth
   // Lanes are spaced by the widest amount pill, so a pill centered on its lane clears both the
   // account blocks and the pills on neighbouring lanes. The mask's width is included because the
   // same layout is drawn with amounts hidden.
-  const widestPill = Math.max(pillWidth('$****'), ...lanes.map((lane) => pillWidth(laneAmountText(lane.amount))))
+  const widestPill = Math.max(pillWidth('$****'), ...allLanes.map((lane) => pillWidth(laneAmountText(lane.amount))))
   const inset = widestPill / 2 + PILL_CLEARANCE
   const trackGap = Math.max(o.trackGap, widestPill + PILL_CLEARANCE)
   const gutterWidth = trackCount > 0 ? inset + (trackCount - 1) * trackGap + widestPill / 2 + PILL_CLEARANCE : 0
   const cardX = inBarX + o.barWidth + o.ribbonSpan + gutterWidth
-  const outBarX = cardX + o.cardWidth + o.ribbonSpan
-  const width = outBarX + o.barWidth + o.labelWidth
+  // Spending ribbons get the gutter's length too, so both sides' ribbons run the same distance —
+  // otherwise the reserved (and usually empty) lane gutter made income ribbons visibly longer.
+  const outBarX = cardX + o.cardWidth + o.ribbonSpan + gutterWidth
+  const width = outBarX + o.barWidth + o.outLabelWidth
   const trackX = (t: number) => cardX - inset - t * trackGap
 
   function placeSide(nodes: SideNode[], x: number): PlacedSide[] {
@@ -374,7 +392,7 @@ export function layoutHousehold(flow: HouseholdFlow, o: LayoutOptions): Househol
   // that edge, so ribbons grow to the card rather than the card growing to its money. The left
   // edge's ribbons sit above the lane ports at its bottom.
   const portSpace = (id: string) => {
-    const count = ports.get(id)?.length ?? 0
+    const count = reservedPorts(id)
     return count > 0 ? 8 + count * o.portGap : 0
   }
   const edgeSpan = (id: string, side: 'in' | 'out') => {
@@ -471,18 +489,7 @@ export function layoutHousehold(flow: HouseholdFlow, o: LayoutOptions): Househol
     }
   }
 
-  // What the chart zooms to fit by default: every account card plus the lanes and pills beside them.
-  const focusLeft = trackCount > 0 ? cardX - gutterWidth : cardX
-  const focus = cards.length
-    ? {
-        x: focusLeft,
-        y: cards[0].y,
-        width: cardX + o.cardWidth - focusLeft,
-        height: cards[cards.length - 1].y + cards[cards.length - 1].height - cards[0].y,
-      }
-    : { x: 0, y: 0, width, height }
-
-  return { width, height, inNodes, outNodes, cards, ribbons, lanes: placedLanes, focus }
+  return { width, height, inNodes, outNodes, cards, ribbons, lanes: placedLanes }
 }
 
 /** A lane's amount, in whole dollars: cents don't fit a pill and don't matter at this scale. */

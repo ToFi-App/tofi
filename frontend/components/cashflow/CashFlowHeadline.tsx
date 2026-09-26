@@ -59,6 +59,9 @@ export function CashFlowHeadline({ headline, isMasked }: { headline: Headline; i
         {headline.unlinked !== 0 ? (
           <Chip label="To unlinked accounts" amount={headline.unlinked} color={flowColors.unlinked} isMasked={isMasked} />
         ) : null}
+        {headline.reimbursements !== 0 ? (
+          <Chip label="Reimbursements" amount={headline.reimbursements} color={colors.reimbursed} isMasked={isMasked} />
+        ) : null}
       </View>
     </View>
   )

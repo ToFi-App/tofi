@@ -20,7 +20,7 @@ export interface ZoomTransform {
 }
 
 export const MAX_SCALE = 3
-const FIT_MARGIN = 16
+const FIT_MARGIN = 8
 
 /**
  * Keeps content from being dragged out of view: content larger than the viewport can't leave a gap
@@ -39,8 +39,9 @@ export function minScale(content: Size, view: Size, fit: number): number {
 }
 
 /**
- * The default view: `focus` (the account column and its lanes) fitted and centered, never zoomed in
- * past 1:1 — a month with one small account shouldn't open magnified.
+ * `focus` fitted and centered in the view, never zoomed in past 1:1 — a small month shouldn't open
+ * magnified. The chart fits the full-height account column for its default view (and the Fit
+ * button), and the whole content box for how far a pinch may zoom out.
  */
 export function fitTransform(focus: Box, content: Size, view: Size): ZoomTransform {
   const scale = Math.min(1, (view.width - FIT_MARGIN * 2) / focus.width, (view.height - FIT_MARGIN * 2) / focus.height)

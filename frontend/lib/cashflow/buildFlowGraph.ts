@@ -16,9 +16,10 @@ import { accountRole, type AccountRole } from './accountRole'
  *  1. Income and spending equal aggregateMonth's totalIncome/totalExpense for the same month. Both
  *     are decided row by row by countsTowardTotals and netAmount, exactly as aggregateMonth does,
  *     so this screen can never disagree with Home about how much came in or went out.
- *  2. income - spending = saved + invested + debtPaid + checkingChange + unlinked. Every edge is
- *     booked out of one node and into another, so money only ever appears or disappears at the
- *     income and spending nodes. That is what lets the headline show its own arithmetic.
+ *  2. income - spending = saved + invested + debtPaid + checkingChange + unlinked + reimbursements.
+ *     Every edge is booked out of one node and into another, so money only ever appears or
+ *     disappears at the outside nodes; the reimbursement term is the one outside flow that isn't
+ *     income or spending. That is what lets the headline show its own arithmetic.
  */
 
 export const CASH_ON_HAND_NODE = 'account:__cash_on_hand__'
@@ -86,6 +87,12 @@ export interface CashFlowHeadline {
   checkingChange: number
   /** Net money sent to accounts the app can't see. */
   unlinked: number
+  /**
+   * Reimbursed spending fronted this month minus repayments received this month. Zero when both
+   * land in the same month; positive while the user is still waiting to be paid back, negative in
+   * the month the repayment for an earlier expense arrives.
+   */
+  reimbursements: number
   /** net / income, null when there was no income to divide by. */
   savingsRate: number | null
 }
@@ -220,36 +227,49 @@ export function buildFlowGraph(input: { feed: FeedItem[]; accounts: FlowAccount[
   /**
    * The reimbursed part of an expense. Home counts only the net (a $100 dinner with $60 paid back is
    * $40 of spending), and so does the spend edge above. That is also the right picture when the $60
-   * came back into the same account: it cancels there, and nothing more is drawn.
+   * came back into the same account in the same month: it cancelled there, and nothing more is drawn.
    *
-   * When it came back into a DIFFERENT account, the full $100 really left the paying account for
-   * the merchant and the $60 really arrived elsewhere. Drawing only the net would make both
-   * accounts' flows wrong — and an expense reimbursed in full would vanish entirely. So the
-   * reimbursed part is added to the category as a "covered" edge, and the repayment arrives from
-   * the reimbursements node into the account that received it.
+   * Otherwise the full $100 really left the paying account for the merchant, and the $60 really
+   * arrived later or elsewhere. Drawing only the net would make both accounts' flows wrong — and an
+   * expense reimbursed in full would vanish entirely. So each side is booked where and WHEN it
+   * happened: the reimbursed part joins the category as a "covered" edge in the expense's month, and
+   * the repayment arrives from the reimbursements node in its own month. When the two months differ,
+   * the headline's `reimbursements` part carries the gap, so the parts still sum to income - spending.
    *
-   * Booked in the expense's month, like a transfer in its outflow month, and only as much as the
-   * linked repayments cover: that keeps "covered" and "paid back" equal, so they cancel in the
-   * headline and never disturb income - spending. Repayment beyond the expense is ignored, exactly
-   * as netAmount (floored at zero) ignores it on Home.
+   * Repayment beyond the expense is ignored, exactly as netAmount (floored at zero) ignores it on
+   * Home. A repayment outside the synced window can't be placed, so its share stays netted.
    */
-  function bookReimbursement(item: FeedItem, paidFrom: string, net: number) {
-    let remaining = item.amount - Math.max(net, 0)
-    let covered = 0
-    for (const link of item.links) {
+  const accountOf = (row: FeedItem) => accountNodeId(row.source === 'manual' ? null : row.accountId)
+  function reimbursementShares(expense: FeedItem): Array<{ leg: FeedItem; portion: number; drawn: boolean }> {
+    const net = expense.netAmount ?? expense.amount
+    let remaining = expense.amount - Math.max(net, 0)
+    const shares: Array<{ leg: FeedItem; portion: number; drawn: boolean }> = []
+    for (const link of expense.links) {
       if (link.kind !== 'reimbursement' || remaining <= 0) continue
       const portion = Math.min(link.amount, remaining)
-      const leg = link.itemId ? feedById.get(link.itemId) : undefined
-      // A repayment outside the synced window has no account to land in; the paying account is the
-      // best stand-in, since the money did come back to the user.
-      const receivedIn = leg ? accountNode(leg.source === 'manual' ? null : leg.accountId).id : paidFrom
       remaining -= portion
-      if (receivedIn === paidFrom) continue
-      if (!nodes.has(PAID_BACK_NODE)) nodes.set(PAID_BACK_NODE, { id: PAID_BACK_NODE, kind: 'paidBack', label: 'Reimbursements' })
-      addCategoryEdge(PAID_BACK_NODE, receivedIn, 'paidBack', portion, leg?.id ?? item.id)
-      covered += portion
+      const leg = link.itemId ? feedById.get(link.itemId) : undefined
+      if (!leg) continue
+      const cancelled = accountOf(leg) === accountOf(expense) && leg.date.slice(0, 7) === expense.date.slice(0, 7)
+      shares.push({ leg, portion, drawn: !cancelled })
     }
-    if (covered > 0) addCategoryEdge(paidFrom, categoryNode('spend', item.categoryId), 'covered', covered, item.id)
+    return shares
+  }
+  function bookCovered(expense: FeedItem, paidFrom: string) {
+    const covered = reimbursementShares(expense)
+      .filter((share) => share.drawn)
+      .reduce((sum, share) => sum + share.portion, 0)
+    if (covered > 0) addCategoryEdge(paidFrom, categoryNode('spend', expense.categoryId), 'covered', covered, expense.id)
+  }
+  function bookRepayment(leg: FeedItem) {
+    const expenseId = leg.links[0]?.itemId
+    const expense = expenseId ? feedById.get(expenseId) : undefined
+    // A pending expense isn't counted yet, so neither is anything netted against it.
+    if (!expense || expense.pending) return
+    const share = reimbursementShares(expense).find((s) => s.leg.id === leg.id)
+    if (!share?.drawn) return
+    if (!nodes.has(PAID_BACK_NODE)) nodes.set(PAID_BACK_NODE, { id: PAID_BACK_NODE, kind: 'paidBack', label: 'Reimbursements' })
+    addCategoryEdge(PAID_BACK_NODE, accountNode(leg.source === 'manual' ? null : leg.accountId).id, 'paidBack', share.portion, leg.id)
   }
 
   const attention: AttentionItem[] = []
@@ -260,8 +280,12 @@ export function buildFlowGraph(input: { feed: FeedItem[]; accounts: FlowAccount[
       pendingCount += 1
       continue
     }
-    // Already netted out of its expense via netAmount, exactly as aggregateMonth skips it.
-    if (item.isReimbursementIncome) continue
+    // Never income: already netted out of its expense via netAmount, exactly as aggregateMonth
+    // skips it. It is still money arriving, drawn in its own month (see bookRepayment).
+    if (item.isReimbursementIncome) {
+      bookRepayment(item)
+      continue
+    }
 
     if (countsTowardTotals(item)) {
       const net = item.netAmount ?? item.amount
@@ -274,7 +298,7 @@ export function buildFlowGraph(input: { feed: FeedItem[]; accounts: FlowAccount[
       } else if (net < 0) {
         addCategoryEdge(categoryNode('income', item.categoryId), node, 'income', -net, item.id)
       }
-      if (item.reimbursedAmount) bookReimbursement(item, node, net)
+      if (item.reimbursedAmount) bookCovered(item, node)
       continue
     }
 
@@ -349,6 +373,10 @@ export function buildFlowGraph(input: { feed: FeedItem[]; accounts: FlowAccount[
     debtPaid: round2(netByRole.debt),
     checkingChange: round2(netByRole.spending),
     unlinked: round2(netByNode.get(UNLINKED_NODE) ?? 0),
+    reimbursements: round2(
+      edges.filter((e) => e.kind === 'covered').reduce((sum, e) => sum + e.amount, 0) -
+        edges.filter((e) => e.kind === 'paidBack').reduce((sum, e) => sum + e.amount, 0),
+    ),
     savingsRate: income > 0 ? net / income : null,
   }
 

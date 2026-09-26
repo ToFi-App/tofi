@@ -93,6 +93,10 @@ export default function CashFlowScreen() {
     [accountById],
   )
   const cardName = useCallback((card: AccountCard) => card.name, [])
+  const accountName = useCallback(
+    (accountId: string | null) => (accountId ? (accountById.get(accountId)?.name ?? 'Removed account') : 'Cash on hand'),
+    [accountById],
+  )
   const itemsFor = useCallback(
     (itemIds: string[]) =>
       [...new Set(itemIds)]
@@ -246,7 +250,13 @@ export default function CashFlowScreen() {
         </View>
       </ScrollView>
 
-      <FlowTransactionsSheet selection={selection} categoryFor={categoryFor} isMasked={isMasked} onClose={() => setSelection(null)} />
+      <FlowTransactionsSheet
+        selection={selection}
+        categoryFor={categoryFor}
+        isMasked={isMasked}
+        accountName={accountName}
+        onClose={() => setSelection(null)}
+      />
     </SafeAreaView>
   )
 }
