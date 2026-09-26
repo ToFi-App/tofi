@@ -50,7 +50,6 @@ export function CashFlowHeadline({ headline, isMasked }: { headline: Headline; i
         </Text>
       </View>
 
-      <Text className="font-sans text-xs text-textMuted">Where the net went</Text>
       <View className="flex-row flex-wrap justify-between" style={{ rowGap: 8 }}>
         <Chip label="Saved" amount={headline.saved} color={flowColors.saved} isMasked={isMasked} />
         <Chip label="Invested" amount={headline.invested} color={flowColors.invested} isMasked={isMasked} />
