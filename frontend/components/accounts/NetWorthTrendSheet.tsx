@@ -1,14 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Dimensions, Modal, Pressable, ScrollView, Text, View } from 'react-native'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Pressable, ScrollView, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
+import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { colors, shadow } from '@/constants/theme'
+import { colors } from '@/constants/theme'
 import { formatAmount } from '@/lib/format/money'
-import { formatAsOfDate } from '@/lib/format/date'
 import { monthLabel } from '@/lib/transactions/filterByMonth'
-import { computeNetWorthHistory, netWorthYearRange } from '@/lib/accounts/netWorthHistory'
+import { computeAccountHistory, computeNetWorthHistory, netWorthYearRange } from '@/lib/accounts/netWorthHistory'
+import type { AccountMonthPoint, MonthPoint } from '@/lib/accounts/netWorthHistory'
+import { buildNetWorthSeries, periodStart, type NetWorthSeries } from '@/lib/accounts/netWorthSeries'
 import { NetWorthTrendChart } from './NetWorthTrendChart'
 import { NetWorthCompositionMap } from './NetWorthCompositionMap'
+import { NetWorthAccountRows } from './NetWorthAccountRows'
 import { BottomSheet, useSheetScroll } from '@/components/ui/BottomSheet'
 import type { FeedItem } from '@/lib/transactions/resolveFeed'
 import type { Account } from '@/types/domain'
@@ -22,6 +25,27 @@ interface NetWorthTrendSheetProps {
   isLoading: boolean
 }
 
+/**
+ * The sheet's backdrop: the same teal fade the trend chart used to carry under its line, now
+ * behind the whole sheet — strongest behind the chart at the top, gone by the bottom.
+ */
+function TrendBackdrop() {
+  return (
+    <Svg width="100%" height="100%">
+      <Defs>
+        <LinearGradient id="netWorthSheetFade" x1="0" y1="0" x2="0" y2="1">
+          <Stop offset="0" stopColor={colors.primary} stopOpacity={0.14} />
+          <Stop offset="1" stopColor={colors.primary} stopOpacity={0.02} />
+        </LinearGradient>
+      </Defs>
+      <Rect x="0" y="0" width="100%" height="100%" fill="url(#netWorthSheetFade)" />
+    </Svg>
+  )
+}
+
+// Built once: a fresh element per render would be a new prop to the sheet every time.
+const BACKDROP = <TrendBackdrop />
+
 // Deliberately exempt from the app-wide `useAmountsMasked` toggle: this sheet exists to show
 // the net worth trajectory, and a chart of masked amounts would have nothing left to say.
 // Every other balance surface (HeroCard, AccountRow, AccountDetailSheet) does honour it.
@@ -31,8 +55,118 @@ function changeColor(change: number): string {
   return colors.textMuted
 }
 
-function formatChange(change: number): string {
-  return `${change > 0 ? '+' : ''}${formatAmount(change)}`
+interface TrendPanelProps {
+  points: MonthPoint[]
+  accountPoints: AccountMonthPoint[]
+  series: NetWorthSeries[]
+  start: Map<string, number>
+  baseline: number
+  netWorth: number
+  /** Shown in place of the chart when there are no months to draw. */
+  emptyMessage: string
+  /** Rendered between the chart and the account rows. */
+  scopePicker: ReactNode
+  accounts: Account[]
+  feed: FeedItem[]
+}
+
+/**
+ * Everything that reads the selected month — headline, chart, composition map, account rows — and
+ * the selection state itself.
+ *
+ * The state lives HERE rather than in the sheet on purpose. BottomSheet republishes its whole
+ * tree to the sheet host after every render of its owner, so state held by the sheet made each
+ * tap re-render the composition map, the month list and every logo, in two passes. Held down
+ * here, a selection re-renders this subtree and nothing else.
+ */
+function TrendPanel({
+  points,
+  accountPoints,
+  series,
+  start,
+  baseline,
+  netWorth,
+  emptyMessage,
+  scopePicker,
+  accounts,
+  feed,
+}: TrendPanelProps) {
+  // Everything that reads a month follows the selection, and falls back to the latest month when
+  // nothing is selected.
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
+  const handleSelect = useCallback((index: number | null) => setSelectedIndex(index), [])
+  const readIndex = selectedIndex != null && selectedIndex < points.length ? selectedIndex : points.length - 1
+  const reading = points[readIndex]
+  const headlineChange = reading ? Math.round((reading.netWorth - baseline) * 100) / 100 : 0
+  // Only a selected month is named; otherwise the pills already say which period this is.
+  const headlineLabel = selectedIndex != null && reading ? monthLabel(reading) : null
+  const readMonth = accountPoints[readIndex]
+  // One highlighted account, set from a map tile or an account row and shown in all three: its
+  // tile outlined, its row tinted, its segment solid in every bar.
+  const [highlightedKey, setHighlightedKey] = useState<string | null>(null)
+
+  return (
+    <>
+      <View className="px-5 pb-2 pt-1">
+        <Text className="font-display text-2xl text-textPrimary">{formatAmount(reading?.netWorth ?? netWorth)}</Text>
+        {reading ? (
+          <View className="mt-1 flex-row items-center gap-1.5">
+            {headlineChange !== 0 ? (
+              <Ionicons name={headlineChange > 0 ? 'caret-up' : 'caret-down'} size={14} color={changeColor(headlineChange)} />
+            ) : null}
+            <Text className="font-sansSemi text-base" style={{ color: changeColor(headlineChange) }}>
+              {formatAmount(Math.abs(headlineChange))}
+            </Text>
+            {headlineLabel ? <Text className="font-sans text-base text-textSecondary">{headlineLabel}</Text> : null}
+          </View>
+        ) : null}
+      </View>
+
+      {points.length === 0 ? (
+        <View className="items-center py-24">
+          <Text className="font-sans text-sm text-textMuted">{emptyMessage}</Text>
+        </View>
+      ) : (
+        <NetWorthTrendChart
+          points={points}
+          accountPoints={accountPoints}
+          series={series}
+          baseline={baseline}
+          selectedIndex={selectedIndex}
+          onSelect={handleSelect}
+          highlightedKey={highlightedKey}
+        />
+      )}
+
+      {scopePicker}
+
+      {/* Below the chart rather than between it and the headline, which is the chart's reading.
+          Sits directly above the account rows it summarizes, and follows the chart: the period
+          the pills pick and the month selected in it. */}
+      {readMonth ? (
+        <View className="px-5 pt-6">
+          <NetWorthCompositionMap
+            accounts={accounts}
+            feed={feed}
+            balances={readMonth.balances}
+            selectedKey={highlightedKey}
+            onSelectKey={setHighlightedKey}
+          />
+        </View>
+      ) : null}
+
+      {points.length > 0 ? (
+        <NetWorthAccountRows
+          months={accountPoints}
+          series={series}
+          start={start}
+          index={readIndex}
+          highlightedKey={highlightedKey}
+          onHighlight={setHighlightedKey}
+        />
+      ) : null}
+    </>
+  )
 }
 
 export function NetWorthTrendSheet({ visible, onClose, netWorth, accounts, feed, isLoading }: NetWorthTrendSheetProps) {
@@ -51,9 +185,10 @@ export function NetWorthTrendSheet({ visible, onClose, netWorth, accounts, feed,
   }, [visible, currentYear])
 
   const range = useMemo(() => netWorthYearRange(feed, linkedAccountIds), [feed, linkedAccountIds])
+  // Oldest first, ALL last — read left to right like a timeline, the way 1D…ALL does.
   const scopeOptions = useMemo<Array<number | 'all'>>(() => {
     const years: Array<number | 'all'> = []
-    for (let year = range.last; year >= range.first; year--) years.push(year)
+    for (let year = range.first; year <= range.last; year++) years.push(year)
     years.push('all')
     return years
   }, [range])
@@ -63,146 +198,77 @@ export function NetWorthTrendSheet({ visible, onClose, netWorth, accounts, feed,
     [netWorth, feed, linkedAccountIds, scope],
   )
 
-  // Anchored popover, matching the month/year picker on the Home and Details headers.
-  const scopeLabelRef = useRef<View>(null)
-  const [pickerAnchor, setPickerAnchor] = useState<{ left: number; top: number } | null>(null)
-  const POPOVER_W = 150
-
-  function openScopePicker() {
-    scopeLabelRef.current?.measureInWindow((x, y, width, height) => {
-      const screenWidth = Dimensions.get('window').width
-      const centered = x + width / 2 - POPOVER_W / 2
-      const left = Math.min(Math.max(centered, 12), screenWidth - POPOVER_W - 12)
-      setPickerAnchor({ left, top: y + height + 8 })
-    })
-  }
-
-  // Descending, matching how the balance list reads elsewhere in the app: newest first.
-  const rows = useMemo(() => [...points].reverse(), [points])
-  const latest = rows[0]
+  // The same months as `points`, split by account — computeAccountHistory shares the walk, so
+  // the bars always add up to the line.
+  const { series, anchors } = useMemo(() => buildNetWorthSeries(accounts, feed), [accounts, feed])
+  const accountPoints = useMemo(
+    () => computeAccountHistory(anchors, feed, linkedAccountIds, scope === 'all' ? undefined : scope),
+    [anchors, feed, linkedAccountIds, scope],
+  )
+  const start = useMemo(() => periodStart(accountPoints), [accountPoints])
+  // Net worth as the period opened: the dotted line, and what the headline change is measured from.
+  const baseline = points.length > 0 ? points[0].netWorth - points[0].change : 0
 
   return (
-    <BottomSheet visible={visible} onClose={onClose} topOffset={insets.top + 20} contentScroll={sheetScroll}>
+    <BottomSheet
+      visible={visible}
+      onClose={onClose}
+      topOffset={insets.top + 20}
+      contentScroll={sheetScroll}
+      background={BACKDROP}
+      // The default pill is near-white and disappears into the tinted top edge.
+      grabberColor={colors.textMuted}
+    >
       <View className="flex-row items-center justify-between px-5 py-3">
         <Pressable onPress={onClose} hitSlop={8} accessibilityLabel="Close">
           <Ionicons name="close" size={22} color={colors.textSecondary} />
         </Pressable>
-        <Text className="flex-1 text-center font-display text-md text-textPrimary">Net Worth Trend</Text>
+        <Text className="flex-1 text-center font-display text-md text-textPrimary">Net Worth</Text>
         <View style={{ width: 22 }} />
       </View>
 
-      <View className="items-center pb-3">
-        <Pressable
-          ref={scopeLabelRef}
-          onPress={openScopePicker}
-          accessibilityLabel="Select year"
-          hitSlop={8}
-          className="flex-row items-center gap-1"
-        >
-          <Text className="font-sansSemi text-base text-textPrimary">{scope === 'all' ? 'All time' : scope}</Text>
-          <Ionicons name="chevron-down" size={13} color={colors.textSecondary} />
-        </Pressable>
-      </View>
-
-      <Modal transparent visible={pickerAnchor != null} animationType="fade" onRequestClose={() => setPickerAnchor(null)}>
-        <Pressable style={{ flex: 1 }} onPress={() => setPickerAnchor(null)} accessibilityLabel="Dismiss year picker">
-          {pickerAnchor ? (
-            <Pressable
-              onPress={() => {}}
-              style={[
-                {
-                  position: 'absolute',
-                  left: pickerAnchor.left,
-                  top: pickerAnchor.top,
-                  width: POPOVER_W,
-                  backgroundColor: colors.surface,
-                  borderRadius: 14,
-                  borderWidth: 1,
-                  borderColor: colors.border,
-                  paddingVertical: 4,
-                },
-                shadow.md,
-              ]}
-            >
+      <ScrollView
+        {...sheetScroll.scrollProps}
+        // No horizontal padding here: the chart and the account rows run edge to edge, and every
+        // other section carries its own 20px.
+        contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
+      >
+        {/* Keyed by scope, so changing the period starts it with nothing selected. */}
+        <TrendPanel
+          key={String(scope)}
+          points={points}
+          accountPoints={accountPoints}
+          series={series}
+          start={start}
+          baseline={baseline}
+          netWorth={netWorth}
+          accounts={accounts}
+          feed={feed}
+          emptyMessage={isLoading && points.length === 0 ? 'Loading history…' : scope === 'all' ? 'No history yet' : `No history for ${scope}`}
+          scopePicker={
+            <View className="flex-row justify-around px-5 pt-3">
               {scopeOptions.map((option) => {
                 const isSelected = option === scope
+                const label = option === 'all' ? 'ALL' : String(option)
                 return (
                   <Pressable
-                    key={String(option)}
-                    onPress={() => {
-                      setScope(option)
-                      setPickerAnchor(null)
-                    }}
+                    key={label}
+                    onPress={() => setScope(option)}
                     accessibilityLabel={option === 'all' ? 'All time' : `Year ${option}`}
-                    className="flex-row items-center justify-between px-4 py-2.5"
+                    accessibilityState={{ selected: isSelected }}
+                    hitSlop={6}
+                    className="rounded-full px-3.5 py-1.5"
+                    style={isSelected ? { backgroundColor: colors.primary } : undefined}
                   >
-                    <Text
-                      className="font-sansMed text-base"
-                      style={{ color: isSelected ? colors.primary : colors.textPrimary }}
-                    >
-                      {option === 'all' ? 'All time' : option}
+                    <Text className="font-sansSemi text-sm" style={{ color: isSelected ? colors.surface : colors.primary }}>
+                      {label}
                     </Text>
-                    {isSelected ? <Ionicons name="checkmark" size={16} color={colors.primary} /> : null}
                   </Pressable>
                 )
               })}
-            </Pressable>
-          ) : null}
-        </Pressable>
-      </Modal>
-
-      <ScrollView {...sheetScroll.scrollProps} contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: insets.bottom + 24 }}>
-        <View className="rounded-xl bg-surface p-3" style={shadow.card}>
-          <View className="flex-row items-center justify-between px-1 pb-1">
-            <Text className="font-sansSemi text-sm text-primary">Net Worth</Text>
-            {latest ? (
-              <Text className="font-sansSemi text-base" style={{ color: latest.netWorth < 0 ? colors.expense : colors.income }}>
-                {formatAmount(latest.netWorth)}
-              </Text>
-            ) : null}
-          </View>
-
-          {isLoading && points.length === 0 ? (
-            <View className="items-center py-20">
-              <Text className="font-sans text-sm text-textMuted">Loading history…</Text>
             </View>
-          ) : points.length === 0 ? (
-            <View className="items-center py-20">
-              <Text className="font-sans text-sm text-textMuted">{scope === 'all' ? 'No history yet' : `No history for ${scope}`}</Text>
-            </View>
-          ) : (
-            <NetWorthTrendChart points={points} />
-          )}
-        </View>
-
-        {/* Below the chart, because it describes a different moment: the chart answers the
-            year the scope selector is set to, while this always describes RIGHT NOW. The
-            "As of" stamp says so outright, since the selector above visibly does not drive it. */}
-        <View className="mt-5 rounded-xl bg-surface p-3" style={shadow.card}>
-          <Text className="px-1 pb-2 font-sansSemi text-sm text-primary">{`As of ${formatAsOfDate(new Date())}`}</Text>
-          <NetWorthCompositionMap accounts={accounts} feed={feed} />
-        </View>
-
-        {rows.length > 0 ? (
-        <View className="mt-5 overflow-hidden rounded-xl bg-surface" style={shadow.card}>
-            {rows.map((point, index) => (
-              <View
-                key={`${point.year}-${point.month}`}
-                className="flex-row items-center justify-between px-4 py-4"
-                style={index > 0 ? { borderTopWidth: 1, borderColor: colors.border } : undefined}
-              >
-                <Text className="font-sansMed text-base text-textPrimary">{monthLabel(point)}</Text>
-                <View className="items-end">
-                  <Text className="font-sansSemi text-base text-textPrimary">{formatAmount(point.netWorth)}</Text>
-                  <Text className="font-sans text-xs" style={{ color: changeColor(point.change) }}>
-                    {formatChange(point.change)}
-                  </Text>
-                </View>
-              </View>
-            ))}
-          </View>
-        ) : null}
-
+          }
+        />
       </ScrollView>
     </BottomSheet>
   )

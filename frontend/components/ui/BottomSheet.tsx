@@ -60,9 +60,24 @@ interface BottomSheetProps {
   topOffset?: number
   /** Accepted and ignored; see useSheetScroll. Removed once the call sites stop passing it. */
   contentScroll?: SheetScroll
+  /**
+   * A layer painted behind the content, filling the sheet and clipped to its rounded top — for a
+   * backdrop a flat colour can't express, like a gradient. The sheet stays white underneath.
+   */
+  background?: React.ReactNode
+  /** The grabber pill's colour. Worth darkening when `background` tints the sheet's top edge. */
+  grabberColor?: string
 }
 
-export function BottomSheet({ visible, onClose, children, topOffset, contentScroll }: BottomSheetProps) {
+export function BottomSheet({
+  visible,
+  onClose,
+  children,
+  topOffset,
+  contentScroll,
+  background,
+  grabberColor = colors.border,
+}: BottomSheetProps) {
   const hasHost = useHasSheetHost()
   const insets = useSafeAreaInsets()
   const translateY = useSharedValue(SCREEN_HEIGHT)
@@ -247,6 +262,23 @@ export function BottomSheet({ visible, onClose, children, topOffset, contentScro
           sheetStyle,
         ]}
       >
+        {background ? (
+          <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              overflow: 'hidden',
+              borderTopLeftRadius: borderRadius.xl,
+              borderTopRightRadius: borderRadius.xl,
+            }}
+          >
+            {background}
+          </View>
+        ) : null}
         {/* The sheet is pinned to the bottom of the screen, so an open keyboard sits on top of
             its lowest fields — the note input on the transaction form, for one. Shrinking the
             sheet by the keyboard's overlap keeps every field inside a scrollable, visible area.
@@ -257,7 +289,7 @@ export function BottomSheet({ visible, onClose, children, topOffset, contentScro
                 as the grab area, and a target the width of the sheet is what makes the gesture
                 findable. */}
             <View className="items-center pt-3 pb-3">
-              <View className="h-1 w-10 rounded-full bg-border" />
+              <View className="h-1 w-10 rounded-full" style={{ backgroundColor: grabberColor }} />
             </View>
           </GestureDetector>
           {/* No GestureDetector over the content: nothing arbitrates its touches, so taps, scrolls
