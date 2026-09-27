@@ -1,18 +1,18 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Pressable, ScrollView, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
-import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { colors } from '@/constants/theme'
 import { formatAmount } from '@/lib/format/money'
-import { monthLabel } from '@/lib/transactions/filterByMonth'
-import { computeAccountHistory, computeNetWorthHistory, netWorthYearRange } from '@/lib/accounts/netWorthHistory'
+import { computeAccountHistory, netWorthFromAccounts, netWorthYearRange } from '@/lib/accounts/netWorthHistory'
+import { CASH_ON_HAND_KEY } from '@/lib/accounts/composition'
 import type { AccountMonthPoint, MonthPoint } from '@/lib/accounts/netWorthHistory'
 import { buildNetWorthSeries, periodStart, type NetWorthSeries } from '@/lib/accounts/netWorthSeries'
 import { NetWorthTrendChart } from './NetWorthTrendChart'
 import { NetWorthCompositionMap } from './NetWorthCompositionMap'
 import { NetWorthAccountRows } from './NetWorthAccountRows'
 import { BottomSheet, useSheetScroll } from '@/components/ui/BottomSheet'
+import { TEAL_SHEET_BACKDROP } from '@/components/ui/TealSheetBackdrop'
 import type { FeedItem } from '@/lib/transactions/resolveFeed'
 import type { Account } from '@/types/domain'
 
@@ -24,27 +24,6 @@ interface NetWorthTrendSheetProps {
   feed: FeedItem[]
   isLoading: boolean
 }
-
-/**
- * The sheet's backdrop: the same teal fade the trend chart used to carry under its line, now
- * behind the whole sheet — strongest behind the chart at the top, gone by the bottom.
- */
-function TrendBackdrop() {
-  return (
-    <Svg width="100%" height="100%">
-      <Defs>
-        <LinearGradient id="netWorthSheetFade" x1="0" y1="0" x2="0" y2="1">
-          <Stop offset="0" stopColor={colors.primary} stopOpacity={0.14} />
-          <Stop offset="1" stopColor={colors.primary} stopOpacity={0.02} />
-        </LinearGradient>
-      </Defs>
-      <Rect x="0" y="0" width="100%" height="100%" fill="url(#netWorthSheetFade)" />
-    </Svg>
-  )
-}
-
-// Built once: a fresh element per render would be a new prop to the sheet every time.
-const BACKDROP = <TrendBackdrop />
 
 // Deliberately exempt from the app-wide `useAmountsMasked` toggle: this sheet exists to show
 // the net worth trajectory, and a chart of masked amounts would have nothing left to say.
@@ -98,8 +77,6 @@ function TrendPanel({
   const readIndex = selectedIndex != null && selectedIndex < points.length ? selectedIndex : points.length - 1
   const reading = points[readIndex]
   const headlineChange = reading ? Math.round((reading.netWorth - baseline) * 100) / 100 : 0
-  // Only a selected month is named; otherwise the pills already say which period this is.
-  const headlineLabel = selectedIndex != null && reading ? monthLabel(reading) : null
   const readMonth = accountPoints[readIndex]
   // One highlighted account, set from a map tile or an account row and shown in all three: its
   // tile outlined, its row tinted, its segment solid in every bar.
@@ -117,7 +94,6 @@ function TrendPanel({
             <Text className="font-sansSemi text-base" style={{ color: changeColor(headlineChange) }}>
               {formatAmount(Math.abs(headlineChange))}
             </Text>
-            {headlineLabel ? <Text className="font-sans text-base text-textSecondary">{headlineLabel}</Text> : null}
           </View>
         ) : null}
       </View>
@@ -193,18 +169,28 @@ export function NetWorthTrendSheet({ visible, onClose, netWorth, accounts, feed,
     return years
   }, [range])
 
-  const points = useMemo(
-    () => computeNetWorthHistory(netWorth, feed, linkedAccountIds, scope === 'all' ? undefined : scope),
-    [netWorth, feed, linkedAccountIds, scope],
-  )
-
-  // The same months as `points`, split by account — computeAccountHistory shares the walk, so
-  // the bars always add up to the line.
   const { series, anchors } = useMemo(() => buildNetWorthSeries(accounts, feed), [accounts, feed])
+  // Cash accounts can't sit below zero and debt can't sit in credit, so a leftover of the wrong
+  // sign before an account's first transaction means it didn't exist yet (see expectedSign).
+  // Investments and the manual cash pot are left out on purpose.
+  const expectedSign = useMemo(() => {
+    const signs = new Map<string, 1 | -1>()
+    for (const s of series) {
+      if (s.key === CASH_ON_HAND_KEY || s.group === 'investment') continue
+      signs.set(s.key, s.group === 'liability' ? -1 : 1)
+    }
+    return signs
+  }, [series])
   const accountPoints = useMemo(
-    () => computeAccountHistory(anchors, feed, linkedAccountIds, scope === 'all' ? undefined : scope),
-    [anchors, feed, linkedAccountIds, scope],
+    () =>
+      computeAccountHistory(anchors, feed, linkedAccountIds, scope === 'all' ? undefined : scope, new Date(), {
+        expectedSign,
+      }),
+    [anchors, feed, linkedAccountIds, scope, expectedSign],
   )
+  // The line summed from the per-account history, so the bars and the line are one calculation —
+  // an account appearing from zero included.
+  const points = useMemo(() => netWorthFromAccounts(accountPoints), [accountPoints])
   const start = useMemo(() => periodStart(accountPoints), [accountPoints])
   // Net worth as the period opened: the dotted line, and what the headline change is measured from.
   const baseline = points.length > 0 ? points[0].netWorth - points[0].change : 0
@@ -215,7 +201,7 @@ export function NetWorthTrendSheet({ visible, onClose, netWorth, accounts, feed,
       onClose={onClose}
       topOffset={insets.top + 20}
       contentScroll={sheetScroll}
-      background={BACKDROP}
+      background={TEAL_SHEET_BACKDROP}
       // The default pill is near-white and disappears into the tinted top edge.
       grabberColor={colors.textMuted}
     >

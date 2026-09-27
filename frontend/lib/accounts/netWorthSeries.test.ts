@@ -77,10 +77,10 @@ describe('stackMonth', () => {
 })
 
 describe('periodStart', () => {
-  it('undoes the first month, landing on each balance as the period opened', () => {
+  it("is the first month's opening balances", () => {
     const months = [
-      { year: 2026, month: 1, balances: new Map([['a', 900], ['card', -300]]), flow: new Map([['a', 100], ['card', -50]]) },
-      { year: 2026, month: 2, balances: new Map([['a', 800], ['card', -300]]), flow: new Map([['a', 100]]) },
+      { balances: new Map([['a', 900]]), startBalances: new Map([['a', 1000], ['card', -350]]) },
+      { balances: new Map([['a', 800]]), startBalances: new Map([['a', 900]]) },
     ]
     expect(periodStart(months)).toEqual(new Map([['a', 1000], ['card', -350]]))
   })

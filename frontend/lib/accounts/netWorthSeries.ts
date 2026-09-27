@@ -114,15 +114,8 @@ export function stackMonth(series: NetWorthSeries[], balances: Map<string, numbe
 
 /**
  * Each balance as the period OPENED — the start of its first month, not the end. That is the
- * baseline a change "in 2026" is measured from, and where the dotted reference lines sit: the
- * first month's own movement belongs to the period, so it has to be undone rather than skipped.
+ * baseline a change "in 2026" is measured from, and where the dotted reference lines sit.
  */
-export function periodStart(months: Pick<AccountMonthPoint, 'balances' | 'flow'>[]): Map<string, number> {
-  const start = new Map<string, number>()
-  if (months.length === 0) return start
-  const [first] = months
-  for (const [key, value] of first.balances) {
-    start.set(key, Math.round((value + (first.flow.get(key) ?? 0)) * 100) / 100)
-  }
-  return start
+export function periodStart(months: Pick<AccountMonthPoint, 'startBalances'>[]): Map<string, number> {
+  return months.length > 0 ? new Map(months[0].startBalances) : new Map()
 }

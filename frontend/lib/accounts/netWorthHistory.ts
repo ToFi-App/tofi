@@ -165,9 +165,23 @@ function walkBalances(
   today: Date,
   /** Which anchor a balanceKey's flow lands on. Identity by default; net worth folds every key into one. */
   anchorFor: (key: string) => string = (key) => key,
-): Array<{ year: number; month: number; balances: Map<string, number>; flow: Map<string, number> }> {
+  /** Per-account sign a real balance must have; see computeAccountHistory's `expectedSign`. */
+  expectedSign?: Map<string, 1 | -1>,
+): AccountMonthPoint[] {
   const nowIndex = toIndex(today.getFullYear(), today.getMonth() + 1)
   const flow = flowByMonth(feed, linkedAccountIds)
+
+  // Each signed account's first month of activity — where "before it existed" begins.
+  const openIndex = new Map<string, number>()
+  if (expectedSign) {
+    for (const [index, byKey] of flow) {
+      for (const key of byKey.keys()) {
+        if (!expectedSign.has(key)) continue
+        const seen = openIndex.get(key)
+        if (seen === undefined || index < seen) openIndex.set(key, index)
+      }
+    }
+  }
 
   let earliestIndex = nowIndex
   for (const index of flow.keys()) {
@@ -178,17 +192,30 @@ function walkBalances(
   const requestedLast = year != null ? toIndex(year, 12) : nowIndex
   if (requestedFirst > nowIndex || requestedLast < earliestIndex) return []
 
+  const snapshot = () => {
+    const balances = new Map<string, number>()
+    for (const [key, value] of running) balances.set(key, round2(value))
+    return balances
+  }
+
   // Walk back from today one month at a time, keeping only what lands in `year`.
-  const months: ReturnType<typeof walkBalances> = []
+  const months: AccountMonthPoint[] = []
   const running = new Map(anchors)
   for (let index = nowIndex; index >= earliestIndex; index--) {
     const monthFlow = flow.get(index) ?? new Map<string, number>()
-    if (index >= requestedFirst && index <= requestedLast) {
-      const balances = new Map<string, number>()
-      for (const [key, value] of running) balances.set(key, round2(value))
-      months.push({ ...fromIndex(index), balances, flow: monthFlow })
-    }
+    const point = index >= requestedFirst && index <= requestedLast ? { ...fromIndex(index), balances: snapshot(), flow: monthFlow } : null
     for (const [key, amount] of monthFlow) running.set(anchorFor(key), (running.get(anchorFor(key)) ?? 0) + amount)
+
+    // Having just undone an account's first month, `running` holds its balance before any
+    // activity. If that balance has a sign the account cannot have, it did not exist yet: zero.
+    // Nothing earlier moves it, so it stays zero for the rest of the walk.
+    for (const [key, open] of openIndex) {
+      if (index !== open) continue
+      const value = running.get(key) ?? 0
+      if (value * expectedSign!.get(key)! < 0) running.set(key, 0)
+    }
+
+    if (point) months.push({ ...point, startBalances: snapshot() })
   }
 
   return months.reverse()
@@ -224,8 +251,13 @@ export interface AccountMonthPoint {
    * counts toward net worth, so liabilities are negative. Sums to that month's net worth.
    */
   balances: Map<string, number>
-  /** Sum of `amount` per balance during the month; adding it back to `balances` undoes the month. */
+  /** Sum of `amount` per balance during the month. */
   flow: Map<string, number>
+  /**
+   * Balances as the month OPENED (the previous month's close). Usually `balances` plus `flow`, but
+   * not for an account that appeared this month — it opens at zero (see `expectedSign`).
+   */
+  startBalances: Map<string, number>
 }
 
 /**
@@ -241,8 +273,37 @@ export function computeAccountHistory(
   linkedAccountIds: Set<string>,
   year?: number,
   today: Date = new Date(),
+  options: {
+    /**
+     * The sign a real balance must have, per account: 1 for cash accounts, -1 for debt (signed as
+     * net worth counts it). An account whose balance before its first transaction comes out with
+     * the other sign did not exist yet, and reads as zero before that month — a cash management
+     * account opened in June, walked back past June, otherwise shows a balance below zero.
+     *
+     * A balance with the right sign is kept: that is what an account older than the history
+     * looks like. Leave investment accounts (their leftover is real market growth) and the
+     * manual cash pot (negative is meaningful there) out.
+     */
+    expectedSign?: Map<string, 1 | -1>
+  } = {},
 ): AccountMonthPoint[] {
-  return walkBalances(anchors, feed, linkedAccountIds, year, today)
+  return walkBalances(anchors, feed, linkedAccountIds, year, today, undefined, options.expectedSign)
+}
+
+/**
+ * The net worth line as the sum of an account history, so the line and the bars are one
+ * calculation — including an account appearing from zero, which a single-total walk cannot see.
+ */
+export function netWorthFromAccounts(months: AccountMonthPoint[]): MonthPoint[] {
+  const sum = (balances: Map<string, number>) => {
+    let total = 0
+    for (const value of balances.values()) total += value
+    return round2(total)
+  }
+  return months.map((m) => {
+    const netWorth = sum(m.balances)
+    return { year: m.year, month: m.month, netWorth, change: round2(netWorth - sum(m.startBalances)) }
+  })
 }
 
 /** Years the history can cover: from the oldest synced transaction through the current year. */

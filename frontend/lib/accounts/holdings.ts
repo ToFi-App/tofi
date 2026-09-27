@@ -72,6 +72,31 @@ export function holdingGain(holding: Holding): number | null {
   return holding.institutionValue - holding.costBasis
 }
 
+/**
+ * The whole account's unrealized gain, in dollars and as a share of its total cost basis. Basis
+ * comes from the institution and has no window, so unlike totalReturn this never overstates — it
+ * just leaves out what was already realized.
+ *
+ * A cash position with no reported basis counts as neither gain nor basis — cash cannot have
+ * gained anything, and institutions often leave its basis out. Any other position missing a basis
+ * makes the result null: a total that silently skips a security is wrong, not merely smaller.
+ */
+export function accountGain(holdings: Holding[]): { gain: number; pct: number | null } | null {
+  if (holdings.length === 0) return null
+  let gain = 0
+  let basis = 0
+  for (const holding of holdings) {
+    const g = holdingGain(holding)
+    if (g != null) {
+      gain += g
+      basis += holding.costBasis ?? 0
+    } else if (holding.type !== 'cash') {
+      return null
+    }
+  }
+  return { gain: Math.round(gain * 100) / 100, pct: basis > 0 ? gain / basis : null }
+}
+
 /** (value - total basis) / basis; null when the institution reports no usable basis. */
 export function holdingGainPct(holding: Holding): number | null {
   if (holding.costBasis == null || holding.costBasis <= 0 || holding.institutionValue == null) return null

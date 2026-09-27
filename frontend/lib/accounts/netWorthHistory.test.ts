@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { computeAccountHistory, computeNetWorthHistory, netWorthYearRange } from './netWorthHistory'
+import { computeAccountHistory, computeNetWorthHistory, netWorthFromAccounts, netWorthYearRange } from './netWorthHistory'
 import { CASH_ON_HAND_KEY } from './composition'
 import type { FeedItem } from '@/lib/transactions/resolveFeed'
 
@@ -349,3 +349,73 @@ describe('computeAccountHistory', () => {
   })
 })
 
+
+describe('computeAccountHistory: accounts that did not exist yet', () => {
+  const LINKED_NEW = new Set(['checking', 'cma', 'card'])
+  // The cash account's first activity is in June. Undoing everything from June on leaves -150:
+  // a balance no cash account can have, so before June it did not exist.
+  const feed = [
+    txn({ id: 'jan', date: '2026-01-05', amount: 20, accountId: 'checking' }),
+    txn({ id: 'open', date: '2026-06-03', amount: -500, accountId: 'cma' }),
+    txn({ id: 'jul', date: '2026-07-10', amount: -150, accountId: 'cma' }),
+    txn({ id: 'card-first', date: '2026-04-02', amount: 80, accountId: 'card' }),
+  ]
+  const expectedSign = new Map<string, 1 | -1>([
+    ['cma', 1],
+    ['card', -1],
+  ])
+  const at = (history: ReturnType<typeof computeAccountHistory>, month: number, key: string) =>
+    history.find((p) => p.month === month)!.balances.get(key)
+
+  it('shows an impossible pre-history balance as zero — the account did not exist', () => {
+    // cma today 500: undo July (+150 in) → 350 at end of June, undo June (+500 in) → -150.
+    const history = computeAccountHistory(
+      new Map([['checking', 1000], ['cma', 500], ['card', 0]]),
+      feed,
+      LINKED_NEW,
+      2026,
+      TODAY,
+      { expectedSign },
+    )
+    expect(at(history, 5, 'cma')).toBe(0)
+    expect(at(history, 1, 'cma')).toBe(0)
+    expect(at(history, 6, 'cma')).toBe(350)
+    expect(history.find((p) => p.month === 6)!.startBalances.get('cma')).toBe(0)
+  })
+
+  it('keeps a possible pre-history balance — an account older than the history looks like this', () => {
+    const history = computeAccountHistory(new Map([['checking', 1000], ['cma', 900], ['card', 0]]), feed, LINKED_NEW, 2026, TODAY, {
+      expectedSign,
+    })
+    expect(at(history, 5, 'cma')).toBe(250)
+  })
+
+  it('applies the reverse rule to debt: a card in credit before its first activity did not exist', () => {
+    // Owes nothing today; undoing its first $80 charge would leave the card $80 in credit.
+    const history = computeAccountHistory(new Map([['checking', 1000], ['cma', 500], ['card', 0]]), feed, LINKED_NEW, 2026, TODAY, {
+      expectedSign,
+    })
+    expect(at(history, 3, 'card')).toBe(0)
+    const owed = computeAccountHistory(new Map([['checking', 1000], ['cma', 500], ['card', -200]]), feed, LINKED_NEW, 2026, TODAY, {
+      expectedSign,
+    })
+    expect(at(owed, 3, 'card')).toBe(-120)
+  })
+
+  it('leaves every account alone without expectedSign', () => {
+    const history = computeAccountHistory(new Map([['checking', 1000], ['cma', 500], ['card', 0]]), feed, LINKED_NEW, 2026, TODAY)
+    expect(at(history, 5, 'cma')).toBe(-150)
+  })
+
+  it('builds a net worth line that includes the jump when an account appears', () => {
+    const history = computeAccountHistory(new Map([['checking', 1000], ['cma', 500], ['card', 0]]), feed, LINKED_NEW, 2026, TODAY, {
+      expectedSign,
+    })
+    const line = netWorthFromAccounts(history)
+    line.forEach((point, i) => {
+      const sum = [...history[i].balances.values()].reduce((s, v) => s + v, 0)
+      expect(point.netWorth).toBe(Math.round(sum * 100) / 100)
+      if (i > 0) expect(point.change).toBe(Math.round((point.netWorth - line[i - 1].netWorth) * 100) / 100)
+    })
+  })
+})
