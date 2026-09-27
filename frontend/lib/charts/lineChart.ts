@@ -43,6 +43,34 @@ export function niceExtent(min: number, max: number, tickCount = 4): number[] {
   return result
 }
 
+/**
+ * A two-sided domain that doesn't give a small negative a whole step. `niceExtent` rounds both
+ * ends to the same step, so a few hundred dollars below zero under a $60K chart buys a full -20K
+ * band — a third of the plot left empty. Here only the positive side is stepped; the negative side
+ * reaches just past the actual minimum (15% padding) until it is at least one step deep, and only
+ * then is stepped and labelled too.
+ *
+ * `ticks` are the labelled values; `min`/`max` are the domain to scale against, which below zero
+ * may be an unlabelled value between ticks. All-negative data falls back to niceExtent.
+ */
+export function skewedExtent(min: number, max: number, tickCount = 4): { min: number; max: number; ticks: number[] } {
+  const lo = Math.min(0, Number.isFinite(min) ? min : 0)
+  const hi = Math.max(0, Number.isFinite(max) ? max : 0)
+  if (hi <= 0) {
+    const ticks = niceExtent(lo, 0, tickCount)
+    return { min: ticks[0], max: 0, ticks }
+  }
+  const positive = niceExtent(0, hi, tickCount)
+  const top = positive[positive.length - 1]
+  const step = positive.length > 1 ? positive[1] - positive[0] : top
+  if (lo >= 0) return { min: 0, max: top, ticks: positive }
+  if (-lo < step) return { min: lo * 1.15, max: top, ticks: positive }
+  const depth = Math.ceil(-lo / step - 1e-9)
+  const negative: number[] = []
+  for (let i = depth; i >= 1; i--) negative.push(-i * step)
+  return { min: -depth * step, max: top, ticks: [...negative, ...positive] }
+}
+
 /** Compact axis label for a signed money value: -1.2K, 0, 24K, 1.5M. */
 export function formatAxisAmount(v: number): string {
   const abs = Math.abs(v)

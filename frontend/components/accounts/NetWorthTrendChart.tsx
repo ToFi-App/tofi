@@ -2,7 +2,8 @@ import { useMemo, useRef } from 'react'
 import { PanResponder, View, useWindowDimensions } from 'react-native'
 import Svg, { Circle, G, Line, Path, Rect, Text as SvgText } from 'react-native-svg'
 import { colors, fontFamily, hexToRgba } from '@/constants/theme'
-import { niceExtent } from '@/lib/charts/lineChart'
+import { skewedExtent } from '@/lib/charts/lineChart'
+import { MONTH_NAMES } from '@/lib/format/date'
 import type { AccountMonthPoint, MonthPoint } from '@/lib/accounts/netWorthHistory'
 import { stackMonth, type NetWorthSeries } from '@/lib/accounts/netWorthSeries'
 import { seriesColor } from './netWorthPalette'
@@ -22,7 +23,10 @@ interface NetWorthTrendChartProps {
 }
 
 const CHART_H = 300
-const PAD_T = 16
+/** Room above the tallest bar for the selected month's label. */
+const PAD_T = 28
+/** Rough advance of the 11px label font, to keep a label clear of the screen edges. */
+const LABEL_CHAR_W = 6.5
 const X_H = 24
 
 // Bars take this share of their month's slot, capped so a short history doesn't draw slabs.
@@ -37,17 +41,14 @@ function monthIndex(p: { year: number; month: number }): number {
   return p.year * 12 + (p.month - 1)
 }
 
-/**
- * Full-bleed, axis-free trend chart: stacked per-account bars under the net worth line.
- *
- * No y-axis and no gridlines. The headline above the chart is the reading — it follows the
- * finger while scrubbing — so tick labels would be a second, less precise copy of the same
- * number competing for the width the bars need. The one horizontal reference kept is the dotted
- * line at the period's opening value, which answers "up or down?" at a glance.
- */
 /** Finger travel under this is a tap, not a drag. */
 const TAP_SLOP = 8
 
+/**
+ * Full-bleed, axis-free trend chart: stacked per-account bars under the net worth line. The
+ * headline above gives the exact reading for a selected month, and the dotted line marks the
+ * period's opening value.
+ */
 export function NetWorthTrendChart({
   points,
   accountPoints,
@@ -64,10 +65,9 @@ export function NetWorthTrendChart({
     const stacks = accountPoints.map((m) => stackMonth(series, m.balances))
     const values = [...points.map((p) => p.netWorth), baseline]
     for (const stack of stacks) for (const seg of stack) values.push(seg.to)
-    // niceExtent only for its headroom — nothing reads the ticks any more.
-    const scale = niceExtent(Math.min(...values, 0), Math.max(...values, 0), 3)
-    const yMin = scale[0]
-    const yMax = scale[scale.length - 1]
+    // Headroom above; below zero only as deep as the debt actually goes, so a small balance owed
+    // doesn't leave a whole empty band at the bottom (see skewedExtent). No axis reads the ticks.
+    const { min: yMin, max: yMax } = skewedExtent(Math.min(...values, 0), Math.max(...values, 0), 3)
     const toY = (v: number) => PAD_T + plotH - ((v - yMin) / (yMax - yMin)) * plotH
 
     // One slot per month with the point at its centre, so the first and last bars have room at
@@ -96,14 +96,14 @@ export function NetWorthTrendChart({
     const pts = points.map((p) => ({ x: toX(p), y: toY(p.netWorth) }))
     const line = pts.length < 2 ? '' : `M ${pts.map((p) => `${p.x} ${p.y}`).join(' L ')}`
 
-    // Within a year, a few "MM" marks; across years, each January labelled with its year
-    // (thinned when many years would crowd the axis).
+    // Within a year, abbreviated months ("Jan", "Mar"…); across years, each January labelled with
+    // its year (thinned when many years would crowd the axis).
     let labels: { x: number; text: string }[]
     if (lastIdx - firstIdx < 12) {
       const stride = Math.max(1, Math.ceil(points.length / 6))
       labels = points
         .filter((_, i) => i % stride === 0)
-        .map((p) => ({ x: toX(p), text: String(p.month).padStart(2, '0') }))
+        .map((p) => ({ x: toX(p), text: MONTH_NAMES[p.month - 1] }))
     } else {
       const januaries = points.filter((p) => p.month === 1)
       const yearStride = Math.max(1, Math.ceil(januaries.length / 5))
@@ -177,6 +177,9 @@ export function NetWorthTrendChart({
   if (points.length === 0) return null
 
   const selected = selectedIndex != null ? pixelPts[selectedIndex] : undefined
+  const selectedPoint = selectedIndex != null ? points[selectedIndex] : undefined
+  const selectedLabel = selectedPoint ? `${MONTH_NAMES[selectedPoint.month - 1]} ${selectedPoint.year}` : ''
+  const selectedLabelHalfW = (selectedLabel.length * LABEL_CHAR_W) / 2
 
   return (
     <View {...panResponder.panHandlers}>
@@ -248,6 +251,17 @@ export function NetWorthTrendChart({
         {selected ? (
           <G>
             <Line x1={selected.x} y1={PAD_T} x2={selected.x} y2={PAD_T + plotH} stroke={hexToRgba(colors.primary, 0.45)} strokeWidth={1} />
+            {/* The month being read, above its bar — clamped so an edge month isn't clipped. */}
+            <SvgText
+              x={Math.min(Math.max(selected.x, selectedLabelHalfW + 4), chartW - selectedLabelHalfW - 4)}
+              y={PAD_T - 10}
+              fontSize={11}
+              fontFamily={fontFamily.sansSemi}
+              fill={colors.textPrimary}
+              textAnchor="middle"
+            >
+              {selectedLabel}
+            </SvgText>
             <Circle cx={selected.x} cy={selected.y} r={5} fill={colors.surface} stroke={colors.primary} strokeWidth={2.5} />
           </G>
         ) : null}

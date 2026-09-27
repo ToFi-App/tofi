@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatAxisAmount, formatTick, niceExtent, niceScale, smoothLine } from './lineChart'
+import { formatAxisAmount, formatTick, niceExtent, niceScale, skewedExtent, smoothLine } from './lineChart'
 
 describe('niceScale', () => {
   it('produces a top tick that covers the max', () => {
@@ -128,5 +128,32 @@ describe('smoothLine', () => {
     expect(smoothLine([], 0, 100)).toBe('')
     expect(smoothLine([{ x: 0, y: 1 }], 0, 100)).toBe('')
     expect(smoothLine([{ x: 0, y: 1 }, { x: 5, y: 9 }], 0, 100)).toBe('M 0 1 L 5 9')
+  })
+})
+
+describe('skewedExtent', () => {
+  it('reaches just past a small negative instead of a whole negative step', () => {
+    // $400 below zero against $58K above: a full -20K step would be a third of the chart empty.
+    const { min, max, ticks } = skewedExtent(-400, 58_000, 3)
+    expect(max).toBe(60_000)
+    expect(min).toBeCloseTo(-460)
+    expect(ticks).toEqual([0, 20_000, 40_000, 60_000])
+  })
+
+  it('labels the negative side in whole steps once it is at least a step deep', () => {
+    const { min, ticks } = skewedExtent(-25_000, 58_000, 3)
+    expect(min).toBe(-40_000)
+    expect(ticks).toEqual([-40_000, -20_000, 0, 20_000, 40_000, 60_000])
+  })
+
+  it('has no negative side at all when nothing is below zero', () => {
+    expect(skewedExtent(0, 58_000, 3)).toEqual({ min: 0, max: 60_000, ticks: [0, 20_000, 40_000, 60_000] })
+  })
+
+  it('falls back to the two-sided scale when everything is at or below zero', () => {
+    const { min, max, ticks } = skewedExtent(-5_000, 0, 3)
+    expect(max).toBe(0)
+    expect(min).toBeLessThanOrEqual(-5_000)
+    expect(ticks[ticks.length - 1]).toBe(0)
   })
 })

@@ -22,6 +22,7 @@ import { ErrorBanner } from '@/components/ui/ErrorBanner'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { formatMaskableAmount } from '@/lib/format/money'
 import { computeNetWorthTotals, isInvestmentAccount, isLiabilityAccount } from '@/lib/accounts/netWorth'
+import { GROUP_COLORS } from '@/components/accounts/netWorthPalette'
 import type { Account } from '@/types/domain'
 
 export default function AccountsTab() {
@@ -205,9 +206,11 @@ export default function AccountsTab() {
         {/* Always rendered: the Cash row is a built-in account, present even with nothing linked. */}
         <View className="rounded-xl bg-surface px-4">
             <Pressable onPress={() => setCashOpen((v) => !v)} className="flex-row items-center justify-between gap-3 py-4">
-              <Text className="font-sansSemi text-sm text-primary">Cash Accounts</Text>
+              {/* Group colours from the Net Worth sheet, so a section reads as the same kind of money
+                  in both places: cash grey, investments blue. */}
+              <Text className="font-sansSemi text-sm" style={{ color: GROUP_COLORS.cash.text }}>Cash Accounts</Text>
               <View className="flex-row items-center gap-1">
-                <Text className="font-sansMed text-sm text-textSecondary" numberOfLines={1}>Balance {formatMaskableAmount(totalAssets - investmentsValue, isMasked)}</Text>
+                <Text className="font-sansMed text-sm" style={{ color: GROUP_COLORS.cash.text }} numberOfLines={1}>Balance {formatMaskableAmount(totalAssets - investmentsValue, isMasked)}</Text>
                 <Ionicons name={cashOpen ? 'chevron-up' : 'chevron-down'} size={14} color={colors.textMuted} />
               </View>
             </Pressable>
@@ -249,9 +252,9 @@ export default function AccountsTab() {
         {investmentAccounts.length > 0 ? (
           <View className="rounded-xl bg-surface px-4">
             <Pressable onPress={() => setInvestOpen((v) => !v)} className="flex-row items-center justify-between gap-3 py-4">
-              <Text className="font-sansSemi text-sm text-primary">Investments</Text>
+              <Text className="font-sansSemi text-sm" style={{ color: GROUP_COLORS.investment.text }}>Investments</Text>
               <View className="flex-row items-center gap-1">
-                <Text className="font-sansMed text-sm text-textSecondary" numberOfLines={1}>Value {formatMaskableAmount(investmentsValue, isMasked)}</Text>
+                <Text className="font-sansMed text-sm" style={{ color: GROUP_COLORS.investment.text }} numberOfLines={1}>Value {formatMaskableAmount(investmentsValue, isMasked)}</Text>
                 <Ionicons name={investOpen ? 'chevron-up' : 'chevron-down'} size={14} color={colors.textMuted} />
               </View>
             </Pressable>
