@@ -1,5 +1,9 @@
 import type { FeedItem } from '@/lib/transactions/resolveFeed'
+import { isInternalMovement, isTransfer } from '@/lib/transactions/totals'
+import { AUTO_MATCH_WINDOW_DAYS } from '@/lib/transfers/autoMatch'
+import { daysBetween } from '@/lib/transfers/registry'
 import { round2 } from './netWorth'
+import { CASH_ON_HAND_KEY } from './composition'
 
 /**
  * Net worth history is *back-cast* from today's balances rather than read from stored
@@ -26,6 +30,9 @@ import { round2 } from './netWorth'
  * which is the correct answer and an improvement on reading the checking leg alone. Trades never
  * reach the feed at all — they are filtered out in the backend repository — so the buy that would
  * otherwise unwind as a $10,000 drop that never happened cannot appear here.
+ *
+ * The walk only works when every row it unwinds has its other half in the feed too. Some don't,
+ * and countsTowardNetWorth drops those; see there.
  *
  * One limit remains, inherent to reconstructing from a ledger: market movement is invisible. No
  * feed row exists for a holding gaining or losing value, so an investment account's growth stays
@@ -54,24 +61,137 @@ function fromIndex(index: number): { year: number; month: number } {
   return { year: Math.floor(index / 12), month: (index % 12) + 1 }
 }
 
-/** Monthly net flow, keyed by absolute month index, over every transaction that moved money. */
-function flowByMonth(feed: FeedItem[], linkedAccountIds: Set<string>): Map<number, number> {
-  const flow = new Map<number, number>()
+/** Integer cents, so float amounts are safe as map keys. */
+function centsKey(item: FeedItem): number {
+  return Math.round(Math.abs(item.amount) * 100)
+}
+
+/**
+ * Rows whose account's balance is part of today's anchor. Manual transactions have no accountId by
+ * design and always qualify. Account-backed ones (plaid and investment alike) are dropped when
+ * their account is no longer linked: that balance left the net worth total when the institution
+ * was removed, so its history would be unwinding a phantom. Pending rows are dropped because the
+ * anchor is Plaid's settled `current` balance, which doesn't include them yet — unwinding one
+ * would move a month for money that hasn't landed.
+ */
+function isInAnchor(item: FeedItem, linkedAccountIds: Set<string>): boolean {
+  if (item.pending) return false
+  return item.source === 'manual' || (item.accountId != null && linkedAccountIds.has(item.accountId))
+}
+
+/**
+ * Whether a row moved net worth — deliberately NOT countsTowardTotals. The two answer different
+ * questions and disagree on transfers in opposite directions:
+ *  - a paired transfer is excluded from spend totals, but here BOTH legs must stay, because their
+ *    cancelling out is exactly what keeps the line flat;
+ *  - a brokerage-cash sweep into holdings, or a core-fund redemption out of them, has its other
+ *    half in an investment trade the feed never carries. Kept, its lone leg unwinds as a gain or
+ *    loss that never happened — the dip that used to appear in every month with a sweep.
+ *
+ * So only unpaired internal movement is dropped (isInternalMovement minus the transfer case, plus
+ * the swept outflow), and even that is kept when an equal, opposite row on another anchored
+ * account within autoMatch's window shows the money crossed between two of the user's accounts
+ * rather than into holdings — then both halves are in the walk and cancel, and dropping one would
+ * leave the other as a phantom. The check runs both ways because applySweepExclusion's
+ * hasCrossAccountCounterpart only looks at outflows, and an unpaired inbound transfer on the cash
+ * account is just as common.
+ */
+function netWorthPredicate(feed: FeedItem[], linkedAccountIds: Set<string>): (item: FeedItem) => boolean {
+  const anchored = feed.filter((item) => isInAnchor(item, linkedAccountIds))
+  const byCents = new Map<number, FeedItem[]>()
+  for (const item of anchored) {
+    const bucket = byCents.get(centsKey(item))
+    if (bucket) bucket.push(item)
+    else byCents.set(centsKey(item), [item])
+  }
+  const hasCrossAccountCounterpart = (item: FeedItem): boolean =>
+    (byCents.get(centsKey(item)) ?? []).some(
+      (candidate) =>
+        candidate.accountId !== item.accountId &&
+        Math.sign(candidate.amount) === -Math.sign(item.amount) &&
+        daysBetween(candidate.postedDate, item.postedDate) <= AUTO_MATCH_WINDOW_DAYS,
+    )
+
+  const counted = new Set(
+    anchored.filter((item) => {
+      if (isTransfer(item)) return true
+      if (!item.isSweptOutflow && !isInternalMovement(item)) return true
+      return hasCrossAccountCounterpart(item)
+    }),
+  )
+  return (item) => counted.has(item)
+}
+
+/** Which balance a row moves: its linked account, or the cash-on-hand pot for a manual entry. */
+function balanceKey(item: FeedItem): string {
+  return item.source === 'manual' ? CASH_ON_HAND_KEY : item.accountId!
+}
+
+/**
+ * Monthly net flow, keyed by absolute month index and then by balance (balanceKey), over every
+ * transaction that moved net worth.
+ */
+function flowByMonth(feed: FeedItem[], linkedAccountIds: Set<string>): Map<number, Map<string, number>> {
+  const flow = new Map<number, Map<string, number>>()
+  const countsTowardNetWorth = netWorthPredicate(feed, linkedAccountIds)
   for (const item of feed) {
-    // Manual transactions have no accountId by design and are always counted. Account-backed ones
-    // (plaid and investment alike) are dropped when their account is no longer linked: that
-    // balance left the net worth total when the institution was removed, so its history would be
-    // unwinding a phantom.
-    if (item.source !== 'manual' && (!item.accountId || !linkedAccountIds.has(item.accountId))) continue
+    if (!countsTowardNetWorth(item)) continue
     const year = Number(item.date.slice(0, 4))
     const month = Number(item.date.slice(5, 7))
     if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) continue
     // Gross `amount`, not `netAmount`: a reimbursement's income transaction is its own feed
     // item, so netting it out here would count the same dollars twice.
     const index = toIndex(year, month)
-    flow.set(index, (flow.get(index) ?? 0) + item.amount)
+    const byKey = flow.get(index) ?? new Map<string, number>()
+    byKey.set(balanceKey(item), (byKey.get(balanceKey(item)) ?? 0) + item.amount)
+    flow.set(index, byKey)
   }
   return flow
+}
+
+/**
+ * The one backwards walk both histories share, so the per-account bars and the net worth line
+ * can never disagree about which months exist or what moved in them.
+ *
+ * Every balance is signed the way it counts toward net worth (a card's $400 owed is -400), which
+ * makes the walk the same for every account type: a row's `amount` moves its balance by -amount,
+ * so undoing a month adds the month's flow back.
+ */
+function walkBalances(
+  anchors: Map<string, number>,
+  feed: FeedItem[],
+  linkedAccountIds: Set<string>,
+  year: number | undefined,
+  today: Date,
+  /** Which anchor a balanceKey's flow lands on. Identity by default; net worth folds every key into one. */
+  anchorFor: (key: string) => string = (key) => key,
+): Array<{ year: number; month: number; balances: Map<string, number>; flow: Map<string, number> }> {
+  const nowIndex = toIndex(today.getFullYear(), today.getMonth() + 1)
+  const flow = flowByMonth(feed, linkedAccountIds)
+
+  let earliestIndex = nowIndex
+  for (const index of flow.keys()) {
+    if (index < earliestIndex) earliestIndex = index
+  }
+
+  const requestedFirst = year != null ? toIndex(year, 1) : earliestIndex
+  const requestedLast = year != null ? toIndex(year, 12) : nowIndex
+  if (requestedFirst > nowIndex || requestedLast < earliestIndex) return []
+
+  // Walk back from today one month at a time, keeping only what lands in `year`.
+  const months: ReturnType<typeof walkBalances> = []
+  const running = new Map(anchors)
+  for (let index = nowIndex; index >= earliestIndex; index--) {
+    const monthFlow = flow.get(index) ?? new Map<string, number>()
+    if (index >= requestedFirst && index <= requestedLast) {
+      const balances = new Map<string, number>()
+      for (const [key, value] of running) balances.set(key, round2(value))
+      months.push({ ...fromIndex(index), balances, flow: monthFlow })
+    }
+    for (const [key, amount] of monthFlow) running.set(anchorFor(key), (running.get(anchorFor(key)) ?? 0) + amount)
+  }
+
+  return months.reverse()
 }
 
 /**
@@ -87,30 +207,42 @@ export function computeNetWorthHistory(
   year?: number,
   today: Date = new Date(),
 ): MonthPoint[] {
-  const nowIndex = toIndex(today.getFullYear(), today.getMonth() + 1)
-  const flow = flowByMonth(feed, linkedAccountIds)
+  // Net worth is the one balance every row moves, so every key folds into a single anchor.
+  const TOTAL = 'total'
+  return walkBalances(new Map([[TOTAL, currentNetWorth]]), feed, linkedAccountIds, year, today, () => TOTAL).map((m) => {
+    let flow = 0
+    for (const amount of m.flow.values()) flow += amount
+    return { year: m.year, month: m.month, netWorth: m.balances.get(TOTAL)!, change: round2(-flow) }
+  })
+}
 
-  let earliestIndex = nowIndex
-  for (const index of flow.keys()) {
-    if (index < earliestIndex) earliestIndex = index
-  }
+export interface AccountMonthPoint {
+  year: number
+  month: number // 1-12
+  /**
+   * End-of-month balance per account id, plus CASH_ON_HAND_KEY for the manual pot — signed as it
+   * counts toward net worth, so liabilities are negative. Sums to that month's net worth.
+   */
+  balances: Map<string, number>
+  /** Sum of `amount` per balance during the month; adding it back to `balances` undoes the month. */
+  flow: Map<string, number>
+}
 
-  const requestedFirst = year != null ? toIndex(year, 1) : earliestIndex
-  const requestedLast = year != null ? toIndex(year, 12) : nowIndex
-  if (requestedFirst > nowIndex || requestedLast < earliestIndex) return []
-
-  // Walk back from today one month at a time, keeping only what lands in `year`.
-  const points: MonthPoint[] = []
-  let running = currentNetWorth
-  for (let index = nowIndex; index >= earliestIndex; index--) {
-    const change = -(flow.get(index) ?? 0)
-    if (index >= requestedFirst && index <= requestedLast) {
-      points.push({ ...fromIndex(index), netWorth: round2(running), change: round2(change) })
-    }
-    running -= change
-  }
-
-  return points.reverse()
+/**
+ * The same history as computeNetWorthHistory, split by account. `anchors` holds today's signed
+ * balance for every account whose history should be drawn; the months covered are identical.
+ *
+ * Investment accounts move only when cash crosses their boundary — market movement has no feed
+ * row (see the note at the top of this file), so their value is otherwise carried flat.
+ */
+export function computeAccountHistory(
+  anchors: Map<string, number>,
+  feed: FeedItem[],
+  linkedAccountIds: Set<string>,
+  year?: number,
+  today: Date = new Date(),
+): AccountMonthPoint[] {
+  return walkBalances(anchors, feed, linkedAccountIds, year, today)
 }
 
 /** Years the history can cover: from the oldest synced transaction through the current year. */

@@ -1,72 +1,106 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef } from 'react'
 import { PanResponder, View, useWindowDimensions } from 'react-native'
-import Svg, { Circle, Defs, G, Line, LinearGradient, Path, Rect, Stop, Text as SvgText } from 'react-native-svg'
+import Svg, { Circle, G, Line, Path, Rect, Text as SvgText } from 'react-native-svg'
 import { colors, fontFamily, hexToRgba } from '@/constants/theme'
-import { formatAmount } from '@/lib/format/money'
-import { formatAxisAmount, niceExtent } from '@/lib/charts/lineChart'
-import type { MonthPoint } from '@/lib/accounts/netWorthHistory'
+import { niceExtent } from '@/lib/charts/lineChart'
+import type { AccountMonthPoint, MonthPoint } from '@/lib/accounts/netWorthHistory'
+import { stackMonth, type NetWorthSeries } from '@/lib/accounts/netWorthSeries'
+import { seriesColor } from './netWorthPalette'
 
 interface NetWorthTrendChartProps {
   points: MonthPoint[]
-  /** Horizontal padding the chart sits inside, so it can size itself to the sheet. */
-  horizontalInset?: number
+  /** Per-account balances for the same months as `points`, drawn as a stacked bar per month. */
+  accountPoints: AccountMonthPoint[]
+  series: NetWorthSeries[]
+  /** Net worth as the period opened; drawn as the dotted reference line. */
+  baseline: number
+  /** The selected month, or null when none is — the chart then reads as the latest month. */
+  selectedIndex: number | null
+  onSelect: (index: number | null) => void
+  /** An account highlighted from the map or the rows: its segment stays solid, the rest recede. */
+  highlightedKey?: string | null
 }
 
-const CHART_H = 210
-const Y_W = 46
-const PAD_R = 12
-const PAD_T = 14
-const X_H = 26
+const CHART_H = 300
+const PAD_T = 16
+const X_H = 24
+
+// Bars take this share of their month's slot, capped so a short history doesn't draw slabs.
+const BAR_FILL = 0.62
+const BAR_MAX_W = 22
+/** Empty seam between stacked segments, so neighbours never merge into one band. A real gap, not a
+ *  stroke, so it shows whatever the chart sits on. */
+const SEGMENT_GAP = 1.5
 
 /** Absolute month index, so the x-axis runs continuously across year boundaries. */
 function monthIndex(p: { year: number; month: number }): number {
   return p.year * 12 + (p.month - 1)
 }
 
-// Tooltip card metrics — sized from the value text, which is always the longer line.
-const TIP_H = 34
-const TIP_PAD_X = 8
-const TIP_CHAR_W = 6.6
+/**
+ * Full-bleed, axis-free trend chart: stacked per-account bars under the net worth line.
+ *
+ * No y-axis and no gridlines. The headline above the chart is the reading — it follows the
+ * finger while scrubbing — so tick labels would be a second, less precise copy of the same
+ * number competing for the width the bars need. The one horizontal reference kept is the dotted
+ * line at the period's opening value, which answers "up or down?" at a glance.
+ */
+/** Finger travel under this is a tap, not a drag. */
+const TAP_SLOP = 8
 
-export function NetWorthTrendChart({ points, horizontalInset = 64 }: NetWorthTrendChartProps) {
-  const { width } = useWindowDimensions()
-  const chartW = width - horizontalInset
-  const plotW = chartW - Y_W - PAD_R
+export function NetWorthTrendChart({
+  points,
+  accountPoints,
+  series,
+  baseline,
+  selectedIndex,
+  onSelect,
+  highlightedKey,
+}: NetWorthTrendChartProps) {
+  const { width: chartW } = useWindowDimensions()
   const plotH = CHART_H - PAD_T - X_H
 
-  // Which point the finger is over, or null when nobody's touching the chart. The reading
-  // lives in a scrubber instead of a dot per month — twelve dots say nothing a finger can't
-  // ask for, and the line reads cleaner without them.
-  const [scrubIndex, setScrubIndex] = useState<number | null>(null)
-
-  const { pixelPts, ticks, zeroY, linePath, areaPath, xTicks } = useMemo(() => {
-    const values = points.map((p) => p.netWorth)
-    // 3 rather than the default 4: a 170px plot reads better with ~4 gridlines than ~7.
+  const { pixelPts, bars, barW, baselineY, zeroY, linePath, xTicks } = useMemo(() => {
+    const stacks = accountPoints.map((m) => stackMonth(series, m.balances))
+    const values = [...points.map((p) => p.netWorth), baseline]
+    for (const stack of stacks) for (const seg of stack) values.push(seg.to)
+    // niceExtent only for its headroom — nothing reads the ticks any more.
     const scale = niceExtent(Math.min(...values, 0), Math.max(...values, 0), 3)
     const yMin = scale[0]
     const yMax = scale[scale.length - 1]
-
     const toY = (v: number) => PAD_T + plotH - ((v - yMin) / (yMax - yMin)) * plotH
-    // The whole history is one trace, so x runs over the actual span of months — a short
-    // history under a year still fills the plot rather than huddling in a corner.
+
+    // One slot per month with the point at its centre, so the first and last bars have room at
+    // the screen edges. Spans the actual months, so a short history still fills the width.
     const firstIdx = points.length > 0 ? monthIndex(points[0]) : 0
     const lastIdx = points.length > 0 ? monthIndex(points[points.length - 1]) : 0
-    const span = Math.max(lastIdx - firstIdx, 1)
-    const toX = (p: { year: number; month: number }) => Y_W + ((monthIndex(p) - firstIdx) / span) * plotW
+    const slot = chartW / Math.max(lastIdx - firstIdx + 1, 1)
+    const toX = (p: { year: number; month: number }) => (monthIndex(p) - firstIdx + 0.5) * slot
+    const width = Math.max(Math.min(slot * BAR_FILL, BAR_MAX_W), 2)
+
+    const colorByKey = new Map(series.map((s) => [s.key, seriesColor(s)]))
+    const barRects = stacks.map((stack, i) =>
+      stack.map((seg) => {
+        const y1 = toY(seg.from)
+        const y2 = toY(seg.to)
+        return {
+          key: seg.key,
+          x: toX(accountPoints[i]) - width / 2,
+          y: Math.min(y1, y2),
+          height: Math.abs(y2 - y1),
+          color: colorByKey.get(seg.key) ?? colors.border,
+        }
+      }),
+    )
 
     const pts = points.map((p) => ({ x: toX(p), y: toY(p.netWorth) }))
-    const baseY = toY(0)
     const line = pts.length < 2 ? '' : `M ${pts.map((p) => `${p.x} ${p.y}`).join(' L ')}`
-    const area =
-      pts.length < 2
-        ? ''
-        : `${line} L ${pts[pts.length - 1].x} ${baseY} L ${pts[0].x} ${baseY} Z`
 
-    // Axis labels sized to the span: within a year, a few "MM" marks; across years, each
-    // January labelled with its year (thinned when many years would crowd the axis).
+    // Within a year, a few "MM" marks; across years, each January labelled with its year
+    // (thinned when many years would crowd the axis).
     let labels: { x: number; text: string }[]
     if (lastIdx - firstIdx < 12) {
-      const stride = Math.max(1, Math.ceil(points.length / 4))
+      const stride = Math.max(1, Math.ceil(points.length / 6))
       labels = points
         .filter((_, i) => i % stride === 0)
         .map((p) => ({ x: toX(p), text: String(p.month).padStart(2, '0') }))
@@ -78,8 +112,24 @@ export function NetWorthTrendChart({ points, horizontalInset = 64 }: NetWorthTre
         .map((p) => ({ x: toX(p), text: String(p.year) }))
     }
 
-    return { pixelPts: pts, ticks: scale, zeroY: baseY, linePath: line, areaPath: area, xTicks: labels }
-  }, [points, plotW, plotH])
+    return {
+      pixelPts: pts,
+      bars: barRects,
+      barW: width,
+      baselineY: toY(baseline),
+      zeroY: toY(0),
+      linePath: line,
+      xTicks: labels,
+    }
+  }, [points, accountPoints, series, baseline, chartW, plotH])
+
+  // Read inside the responder, which is rebuilt only when the geometry changes — a ref keeps it
+  // from acting on the selection as it stood when it was built.
+  const selectedRef = useRef(selectedIndex)
+  selectedRef.current = selectedIndex
+  // What was selected when this touch began, so a tap can tell "same month again" (clear) from
+  // "a different month" (move the selection there).
+  const touchRef = useRef<{ startX: number; selectedAtStart: number | null; moved: boolean } | null>(null)
 
   const panResponder = useMemo(() => {
     const nearestIndex = (locationX: number) => {
@@ -96,66 +146,75 @@ export function NetWorthTrendChart({ points, horizontalInset = 64 }: NetWorthTre
       // The chart sits inside a scrollable sheet; once a finger is reading the line, the
       // scroll (or the sheet's drag-to-dismiss) must not steal the gesture mid-scrub.
       onPanResponderTerminationRequest: () => false,
-      onPanResponderGrant: (evt) => setScrubIndex(nearestIndex(evt.nativeEvent.locationX)),
-      onPanResponderMove: (evt) => setScrubIndex(nearestIndex(evt.nativeEvent.locationX)),
-      onPanResponderRelease: () => setScrubIndex(null),
-      onPanResponderTerminate: () => setScrubIndex(null),
+      // Selecting is sticky: a tap or a drag leaves its month selected after the finger lifts, and
+      // only tapping that same month again clears it. Dragging still scrubs, so the headline and
+      // the rows can be run along the chart; wherever the drag ends is what stays selected.
+      onPanResponderGrant: (evt) => {
+        const x = evt.nativeEvent.locationX
+        touchRef.current = { startX: x, selectedAtStart: selectedRef.current, moved: false }
+        onSelect(nearestIndex(x))
+      },
+      onPanResponderMove: (evt) => {
+        const touch = touchRef.current
+        const x = evt.nativeEvent.locationX
+        if (touch && Math.abs(x - touch.startX) > TAP_SLOP) touch.moved = true
+        if (touch?.moved) onSelect(nearestIndex(x))
+      },
+      onPanResponderRelease: (evt) => {
+        const touch = touchRef.current
+        touchRef.current = null
+        if (!touch || touch.moved) return
+        const tapped = nearestIndex(evt.nativeEvent.locationX)
+        if (tapped != null && tapped === touch.selectedAtStart) onSelect(null)
+      },
+      // Interrupted rather than finished: leave whatever the finger last selected.
+      onPanResponderTerminate: () => {
+        touchRef.current = null
+      },
     })
-  }, [pixelPts])
+  }, [pixelPts, onSelect])
 
   if (points.length === 0) return null
 
-  const yMin = ticks[0]
-  const yMax = ticks[ticks.length - 1]
-
-  const scrub = scrubIndex != null && pixelPts[scrubIndex] ? { px: pixelPts[scrubIndex], point: points[scrubIndex] } : null
-  const tipValue = scrub ? formatAmount(scrub.point.netWorth) : ''
-  const tipLabel = scrub ? `${String(scrub.point.month).padStart(2, '0')}/${scrub.point.year}` : ''
-  const tipW = Math.max(tipValue.length, tipLabel.length) * TIP_CHAR_W + TIP_PAD_X * 2
-  // Above the point when there's room, below it otherwise; never off the sides.
-  const tipX = scrub ? Math.min(Math.max(scrub.px.x - tipW / 2, Y_W), chartW - PAD_R - tipW) : 0
-  const tipY = scrub ? (scrub.px.y - TIP_H - 10 > PAD_T ? scrub.px.y - TIP_H - 10 : scrub.px.y + 10) : 0
+  const selected = selectedIndex != null ? pixelPts[selectedIndex] : undefined
 
   return (
-    <View style={{ alignItems: 'center' }} {...panResponder.panHandlers}>
+    <View {...panResponder.panHandlers}>
       <Svg width={chartW} height={CHART_H}>
-        <Defs>
-          <LinearGradient id="netWorthArea" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0" stopColor={colors.primary} stopOpacity={0.22} />
-            <Stop offset="1" stopColor={colors.primary} stopOpacity={0.02} />
-          </LinearGradient>
-        </Defs>
-
-        {ticks.map((tick) => {
-          const y = PAD_T + plotH - ((tick - yMin) / (yMax - yMin)) * plotH
-          const isZero = tick === 0
-          return (
-            <G key={tick}>
-              <Line
-                x1={Y_W}
-                y1={y}
-                x2={chartW - PAD_R}
-                y2={y}
-                stroke={isZero ? colors.borderStrong : colors.border}
-                strokeWidth={isZero ? 1 : 0.5}
-                strokeDasharray={isZero ? undefined : '4,4'}
+        {/* Bars first, so the line always reads on top of them. With a month selected, the
+            others step back, which ties the headline and the account rows to one bar. */}
+        {bars.map((stack, i) => (
+          <G key={i} opacity={selected == null || i === selectedIndex ? 1 : 0.4}>
+            {stack.map((seg) => (
+              <Rect
+                key={seg.key}
+                x={seg.x}
+                y={seg.y + SEGMENT_GAP / 2}
+                width={barW}
+                height={Math.max(seg.height - SEGMENT_GAP, 0)}
+                rx={Math.min(2, barW / 4)}
+                fill={seg.color}
+                opacity={highlightedKey == null || seg.key === highlightedKey ? 1 : 0.25}
               />
-              <SvgText
-                x={Y_W - 6}
-                y={y + 4}
-                fontSize={10}
-                fontFamily={fontFamily.mono}
-                fill={colors.textMuted}
-                textAnchor="end"
-              >
-                {formatAxisAmount(tick)}
-              </SvgText>
-            </G>
-          )
-        })}
+            ))}
+          </G>
+        ))}
 
-        {areaPath ? <Path d={areaPath} fill="url(#netWorthArea)" /> : null}
-        {linePath ? <Path d={linePath} stroke={colors.primary} strokeWidth={2.5} fill="none" /> : null}
+        {/* The zero line, solid, so debt reads as below zero rather than as a shorter bar. */}
+        <Line x1={0} y1={zeroY} x2={chartW} y2={zeroY} stroke={colors.textSecondary} strokeWidth={1} />
+
+        <Line
+          x1={0}
+          y1={baselineY}
+          x2={chartW}
+          y2={baselineY}
+          stroke={colors.textPrimary}
+          strokeWidth={1.5}
+          strokeDasharray="1.5,5"
+          strokeLinecap="round"
+        />
+
+        {linePath ? <Path d={linePath} stroke={colors.primary} strokeWidth={2.5} fill="none" strokeLinejoin="round" /> : null}
 
         {/* A single month has no line to read a trend from — anchor it to the zero baseline. */}
         {pixelPts.length === 1 ? (
@@ -177,7 +236,7 @@ export function NetWorthTrendChart({ points, horizontalInset = 64 }: NetWorthTre
             key={`${tick.text}-${tick.x}`}
             x={tick.x}
             y={CHART_H - 6}
-            fontSize={10}
+            fontSize={11}
             fontFamily={fontFamily.mono}
             fill={colors.textMuted}
             textAnchor="middle"
@@ -186,38 +245,10 @@ export function NetWorthTrendChart({ points, horizontalInset = 64 }: NetWorthTre
           </SvgText>
         ))}
 
-        {scrub ? (
+        {selected ? (
           <G>
-            <Line
-              x1={scrub.px.x}
-              y1={PAD_T}
-              x2={scrub.px.x}
-              y2={PAD_T + plotH}
-              stroke={hexToRgba(colors.primary, 0.45)}
-              strokeWidth={1}
-            />
-            <Circle cx={scrub.px.x} cy={scrub.px.y} r={5} fill={colors.surface} stroke={colors.primary} strokeWidth={2.5} />
-            <Rect x={tipX} y={tipY} width={tipW} height={TIP_H} rx={7} fill={colors.surface} stroke={colors.border} strokeWidth={1} />
-            <SvgText
-              x={tipX + tipW / 2}
-              y={tipY + 13}
-              fontSize={9}
-              fontFamily={fontFamily.mono}
-              fill={colors.textMuted}
-              textAnchor="middle"
-            >
-              {tipLabel}
-            </SvgText>
-            <SvgText
-              x={tipX + tipW / 2}
-              y={tipY + 27}
-              fontSize={11.5}
-              fontFamily={fontFamily.mono}
-              fill={colors.textPrimary}
-              textAnchor="middle"
-            >
-              {tipValue}
-            </SvgText>
+            <Line x1={selected.x} y1={PAD_T} x2={selected.x} y2={PAD_T + plotH} stroke={hexToRgba(colors.primary, 0.45)} strokeWidth={1} />
+            <Circle cx={selected.x} cy={selected.y} r={5} fill={colors.surface} stroke={colors.primary} strokeWidth={2.5} />
           </G>
         ) : null}
       </Svg>

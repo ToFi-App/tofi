@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Image, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { colors } from '@/constants/theme'
@@ -12,8 +13,12 @@ import { colors } from '@/constants/theme'
  *
  * Icon colours come from the account's variant rather than from the surrounding text, so a
  * wallet is blue and cash is green wherever either appears.
+ *
+ * Memoized: `logo` is a base64 string that can run to tens of kilobytes, and re-rendering hands a
+ * fresh `source` object carrying all of it back to the native Image. Every prop is a primitive or
+ * a shared constant (variantIcons), so a parent re-render with the same account skips this outright.
  */
-export function AccountGlyph({
+export const AccountGlyph = memo(function AccountGlyph({
   logo,
   icon,
   iconColor,
@@ -54,4 +59,4 @@ export function AccountGlyph({
       <Ionicons name={icon.name as never} size={Math.max(size * 0.62, 8)} color={iconColor ?? icon.color} />
     </View>
   )
-}
+})

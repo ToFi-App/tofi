@@ -279,3 +279,4 @@ describe('holdingsPricedAsOf', () => {
     expect(holdingsPricedAsOf([])).toBeNull()
   })
 })
+

@@ -64,14 +64,26 @@ export interface NetWorthComposition {
 /** Synthetic key for the built-in cash row, which has no Plaid account behind it. */
 export const CASH_ON_HAND_KEY = '__cash_on_hand__'
 
-/** Accounts and cash on hand -> balance-sheet groups with per-account children. */
-export function computeNetWorthComposition(accounts: Account[], feed: FeedItem[]): NetWorthComposition {
+/**
+ * Accounts and cash on hand -> balance-sheet groups with per-account children.
+ *
+ * Today's balances by default. Pass `balances` (from computeAccountHistory) to draw a past month
+ * instead: keyed by account id plus CASH_ON_HAND_KEY, signed as net worth counts them, so a
+ * liability arrives negative and is flipped back to the amount owed here.
+ */
+export function computeNetWorthComposition(
+  accounts: Account[],
+  feed: FeedItem[],
+  balances?: Map<string, number>,
+): NetWorthComposition {
   const cash: CompositionAccount[] = []
   const investment: CompositionAccount[] = []
   const liability: CompositionAccount[] = []
 
   for (const account of accounts) {
-    const value = account.balances?.current ?? 0
+    const signed = balances?.get(account.account_id)
+    const value =
+      signed === undefined ? (account.balances?.current ?? 0) : isLiabilityAccount(account) ? -signed : signed
     // Non-positive balances are dropped rather than drawn: an overdrawn checking account or a
     // paid-off card has no area to occupy, and letting it through would either invert a tile
     // or silently skew every other percentage.
@@ -93,7 +105,7 @@ export function computeNetWorthComposition(accounts: Account[], feed: FeedItem[]
     else cash.push(entry)
   }
 
-  const cashOnHand = computeCashOnHand(feed)
+  const cashOnHand = balances ? (balances.get(CASH_ON_HAND_KEY) ?? 0) : computeCashOnHand(feed)
   if (cashOnHand > 0) {
     // The built-in cash row has no institution behind it, so no logo, no item and no mask.
     cash.push({

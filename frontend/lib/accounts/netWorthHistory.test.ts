@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { computeNetWorthHistory, netWorthYearRange } from './netWorthHistory'
+import { computeAccountHistory, computeNetWorthHistory, netWorthYearRange } from './netWorthHistory'
+import { CASH_ON_HAND_KEY } from './composition'
 import type { FeedItem } from '@/lib/transactions/resolveFeed'
 
 const TODAY = new Date('2026-08-05T12:00:00Z')
@@ -209,3 +210,142 @@ describe('computeNetWorthHistory: investment-source rows', () => {
     expect(points.find((p) => p.month === 7)!.change).toBe(-50)
   })
 })
+
+describe('computeNetWorthHistory: movement that never changed net worth', () => {
+  const LINKED_WITH_CMA = new Set(['checking', 'card', 'cma'])
+  const cma = (overrides: Partial<FeedItem> & { date: string; amount: number }): FeedItem =>
+    txn({ accountId: 'cma', isBrokerageCashAccount: true, ...overrides })
+
+  // Same role as the investment block's anchor: keeps July in the walk with a known baseline,
+  // so "this row contributed nothing" reads as -50.
+  const anchor = txn({ date: '2026-07-20', amount: 50, accountId: 'checking', id: 'anchor' })
+
+  const julyChange = (feed: FeedItem[]) =>
+    computeNetWorthHistory(50_000, [anchor, ...feed], LINKED_WITH_CMA, 2026, TODAY).find((p) => p.month === 7)!.change
+
+  it('drops a sweep into holdings — its counterpart is an investment trade the feed never sees', () => {
+    // Checking funds the cash account (a paired transfer), then the cash account sweeps it into
+    // holdings. The money is all still there; only the sweep's missing other half made it dip.
+    const change = julyChange([
+      txn({ id: 'out', date: '2026-07-10', amount: 2000, accountId: 'checking', transferKind: 'account_transfer' }),
+      cma({ id: 'in', date: '2026-07-10', amount: -2000, transferKind: 'account_transfer' }),
+      cma({ id: 'sweep', date: '2026-07-11', amount: 2000, pfcDetailed: 'TRANSFER_OUT_ACCOUNT_TRANSFER', isSweptOutflow: true }),
+    ])
+    expect(change).toBe(-50)
+  })
+
+  it('drops an unpaired internal movement on a brokerage cash account with no counterpart anywhere', () => {
+    const change = julyChange([
+      cma({ date: '2026-07-11', amount: 1500, pfcDetailed: 'TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS' }),
+    ])
+    expect(change).toBe(-50)
+  })
+
+  it('drops a core-fund redemption but keeps the bill it was raised to pay', () => {
+    const change = julyChange([
+      cma({ id: 'redeem', date: '2026-07-12', amount: -300, pfcDetailed: 'TRANSFER_IN_ACCOUNT_TRANSFER' }),
+      cma({ id: 'bill', date: '2026-07-12', amount: 300, pfcDetailed: 'RENT_AND_UTILITIES_GAS_AND_ELECTRICITY' }),
+    ])
+    expect(change).toBe(-350)
+  })
+
+  it('keeps an unpaired internal inflow whose outflow sits on another linked account, so the two cancel', () => {
+    // Checking's generic outbound code counts everywhere; dropping only the arrival would leave a
+    // phantom $800 loss.
+    const change = julyChange([
+      txn({ id: 'out', date: '2026-07-08', amount: 800, accountId: 'checking', pfcDetailed: 'TRANSFER_OUT_ACCOUNT_TRANSFER' }),
+      cma({ id: 'in', date: '2026-07-10', amount: -800, pfcDetailed: 'TRANSFER_IN_ACCOUNT_TRANSFER' }),
+    ])
+    expect(change).toBe(-50)
+  })
+
+  it('keeps an unpaired internal outflow whose arrival sits on another linked account', () => {
+    const change = julyChange([
+      cma({ id: 'out', date: '2026-07-08', amount: 800, pfcDetailed: 'TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS' }),
+      txn({ id: 'in', date: '2026-07-09', amount: -800, accountId: 'checking' }),
+    ])
+    expect(change).toBe(-50)
+  })
+
+  it('still counts a dividend that was swept straight into holdings', () => {
+    const change = julyChange([
+      cma({ id: 'div', date: '2026-07-15', amount: -40, pfcDetailed: 'INCOME_DIVIDENDS' }),
+      cma({ id: 'sweep', date: '2026-07-15', amount: 40, pfcDetailed: 'TRANSFER_OUT_ACCOUNT_TRANSFER', isSweptOutflow: true }),
+    ])
+    expect(change).toBe(-10)
+  })
+
+  it('keeps both legs of a paired transfer, which is what makes them cancel', () => {
+    const change = julyChange([
+      cma({ id: 'out', date: '2026-07-08', amount: 500, pfcDetailed: 'TRANSFER_OUT_SAVINGS', transferKind: 'account_transfer' }),
+      txn({ id: 'in', date: '2026-07-08', amount: -500, accountId: 'checking', transferKind: 'account_transfer' }),
+    ])
+    expect(change).toBe(-50)
+  })
+
+  it('skips pending rows — today’s anchor is the settled balance, which does not include them yet', () => {
+    const change = julyChange([txn({ date: '2026-07-30', amount: 90, pending: true })])
+    expect(change).toBe(-50)
+  })
+})
+
+describe('computeAccountHistory', () => {
+  const LINKED_ALL = new Set(['checking', 'card', 'brokerage'])
+  // Signed the way net worth reads them: the card's $400 owed is -400.
+  const anchors = new Map([
+    ['checking', 5000],
+    ['card', -400],
+    ['brokerage', 20_000],
+    [CASH_ON_HAND_KEY, 60],
+  ])
+
+  const feed = [
+    txn({ id: 'rent', date: '2026-07-01', amount: 1500, accountId: 'checking' }),
+    txn({ id: 'pay', date: '2026-07-15', amount: -3000, accountId: 'checking' }),
+    txn({ id: 'groceries', date: '2026-07-18', amount: 250, accountId: 'card' }),
+    txn({ id: 'card-pay-out', date: '2026-06-28', amount: 600, accountId: 'checking', transferKind: 'credit_card_payment' }),
+    txn({ id: 'card-pay-in', date: '2026-06-28', amount: -600, accountId: 'card', transferKind: 'credit_card_payment' }),
+    // Only pulls May into the walk; it lands in May, so May's end balance already includes it.
+    txn({ id: 'coffee', date: '2026-05-10', amount: 10, accountId: 'checking' }),
+    txn({ id: 'wallet', date: '2026-07-04', amount: 40, accountId: null, source: 'manual' }),
+    txn({
+      id: 'sweep',
+      date: '2026-07-20',
+      amount: 1000,
+      accountId: 'brokerage',
+      isBrokerageCashAccount: true,
+      pfcDetailed: 'TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS',
+    }),
+  ]
+
+  const history = computeAccountHistory(anchors, feed, LINKED_ALL, 2026, TODAY)
+  const at = (month: number) => history.find((p) => p.month === month)!.balances
+
+  it('walks each account back on its own, liabilities included', () => {
+    // End of June: rent un-spent and pay un-earned on checking; groceries un-charged on the card.
+    expect(at(6).get('checking')).toBe(5000 + 1500 - 3000)
+    expect(at(6).get('card')).toBe(-400 + 250)
+    // End of May: the card payment is undone on both sides.
+    expect(at(5).get('checking')).toBe(5000 + 1500 - 3000 + 600)
+    expect(at(5).get('card')).toBe(-400 + 250 - 600)
+  })
+
+  it('puts manual transactions on the cash-on-hand row', () => {
+    expect(at(6).get(CASH_ON_HAND_KEY)).toBe(100)
+  })
+
+  it('leaves a sweep into holdings out, so the investment account stays flat', () => {
+    expect(at(6).get('brokerage')).toBe(20_000)
+  })
+
+  it('adds up to computeNetWorthHistory every month', () => {
+    const total = [...anchors.values()].reduce((sum, v) => sum + v, 0)
+    const expected = computeNetWorthHistory(total, feed, LINKED_ALL, 2026, TODAY)
+    expect(history.map((p) => [p.year, p.month])).toEqual(expected.map((p) => [p.year, p.month]))
+    history.forEach((point, i) => {
+      const sum = [...point.balances.values()].reduce((s, v) => s + v, 0)
+      expect(Math.round(sum * 100) / 100).toBe(expected[i].netWorth)
+    })
+  })
+})
+
