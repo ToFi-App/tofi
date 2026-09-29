@@ -39,7 +39,9 @@ interface TransactionDetailSheetProps {
 export function TransactionDetailSheet({ sheetScroll, item, categories, subcategories, pendingTransfer, isSaving, onClose, onSave, onOpenTransfer, onClearPendingTransfer, onUnmarkTransfer, onUnlink }: TransactionDetailSheetProps) {
   const [categoryId, setCategoryId] = useState<string | null>(item?.categoryId ?? null)
   const [subcategoryId, setSubcategoryId] = useState<string | null>(item?.subcategoryId ?? null)
-  const [applyToVendor, setApplyToVendor] = useState(true)
+  // Off by default: a one-off recategorization shouldn't quietly become a rule for every future
+  // charge from this merchant. Opting in is one tap, right under the category it would apply.
+  const [applyToVendor, setApplyToVendor] = useState(false)
   const [note, setNote] = useState(item?.note ?? '')
   const [markReimbursed, setMarkReimbursed] = useState(false)
   const [markTransfer, setMarkTransfer] = useState(false)
@@ -49,7 +51,7 @@ export function TransactionDetailSheet({ sheetScroll, item, categories, subcateg
   useEffect(() => {
     setCategoryId(item?.categoryId ?? null)
     setSubcategoryId(item?.subcategoryId ?? null)
-    setApplyToVendor(true)
+    setApplyToVendor(false)
     setNote(item?.note ?? '')
     // Both legs count as "already reimbursed": reimbursedAmount marks the expense side,
     // isReimbursementIncome the income side. Seeding from the expense field alone left the
@@ -67,6 +69,9 @@ export function TransactionDetailSheet({ sheetScroll, item, categories, subcateg
   const amountColor = transactionAmountColor(item)
   const pillLabel = linkPillLabel(item)
   const selectedCategory = categories.find((c) => c.id === categoryId) ?? null
+  // The vendor rule only means something when the category is being changed — it's what would be
+  // applied — so the toggle appears then and not otherwise.
+  const categoryChanged = categoryId !== (item.categoryId ?? null) || subcategoryId !== (item.subcategoryId ?? null)
   const availableSubcategories = subcategories.filter((s) => s.categoryId === categoryId)
   const wasTransfer = item.transferKind != null
   const wasReimbursed = item.reimbursedAmount != null || item.isReimbursementIncome
@@ -85,7 +90,12 @@ export function TransactionDetailSheet({ sheetScroll, item, categories, subcateg
     } else if (effectiveMarkReimbursed && !wasReimbursed && !isReimbursementPending) {
       onOpenTransfer('reimbursement')
     } else {
-      onSave({ categoryId, subcategoryId, applyToVendor, note: note.trim().length > 0 ? note.trim() : null })
+      onSave({
+        categoryId,
+        subcategoryId,
+        applyToVendor: categoryChanged && applyToVendor,
+        note: note.trim().length > 0 ? note.trim() : null,
+      })
     }
   }
 
@@ -175,6 +185,15 @@ export function TransactionDetailSheet({ sheetScroll, item, categories, subcateg
           </View>
         ) : null}
 
+        {categoryChanged ? (
+          <View className="flex-row items-center justify-between py-1">
+            <Text className="flex-1 pr-3 font-sans text-base text-textPrimary" numberOfLines={2}>
+              Apply to all future {item.merchantName}?
+            </Text>
+            <Switch value={applyToVendor} onValueChange={setApplyToVendor} />
+          </View>
+        ) : null}
+
         {/* The placeholder is the name the row currently shows — what a saved note replaces. */}
         <TextField
           label="Note (optional)"
@@ -182,13 +201,6 @@ export function TransactionDetailSheet({ sheetScroll, item, categories, subcateg
           onChangeText={setNote}
           placeholder={item.merchantName}
         />
-
-        <View className="flex-row items-center justify-between py-3">
-          <Text className="flex-1 pr-3 font-sans text-base text-textPrimary" numberOfLines={2}>
-            Apply to all future {item.merchantName}?
-          </Text>
-          <Switch value={applyToVendor} onValueChange={setApplyToVendor} />
-        </View>
 
         {/* Both sides can start a reimbursement: an income is "this money paid me back", an
             expense is "this cost got paid back" — the expense side is also where several

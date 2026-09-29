@@ -232,3 +232,34 @@ describe('aggregateMonth: investment-source rows', () => {
     expect(result.totalIncome).toBe(income)
   })
 })
+
+describe('aggregateMonth: spending by day and category', () => {
+  it('sums each day’s spending per category, net of reimbursement, leaving out income and every greyed-out row', () => {
+    const { spendByDayCategory } = aggregateMonth([
+      item({ id: 'a', date: '2026-06-03', amount: 40, categoryId: 'food' }),
+      item({ id: 'b', date: '2026-06-03', amount: 10, categoryId: 'food' }),
+      item({ id: 'c', date: '2026-06-03', amount: 100, netAmount: 30, reimbursedAmount: 70, categoryId: 'travel' }),
+      item({ id: 'd', date: '2026-06-03', amount: 5 }), // uncategorized
+      item({ id: 'pay', date: '2026-06-03', amount: -900, categoryId: 'salary' }),
+      item({ id: 'pend', date: '2026-06-03', amount: 999, categoryId: 'food', pending: true }),
+      // Greyed out in the feed, so they add nothing to the day's mix either.
+      item({ id: 'xfer', date: '2026-06-03', amount: 500, categoryId: 'transfer', transferKind: 'account_transfer' }),
+      item({ id: 'sweep', date: '2026-06-03', amount: 300, categoryId: 'invest', isBrokerageCashAccount: true, isSweptOutflow: true }),
+      item({
+        id: 'internal',
+        date: '2026-06-03',
+        amount: 600,
+        categoryId: 'invest',
+        isBrokerageCashAccount: true,
+        pfcDetailed: 'TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS',
+      }),
+    ])
+    expect(spendByDayCategory.get('2026-06-03')).toEqual(
+      new Map<string | null, number>([
+        ['food', 50],
+        ['travel', 30],
+        [null, 5],
+      ]),
+    )
+  })
+})
