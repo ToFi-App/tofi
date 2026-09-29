@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildNetWorthSeries, expectedSignFor, periodChanges } from './netWorthSeries'
+import { buildNetWorthSeries, expectedSignFor } from './netWorthSeries'
 import { CASH_ON_HAND_KEY } from './composition'
 import type { FeedItem } from '@/lib/transactions/resolveFeed'
 import type { Account } from '@/types/domain'
@@ -41,21 +41,6 @@ describe('buildNetWorthSeries', () => {
   it('leaves cash on hand out until a manual entry exists', () => {
     const { series } = buildNetWorthSeries(accounts, [])
     expect(series.some((s) => s.key === CASH_ON_HAND_KEY)).toBe(false)
-  })
-})
-
-describe('periodChanges', () => {
-  it("is each account's move during the point — close minus open — leaving out accounts that didn't move", () => {
-    const changes = periodChanges({
-      balances: new Map([['checking', 1200], ['card', -450], ['ira', 5000]]),
-      startBalances: new Map([['checking', 1000], ['card', -300], ['ira', 5000]]),
-    })
-    expect(changes).toEqual(new Map([['checking', 200], ['card', -150]]))
-  })
-
-  it('counts an account that appeared this period from zero', () => {
-    const changes = periodChanges({ balances: new Map([['cma', 350]]), startBalances: new Map([['cma', 0]]) })
-    expect(changes.get('cma')).toBe(350)
   })
 })
 

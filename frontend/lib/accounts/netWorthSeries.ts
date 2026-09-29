@@ -2,7 +2,6 @@ import { CASH_ON_HAND_KEY } from './composition'
 import { computeCashOnHand, isInvestmentAccount, isLiabilityAccount } from './netWorth'
 import type { Account } from '@/types/domain'
 import type { FeedItem } from '@/lib/transactions/resolveFeed'
-import type { AccountMonthPoint } from './netWorthHistory'
 
 export type NetWorthSeriesGroup = 'investment' | 'cash' | 'liability'
 
@@ -96,18 +95,4 @@ export function expectedSignFor(series: NetWorthSeries[]): Map<string, 1 | -1> {
     signs.set(s.key, s.group === 'liability' ? -1 : 1)
   }
   return signs
-}
-
-/**
- * How much each account moved during one point — its close minus its open, signed as net worth
- * counts it, so a card balance rising is negative. Accounts that didn't move are left out. These
- * are what the chart's bars stack: gains up from zero, losses down.
- */
-export function periodChanges(point: Pick<AccountMonthPoint, 'balances' | 'startBalances'>): Map<string, number> {
-  const changes = new Map<string, number>()
-  for (const [key, close] of point.balances) {
-    const change = Math.round((close - (point.startBalances.get(key) ?? 0)) * 100) / 100
-    if (change !== 0) changes.set(key, change)
-  }
-  return changes
 }

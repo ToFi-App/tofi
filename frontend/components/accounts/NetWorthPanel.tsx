@@ -238,7 +238,7 @@ export function NetWorthPanel({
   const accountPoints = useMemo(() => visiblePoints(history, granularity, viewport), [history, granularity, viewport])
   // The slots the chart lays out: every bucket in the window, including any past today.
   const slots = useMemo(() => viewportBuckets(viewport, granularity), [viewport, granularity])
-  // The line summed from the per-account history, so the bars and the line are one calculation.
+  // The line summed from the per-account history.
   const points = useMemo(() => trendNetWorth(accountPoints), [accountPoints])
   // Net worth where the window opens: what the headline change, and the line's colour, measure from.
   const baseline = points.length > 0 ? points[0].netWorth - points[0].change : 0
@@ -361,8 +361,8 @@ export function NetWorthPanel({
             {groupShares.map(({ group, share }) => (
               <View key={group} className="flex-row items-center gap-1.5">
                 <View className="h-2.5 w-2.5" style={{ borderRadius: 3, backgroundColor: GROUP_COLORS[group].fill }} />
-                <Text className="font-sansMed text-xs text-textSecondary">{GROUP_LABELS[group]}</Text>
-                <Text className="font-sansSemi text-xs" style={{ color: GROUP_COLORS[group].text }}>
+                <Text className="font-mono text-xs uppercase text-textSecondary">{GROUP_LABELS[group]}</Text>
+                <Text className="font-mono text-xs" style={{ color: GROUP_COLORS[group].text }}>
                   {formatShare(share)}
                 </Text>
               </View>
@@ -372,14 +372,15 @@ export function NetWorthPanel({
         </View>
       )}
 
+      {/* Uppercase mono labels and mono figures, like the account console — without its wide tracking. */}
       <View className="flex-row justify-between px-5 pt-5">
-        <View>
-          <Text className="font-sans text-xs text-textSecondary">Total Assets</Text>
-          <Text className="font-sansSemi text-base text-textPrimary">{isMasked ? MASKED_AMOUNT : formatAmount(totalAssets)}</Text>
+        <View className="gap-1">
+          <Text className="font-mono text-xs uppercase text-textSecondary">Total Assets</Text>
+          <Text className="font-mono text-base text-textPrimary">{isMasked ? MASKED_AMOUNT : formatAmount(totalAssets)}</Text>
         </View>
-        <View className="items-end">
-          <Text className="font-sans text-xs text-textSecondary">Total Liabilities</Text>
-          <Text className="font-sansSemi text-base text-textPrimary">
+        <View className="items-end gap-1">
+          <Text className="font-mono text-xs uppercase text-textSecondary">Total Liabilities</Text>
+          <Text className="font-mono text-base text-textPrimary">
             {isMasked ? MASKED_AMOUNT : formatAmount(totalLiabilities)}
           </Text>
         </View>
