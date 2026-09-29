@@ -1,11 +1,10 @@
-import { Ionicons } from '@expo/vector-icons'
 import { useState } from 'react'
-import { Pressable, ScrollView, Text, View } from 'react-native'
+import { ScrollView, Text, View } from 'react-native'
 import { BottomSheet, useSheetScroll } from '@/components/ui/BottomSheet'
 import { Button } from '@/components/ui/Button'
 import { ErrorBanner } from '@/components/ui/ErrorBanner'
-import { colors } from '@/constants/theme'
 import { useDeleteAccount } from '@/hooks/useDeleteAccount'
+import { SheetHeader } from '@/components/ui/SheetHeader'
 
 interface DeleteAccountSheetProps {
   visible: boolean
@@ -43,13 +42,7 @@ export function DeleteAccountSheet({ visible, onClose }: DeleteAccountSheetProps
 
   return (
     <BottomSheet visible={visible} onClose={handleClose} contentScroll={sheetScroll}>
-      <View className="flex-row items-center justify-between px-5 py-3">
-        <Pressable onPress={handleClose} hitSlop={8} disabled={isDeleting}>
-          <Ionicons name="close" size={22} color={colors.textSecondary} />
-        </Pressable>
-        <Text className="font-display text-md text-textPrimary">Delete Account</Text>
-        <View style={{ width: 22 }} />
-      </View>
+      <SheetHeader title="Delete Account" onClose={handleClose} closeDisabled={isDeleting} />
 
       <ScrollView
         {...sheetScroll.scrollProps}

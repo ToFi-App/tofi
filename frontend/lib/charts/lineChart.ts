@@ -71,6 +71,88 @@ export function skewedExtent(min: number, max: number, tickCount = 4): { min: nu
   return { min: -depth * step, max: top, ticks: [...negative, ...positive] }
 }
 
+/**
+ * A domain fitted to the data rather than anchored at zero, the way a stock chart scales its line:
+ * the lowest and highest values, padded by `margin` of the range on each side. A flat series gets
+ * ±1 so it draws mid-height instead of dividing by zero.
+ *
+ * `minSpan` stops a tiny range filling the chart: a week where net worth moved $50 would otherwise
+ * draw as a cliff. The domain is widened to at least that span, centred on the data.
+ */
+export function fittedExtent(values: number[], margin = 0.1, minSpan = 0): { min: number; max: number } {
+  const finite = values.filter(Number.isFinite)
+  if (finite.length === 0) return { min: 0, max: 1 }
+  const lo = Math.min(...finite)
+  const hi = Math.max(...finite)
+  let min = lo
+  let max = hi
+  if (hi === lo) {
+    min = lo - 1
+    max = hi + 1
+  } else {
+    const pad = (hi - lo) * margin
+    min = lo - pad
+    max = hi + pad
+  }
+  if (max - min < minSpan) {
+    const mid = (lo + hi) / 2
+    min = mid - minSpan / 2
+    max = mid + minSpan / 2
+  }
+  return { min, max }
+}
+
+/**
+ * A smooth curve through `pts` (ascending x) that never overshoots: monotone cubic interpolation
+ * (Fritsch–Carlson). Each segment stays between its own endpoints, so a flat stretch stays flat and
+ * no peak or dip appears that the data doesn't have — the flaw of plain Catmull-Rom smoothing,
+ * which bulges past a turn.
+ */
+export function monotoneLine(pts: { x: number; y: number }[]): string {
+  const n = pts.length
+  if (n < 2) return ''
+  if (n === 2) return `M ${pts[0].x} ${pts[0].y} L ${pts[1].x} ${pts[1].y}`
+
+  const slopes: number[] = []
+  for (let i = 0; i < n - 1; i++) {
+    const dx = pts[i + 1].x - pts[i].x
+    slopes.push(dx === 0 ? 0 : (pts[i + 1].y - pts[i].y) / dx)
+  }
+  const tangents: number[] = [slopes[0]]
+  for (let i = 1; i < n - 1; i++) {
+    const a = slopes[i - 1]
+    const b = slopes[i]
+    // A turn (or a flat side) gets a flat tangent: that is what keeps the curve from bulging.
+    tangents.push(a * b <= 0 ? 0 : (a + b) / 2)
+  }
+  tangents.push(slopes[n - 2])
+
+  for (let i = 0; i < n - 1; i++) {
+    if (slopes[i] === 0) {
+      tangents[i] = 0
+      tangents[i + 1] = 0
+      continue
+    }
+    const alpha = tangents[i] / slopes[i]
+    const beta = tangents[i + 1] / slopes[i]
+    const sum = alpha * alpha + beta * beta
+    if (sum > 9) {
+      const tau = 3 / Math.sqrt(sum)
+      tangents[i] = tau * alpha * slopes[i]
+      tangents[i + 1] = tau * beta * slopes[i]
+    }
+  }
+
+  let d = `M ${pts[0].x} ${pts[0].y}`
+  for (let i = 0; i < n - 1; i++) {
+    const p0 = pts[i]
+    const p1 = pts[i + 1]
+    const h = (p1.x - p0.x) / 3
+    d += ` C ${p0.x + h} ${p0.y + tangents[i] * h} ${p1.x - h} ${p1.y - tangents[i + 1] * h} ${p1.x} ${p1.y}`
+  }
+  return d
+}
+
 /** Compact axis label for a signed money value: -1.2K, 0, 24K, 1.5M. */
 export function formatAxisAmount(v: number): string {
   const abs = Math.abs(v)

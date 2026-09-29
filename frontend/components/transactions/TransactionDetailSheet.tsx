@@ -17,6 +17,7 @@ import { colors, hexToRgba } from '@/constants/theme'
 import { TRANSFER_TYPES } from '@/lib/transfers/registry'
 import type { FeedItem, FeedLink } from '@/lib/transactions/resolveFeed'
 import type { Category, Subcategory, TransferKind } from '@/types/domain'
+import { SheetHeader } from '@/components/ui/SheetHeader'
 
 interface TransactionDetailSheetProps {
   /** Owned by the single sheet host, so drag-to-dismiss tracks whichever content is showing. */
@@ -92,16 +93,7 @@ export function TransactionDetailSheet({ sheetScroll, item, categories, subcateg
 
   return (
     <>
-      <View className="flex-row items-center gap-3 px-5 py-3">
-        <Pressable onPress={onClose} hitSlop={8}>
-          <Ionicons name="close" size={22} color={colors.textSecondary} />
-        </Pressable>
-        <Text className="flex-1 text-center font-display text-md text-textPrimary" numberOfLines={1}>
-          {item.merchantName}
-        </Text>
-        {/* Balances the close button so the title centres on the sheet, not on the space left over. */}
-        <View style={{ width: 22 }} />
-      </View>
+      <SheetHeader title={item.merchantName} onClose={onClose} />
 
       <ScrollView {...sheetScroll.scrollProps} className="px-5" contentContainerClassName="gap-4 pb-10">
         {/* The transaction itself, centred: which card it hit, what it came to, when. */}

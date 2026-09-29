@@ -15,6 +15,7 @@ import type { Category, ManualTransaction, Subcategory, TransferKind } from '@/t
 // DateTimePicker works in the device's LOCAL timezone, which is the basis these helpers keep —
 // see dateKey.ts for what goes wrong with the UTC conversions that look equivalent.
 import { fromDateKey, toDateKey } from '@/lib/dates/dateKey'
+import { SheetHeader } from '@/components/ui/SheetHeader'
 
 interface ManualTransactionSheetProps {
   /** Still meaningful after the single-host change: this sheet stays MOUNTED while hidden (the
@@ -168,15 +169,7 @@ export function ManualTransactionSheet({
 
   return (
     <>
-      <View className="flex-row items-center justify-between px-5 py-3">
-        <Pressable onPress={onClose} hitSlop={8}>
-          <Ionicons name="close" size={22} color={colors.textSecondary} />
-        </Pressable>
-        <Text className="font-display text-md text-textPrimary">
-          {transaction ? 'Edit Transaction' : 'Add Transaction'}
-        </Text>
-        <View style={{ width: 22 }} />
-      </View>
+      <SheetHeader title={transaction ? 'Edit Transaction' : 'Add Transaction'} onClose={onClose} />
 
       <ScrollView {...sheetScroll.scrollProps} ref={scrollRef} className="px-5" contentContainerClassName="gap-4 pb-10" keyboardShouldPersistTaps="handled">
 

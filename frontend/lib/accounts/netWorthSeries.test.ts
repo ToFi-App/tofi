@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildNetWorthSeries, periodStart, stackMonth } from './netWorthSeries'
+import { buildNetWorthSeries, periodChanges, periodStart } from './netWorthSeries'
 import { CASH_ON_HAND_KEY } from './composition'
 import type { FeedItem } from '@/lib/transactions/resolveFeed'
 import type { Account } from '@/types/domain'
@@ -44,38 +44,6 @@ describe('buildNetWorthSeries', () => {
   })
 })
 
-describe('stackMonth', () => {
-  const { series } = buildNetWorthSeries(
-    [account('ira', 'investment', 1), account('checking', 'depository', 1), account('card', 'credit', 1)],
-    [],
-  )
-
-  it('stacks assets up from zero and negatives down from zero, in series order', () => {
-    const balances = new Map([
-      ['ira', 1000],
-      ['checking', 200],
-      ['card', -150],
-    ])
-    expect(stackMonth(series, balances)).toEqual([
-      { key: 'checking', from: 0, to: 200 },
-      { key: 'ira', from: 200, to: 1200 },
-      { key: 'card', from: 0, to: -150 },
-    ])
-  })
-
-  it('sends an overdrawn asset below the line and skips zero balances', () => {
-    const balances = new Map([
-      ['ira', 0],
-      ['checking', -40],
-      ['card', -150],
-    ])
-    expect(stackMonth(series, balances)).toEqual([
-      { key: 'checking', from: 0, to: -40 },
-      { key: 'card', from: -40, to: -190 },
-    ])
-  })
-})
-
 describe('periodStart', () => {
   it("is the first month's opening balances", () => {
     const months = [
@@ -87,5 +55,20 @@ describe('periodStart', () => {
 
   it('is empty when there are no months', () => {
     expect(periodStart([]).size).toBe(0)
+  })
+})
+
+describe('periodChanges', () => {
+  it("is each account's move during the point — close minus open — leaving out accounts that didn't move", () => {
+    const changes = periodChanges({
+      balances: new Map([['checking', 1200], ['card', -450], ['ira', 5000]]),
+      startBalances: new Map([['checking', 1000], ['card', -300], ['ira', 5000]]),
+    })
+    expect(changes).toEqual(new Map([['checking', 200], ['card', -150]]))
+  })
+
+  it('counts an account that appeared this period from zero', () => {
+    const changes = periodChanges({ balances: new Map([['cma', 350]]), startBalances: new Map([['cma', 0]]) })
+    expect(changes.get('cma')).toBe(350)
   })
 })

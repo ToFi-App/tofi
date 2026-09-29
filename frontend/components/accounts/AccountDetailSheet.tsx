@@ -18,6 +18,7 @@ import {
 } from '@/components/transactions/TransactionEditorProvider'
 import type { FeedItem } from '@/lib/transactions/resolveFeed'
 import type { Category } from '@/types/domain'
+import { SheetHeader } from '@/components/ui/SheetHeader'
 
 export type AccountDetailVariant = 'cash' | 'credit' | 'investment' | 'cashOnHand'
 
@@ -173,21 +174,19 @@ function AccountDetailSheetBody({
 
   return (
     <>
-      <View className="flex-row items-center justify-between px-5 py-3">
-        <Pressable onPress={onClose} hitSlop={8}>
-          <Ionicons name="close" size={22} color={colors.textSecondary} />
-        </Pressable>
-        <Text className="flex-1 text-center font-display text-md text-textPrimary" numberOfLines={1}>{shown.title}</Text>
-        {/* Only the built-in Cash row can take new entries here — it's backed by manual
-            transactions. A Plaid account's history comes from the bank alone. */}
-        {shown.variant === 'cashOnHand' ? (
-          <Pressable onPress={openNewManual} accessibilityLabel="Add cash transaction" hitSlop={8}>
-            <Ionicons name="add-circle-outline" size={22} color={colors.textPrimary} />
-          </Pressable>
-        ) : (
-          <View style={{ width: 22 }} />
-        )}
-      </View>
+      <SheetHeader
+        title={shown.title}
+        onClose={onClose}
+        right={
+          // Only the built-in Cash row can take new entries here — it's backed by manual
+          // transactions. A Plaid account's history comes from the bank alone.
+          shown.variant === 'cashOnHand' ? (
+            <Pressable onPress={openNewManual} accessibilityLabel="Add cash transaction" hitSlop={8}>
+              <Ionicons name="add-circle-outline" size={22} color={colors.textPrimary} />
+            </Pressable>
+          ) : null
+        }
+      />
 
       <View className="mx-5 mb-4 items-center rounded-xl p-5" style={{ backgroundColor: hexToRgba(tint.color, 0.08) }}>
         {/* Same component, and so the same rounded-square treatment, the accounts list gives the

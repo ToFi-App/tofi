@@ -1,257 +1,317 @@
-import { useMemo, useRef } from 'react'
-import { PanResponder, View, useWindowDimensions } from 'react-native'
-import Svg, { Circle, G, Line, Path, Rect, Text as SvgText } from 'react-native-svg'
+import { memo, useCallback, useEffect, useMemo, useRef } from 'react'
+import { View, useWindowDimensions } from 'react-native'
+import { Gesture, GestureDetector } from 'react-native-gesture-handler'
+import Animated, {
+  Easing,
+  runOnJS,
+  useAnimatedProps,
+  useReducedMotion,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+} from 'react-native-reanimated'
+import Svg, { Circle, Defs, G, Line, LinearGradient, Path, Rect, Stop, Text as SvgText } from 'react-native-svg'
 import { colors, fontFamily, hexToRgba } from '@/constants/theme'
-import { skewedExtent } from '@/lib/charts/lineChart'
-import { MONTH_NAMES } from '@/lib/format/date'
-import type { AccountMonthPoint, MonthPoint } from '@/lib/accounts/netWorthHistory'
-import { stackMonth, type NetWorthSeries } from '@/lib/accounts/netWorthSeries'
-import { seriesColor } from './netWorthPalette'
+import { fittedExtent, monotoneLine } from '@/lib/charts/lineChart'
+import { formatTrendLabel, type Granularity, type TrendPoint } from '@/lib/accounts/netWorthHistory'
+import { periodChanges } from '@/lib/accounts/netWorthSeries'
 
 interface NetWorthTrendChartProps {
-  points: MonthPoint[]
-  /** Per-account balances for the same months as `points`, drawn as a stacked bar per month. */
-  accountPoints: AccountMonthPoint[]
-  series: NetWorthSeries[]
-  /** Net worth as the period opened; drawn as the dotted reference line. */
+  /** Net worth per point, for the line — the same points as `accountPoints`. */
+  points: { netWorth: number; change: number }[]
+  /** Per-account balances per point (day, week or month) — for the x positions and dates, and a
+   *  highlighted account's moves. */
+  accountPoints: TrendPoint[]
+  granularity: Granularity
+  /**
+   * The window's buckets, first and count — the chart's horizontal layout. May run past the last
+   * point (a window dragged beyond today), leaving empty slots on the right.
+   */
+  slotStart: number
+  slotCount: number
+  /** Net worth as the period opened: what "up" or "down" (the line's colour) is measured from. */
   baseline: number
   /** The selected month, or null when none is — the chart then reads as the latest month. */
   selectedIndex: number | null
   onSelect: (index: number | null) => void
-  /** An account highlighted from the map or the rows: its segment stays solid, the rest recede. */
+  /**
+   * A pinch or two-finger drag began, or finished. The parent notes the window when the first one
+   * begins — onZoom's totals apply to it — and forgets it when the last one ends.
+   */
+  onZoomStart: () => void
+  onZoomEnd: () => void
+  /**
+   * The pinch so far, as totals since it began. `scale` is the pinch's scale (above 1 is in), or -1
+   * when only `drift` changed; `focus` is where the fingers are, as a share of the chart's width;
+   * `drift` is how far they've moved together, as a share of the width (positive is rightward).
+   */
+  onZoom: (scale: number, focus: number, drift: number) => void
+  /** An account highlighted from the map or the rows: the bars then measure that account's moves. */
   highlightedKey?: string | null
 }
 
-const CHART_H = 300
-/** Room above the tallest bar for the selected month's label. */
+const CHART_H = 380
+/** Room above the line for the selected month's label. */
 const PAD_T = 28
 /** Rough advance of the 11px label font, to keep a label clear of the screen edges. */
 const LABEL_CHAR_W = 6.5
 const X_H = 24
 
-// Bars take this share of their month's slot, capped so a short history doesn't draw slabs.
-const BAR_FILL = 0.62
-const BAR_MAX_W = 22
-/** Empty seam between stacked segments, so neighbours never merge into one band. A real gap, not a
- *  stroke, so it shows whatever the chart sits on. */
-const SEGMENT_GAP = 1.5
+// Price-and-volume layout, overlapping like a stock chart's: the bars rise from the bottom on
+// their own scale, and the line, on its own, may come down into their upper half.
+const BAND_H = 130
+/** How far into the bar band the line's lowest point may reach, as a share of the band. */
+const LINE_OVERLAP = 0.5
 
-/** Absolute month index, so the x-axis runs continuously across year boundaries. */
-function monthIndex(p: { year: number; month: number }): number {
-  return p.year * 12 + (p.month - 1)
+// Bars take this share of their slot, capped so a short history doesn't draw slabs, and floored so
+// a 90-day range still draws something.
+const BAR_FILL = 0.6
+const BAR_MAX_W = 20
+const BAR_MIN_W = 1.5
+/** How many dates the x-axis names, spread evenly. */
+const X_TICKS = 5
+/** Half the widest short label ("May 18"), so the outermost ones sit fully on screen. */
+const X_LABEL_INSET = 24
+/** The line's scale spans at least this share of net worth. */
+const MIN_LINE_SPAN = 0.02
+/** Corner radius for a stack's outer end: one rounded cap per column, square seams inside it. */
+const BAR_RADIUS = 3
+
+/** A bar that isn't the selected one, or a band that isn't the highlighted account. */
+const DIMMED_OPACITY = 0.3
+
+/**
+ * A rect with only its top corners rounded (or only its bottom ones), as a path — the outer end of
+ * a stacked column. Radius is capped by the rect's own size so a thin band never inverts.
+ */
+function capPath(x: number, y: number, w: number, h: number, r: number, end: 'top' | 'bottom'): string {
+  const rr = Math.max(0, Math.min(r, w / 2, h))
+  if (end === 'top') {
+    return `M ${x} ${y + h} L ${x} ${y + rr} Q ${x} ${y} ${x + rr} ${y} L ${x + w - rr} ${y} Q ${x + w} ${y} ${x + w} ${y + rr} L ${x + w} ${y + h} Z`
+  }
+  return `M ${x} ${y} L ${x + w} ${y} L ${x + w} ${y + h - rr} Q ${x + w} ${y + h} ${x + w - rr} ${y + h} L ${x + rr} ${y + h} Q ${x} ${y + h} ${x} ${y + h - rr} Z`
 }
 
 /** Finger travel under this is a tap, not a drag. */
 const TAP_SLOP = 8
+/** How long a finger must rest before a drag scrubs instead of sliding. */
+const SCRUB_HOLD_MS = 250
 
 /**
- * Full-bleed, axis-free trend chart: stacked per-account bars under the net worth line. The
- * headline above gives the exact reading for a selected month, and the dotted line marks the
- * period's opening value.
+ * Full-bleed, axis-free trend chart in a price-and-volume layout. The net worth line, smoothed and
+ * green when the period is up (red when down), is scaled to its own low and high the way a stock
+ * chart is, so its movement fills the space. Beneath it each point's bar shows how
+ * much net worth moved, green up and red down, like a stock's volume.
  */
 export function NetWorthTrendChart({
   points,
   accountPoints,
-  series,
+  granularity,
+  slotStart,
+  slotCount,
   baseline,
   selectedIndex,
   onSelect,
+  onZoomStart,
+  onZoomEnd,
+  onZoom,
   highlightedKey,
 }: NetWorthTrendChartProps) {
   const { width: chartW } = useWindowDimensions()
-  const plotH = CHART_H - PAD_T - X_H
+  const lineTop = PAD_T
+  const bandBottom = CHART_H - X_H
+  const lineBottom = bandBottom - BAND_H * LINE_OVERLAP
 
-  const { pixelPts, bars, barW, baselineY, zeroY, linePath, xTicks } = useMemo(() => {
-    const stacks = accountPoints.map((m) => stackMonth(series, m.balances))
-    const values = [...points.map((p) => p.netWorth), baseline]
-    for (const stack of stacks) for (const seg of stack) values.push(seg.to)
-    // Headroom above; below zero only as deep as the debt actually goes, so a small balance owed
-    // doesn't leave a whole empty band at the bottom (see skewedExtent). No axis reads the ticks.
-    const { min: yMin, max: yMax } = skewedExtent(Math.min(...values, 0), Math.max(...values, 0), 3)
-    const toY = (v: number) => PAD_T + plotH - ((v - yMin) / (yMax - yMin)) * plotH
+  const { slot, firstOffset, pixelPts, bars, linePath, areaPath, xTicks } = useMemo(() => {
+    // One slot per bucket in the window, point at its centre. Laid out against the window, not the
+    // data, so a window past today keeps empty slots on the right.
+    const slot = chartW / Math.max(slotCount, 1)
+    const toX = (p: { bucket: number }) => (p.bucket - slotStart + 0.5) * slot
+    // Where the first point sits among the slots — for turning a finger's slot back into a point.
+    const firstOffset = (accountPoints[0]?.bucket ?? slotStart) - slotStart
+    const width = Math.max(Math.min(slot * BAR_FILL, BAR_MAX_W), BAR_MIN_W)
 
-    // One slot per month with the point at its centre, so the first and last bars have room at
-    // the screen edges. Spans the actual months, so a short history still fills the width.
-    const firstIdx = points.length > 0 ? monthIndex(points[0]) : 0
-    const lastIdx = points.length > 0 ? monthIndex(points[points.length - 1]) : 0
-    const slot = chartW / Math.max(lastIdx - firstIdx + 1, 1)
-    const toX = (p: { year: number; month: number }) => (monthIndex(p) - firstIdx + 0.5) * slot
-    const width = Math.max(Math.min(slot * BAR_FILL, BAR_MAX_W), 2)
+    // The line: fitted to its own range. The opening value is included so the period's start is
+    // in frame even when the first month moved a lot.
+    // At least 2% of net worth tall, so a quiet week reads as quiet rather than as a cliff.
+    const lineValues = [...points.map((p) => p.netWorth), baseline]
+    const typical = Math.abs(lineValues.reduce((sum, v) => sum + v, 0) / lineValues.length)
+    const lineRange = fittedExtent(lineValues, 0.12, typical * MIN_LINE_SPAN)
+    const toLineY = (v: number) =>
+      lineBottom - ((v - lineRange.min) / (lineRange.max - lineRange.min)) * (lineBottom - lineTop)
+    const pts = points.map((p, i) => ({ x: toX(accountPoints[i]), y: toLineY(p.netWorth) }))
+    // Smoothed without overshoot: monotone, so no peak or dip appears that the data doesn't have.
+    // Points sit at bar centres, so the line is carried flat out to the left edge it would
+    // otherwise stop half a bar short of. It always ENDS at the latest point, though — the live
+    // dot — the way a stock chart's line ends at the last price.
+    const traced = pts.length >= 2 && firstOffset === 0 ? [{ x: 0, y: pts[0].y }, ...pts] : pts
+    const line = monotoneLine(traced)
+    const area =
+      traced.length < 2 ? '' : `${line} L ${traced[traced.length - 1].x} ${lineBottom} L ${traced[0].x} ${lineBottom} Z`
 
-    const colorByKey = new Map(series.map((s) => [s.key, seriesColor(s)]))
-    const barRects = stacks.map((stack, i) =>
-      stack.map((seg) => {
-        const y1 = toY(seg.from)
-        const y2 = toY(seg.to)
-        return {
-          key: seg.key,
-          x: toX(accountPoints[i]) - width / 2,
-          y: Math.min(y1, y2),
-          height: Math.abs(y2 - y1),
-          color: colorByKey.get(seg.key) ?? colors.border,
-        }
-      }),
-    )
+    // The band is the chart's "volume": one bar per point, rising from the bottom, as tall as net
+    // worth MOVED that point and coloured by direction — green up, red down — like a stock's
+    // volume bars. With an account highlighted it measures that account's move instead.
+    const moves = accountPoints.map((p, i) => {
+      if (highlightedKey != null) return periodChanges(p).get(highlightedKey) ?? 0
+      return points[i]?.change ?? 0
+    })
+    const biggest = Math.max(...moves.map(Math.abs), 0)
+    const barRects = moves.map((move, i) => {
+      // A move too small to see still gets a sliver, so every non-zero point shows its direction.
+      const height = move === 0 || biggest === 0 ? 0 : Math.max((Math.abs(move) / biggest) * BAND_H, 1.5)
+      const x = toX(accountPoints[i]) - width / 2
+      // The shape is built here, once per window, rather than on every render of the bars.
+      return { d: height > 0 ? capPath(x, bandBottom - height, width, height, BAR_RADIUS, 'top') : null, up: move >= 0 }
+    })
 
-    const pts = points.map((p) => ({ x: toX(p), y: toY(p.netWorth) }))
-    const line = pts.length < 2 ? '' : `M ${pts.map((p) => `${p.x} ${p.y}`).join(' L ')}`
-
-    // Within a year, abbreviated months ("Jan", "Mar"…); across years, each January labelled with
-    // its year (thinned when many years would crowd the axis).
-    let labels: { x: number; text: string }[]
-    if (lastIdx - firstIdx < 12) {
-      const stride = Math.max(1, Math.ceil(points.length / 6))
-      labels = points
-        .filter((_, i) => i % stride === 0)
-        .map((p) => ({ x: toX(p), text: MONTH_NAMES[p.month - 1] }))
-    } else {
-      const januaries = points.filter((p) => p.month === 1)
-      const yearStride = Math.max(1, Math.ceil(januaries.length / 5))
-      labels = januaries
-        .filter((_, i) => i % yearStride === 0)
-        .map((p) => ({ x: toX(p), text: String(p.year) }))
+    // Every Nth point gets a date, at its own bar — the slots are uniform, so a fixed N is evenly
+    // spaced both on screen and in time. N is the smallest step that keeps it to X_TICKS labels,
+    // so a week labels every day. Points too close to an edge for a centred label are skipped.
+    const n = accountPoints.length
+    const step = Math.max(1, Math.ceil((n - 1) / (X_TICKS - 1)))
+    const labels: { x: number; text: string }[] = []
+    const fits = (x: number) => x >= X_LABEL_INSET && x <= chartW - X_LABEL_INSET
+    let first = 0
+    while (first < n && !fits(toX(accountPoints[first]))) first++
+    for (let i = first; i < n; i += step) {
+      const x = toX(accountPoints[i])
+      if (!fits(x)) break
+      labels.push({ x, text: formatTrendLabel(accountPoints[i].start, granularity, 'short') })
     }
 
     return {
+      slot,
+      firstOffset,
       pixelPts: pts,
       bars: barRects,
-      barW: width,
-      baselineY: toY(baseline),
-      zeroY: toY(0),
       linePath: line,
+      areaPath: area,
       xTicks: labels,
     }
-  }, [points, accountPoints, series, baseline, chartW, plotH])
+  }, [points, accountPoints, granularity, slotStart, slotCount, baseline, highlightedKey, chartW, lineTop, lineBottom, bandBottom])
 
-  // Read inside the responder, which is rebuilt only when the geometry changes — a ref keeps it
-  // from acting on the selection as it stood when it was built.
-  const selectedRef = useRef(selectedIndex)
-  selectedRef.current = selectedIndex
-  // What was selected when this touch began, so a tap can tell "same month again" (clear) from
-  // "a different month" (move the selection there).
-  const touchRef = useRef<{ startX: number; selectedAtStart: number | null; moved: boolean } | null>(null)
-
-  const panResponder = useMemo(() => {
-    const nearestIndex = (locationX: number) => {
-      if (pixelPts.length === 0) return null
-      let best = 0
-      for (let i = 1; i < pixelPts.length; i++) {
-        if (Math.abs(pixelPts[i].x - locationX) < Math.abs(pixelPts[best].x - locationX)) best = i
-      }
-      return best
+  const nearestIndex = (x: number) => {
+    if (pixelPts.length === 0) return null
+    let best = 0
+    for (let i = 1; i < pixelPts.length; i++) {
+      if (Math.abs(pixelPts[i].x - x) < Math.abs(pixelPts[best].x - x)) best = i
     }
-    return PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      // The chart sits inside a scrollable sheet; once a finger is reading the line, the
-      // scroll (or the sheet's drag-to-dismiss) must not steal the gesture mid-scrub.
-      onPanResponderTerminationRequest: () => false,
-      // Selecting is sticky: a tap or a drag leaves its month selected after the finger lifts, and
-      // only tapping that same month again clears it. Dragging still scrubs, so the headline and
-      // the rows can be run along the chart; wherever the drag ends is what stays selected.
-      onPanResponderGrant: (evt) => {
-        const x = evt.nativeEvent.locationX
-        touchRef.current = { startX: x, selectedAtStart: selectedRef.current, moved: false }
-        onSelect(nearestIndex(x))
-      },
-      onPanResponderMove: (evt) => {
-        const touch = touchRef.current
-        const x = evt.nativeEvent.locationX
-        if (touch && Math.abs(x - touch.startX) > TAP_SLOP) touch.moved = true
-        if (touch?.moved) onSelect(nearestIndex(x))
-      },
-      onPanResponderRelease: (evt) => {
-        const touch = touchRef.current
-        touchRef.current = null
-        if (!touch || touch.moved) return
-        const tapped = nearestIndex(evt.nativeEvent.locationX)
-        if (tapped != null && tapped === touch.selectedAtStart) onSelect(null)
-      },
-      // Interrupted rather than finished: leave whatever the finger last selected.
-      onPanResponderTerminate: () => {
-        touchRef.current = null
-      },
+    return best
+  }
+
+  // Gesture callbacks run on the UI thread and reach React through runOnJS, which needs functions
+  // whose identity never changes — a worklet captures what it closes over when it's built. So each
+  // entry point below is stable and reads the latest props through a ref.
+  const handlers = useRef({ nearestIndex, selectedIndex, onSelect, onZoomStart, onZoomEnd, onZoom })
+  handlers.current = { nearestIndex, selectedIndex, onSelect, onZoomStart, onZoomEnd, onZoom }
+
+  // A tap selects the point under it; tapping the selected point again clears it.
+  const tapAt = useCallback((x: number) => {
+    const { nearestIndex: nearest, selectedIndex: current, onSelect: select } = handlers.current
+    const tapped = nearest(x)
+    select(tapped != null && tapped === current ? null : tapped)
+  }, [])
+  // Press-and-hold, then drag: scrubs; wherever it ends stays selected. The gesture works out the
+  // index itself and only calls this when it changes.
+  const selectIndex = useCallback((index: number) => handlers.current.onSelect(index), [])
+  // The last index the scrub reported, on the UI thread — so a finger moving within one bar's slot
+  // (dozens of frames at daily resolution) crosses to JS zero times instead of every frame.
+  const lastScrub = useSharedValue(-1)
+  const count = pixelPts.length
+  const zoomStart = useCallback(() => handlers.current.onZoomStart(), [])
+  const zoomEnd = useCallback(() => handlers.current.onZoomEnd(), [])
+  const zoomTo = useCallback((scale: number, focus: number, drift: number) => handlers.current.onZoom(scale, focus, drift), [])
+
+  const gesture = useMemo(() => {
+    const tap = Gesture.Tap().onEnd((e, success) => {
+      if (success) runOnJS(tapAt)(e.x)
     })
-  }, [pixelPts, onSelect])
+    // A plain one-finger drag slides the window through time; horizontal only, so a vertical swipe
+    // over the chart still scrolls the sheet. It reports through the same totals as a pinch.
+    const slide = Gesture.Pan()
+      .maxPointers(1)
+      .activeOffsetX([-TAP_SLOP, TAP_SLOP])
+      .failOffsetY([-TAP_SLOP * 1.5, TAP_SLOP * 1.5])
+      .onStart(() => runOnJS(zoomStart)())
+      .onUpdate((e) => runOnJS(zoomTo)(-1, 0, e.translationX / chartW))
+      .onEnd(() => runOnJS(zoomEnd)())
+    // Press and hold, then drag, to scrub point by point; wherever it ends stays selected. It races
+    // the slide: holding still past the delay makes it scrub, moving first makes it slide.
+    const scrub = Gesture.Pan()
+      .maxPointers(1)
+      .activateAfterLongPress(SCRUB_HOLD_MS)
+      .onStart((e) => {
+        // Points sit one per slot, so the one under the finger is plain arithmetic; a finger over
+        // an empty slot past today reads the last point.
+        const index = Math.min(Math.max(Math.floor(e.x / slot) - firstOffset, 0), count - 1)
+        lastScrub.value = index
+        runOnJS(selectIndex)(index)
+      })
+      .onUpdate((e) => {
+        const index = Math.min(Math.max(Math.floor(e.x / slot) - firstOffset, 0), count - 1)
+        if (index === lastScrub.value) return
+        lastScrub.value = index
+        runOnJS(selectIndex)(index)
+      })
+    // Pinch zooms about the fingers; the fingers drifting together pans. Reported as totals since
+    // the pinch began, which the parent applies to the window as it stood then — so a slow pinch
+    // accumulates instead of rounding away to nothing frame by frame.
+    const pinch = Gesture.Pinch()
+      .onStart(() => runOnJS(zoomStart)())
+      .onUpdate((e) => runOnJS(zoomTo)(e.scale, e.focalX / chartW, 0))
+      // onEnd runs for every gesture that reached onStart, cancelled or not, so the count balances.
+      .onEnd(() => runOnJS(zoomEnd)())
+    const drift = Gesture.Pan()
+      .minPointers(2)
+      .averageTouches(true)
+      .onStart(() => runOnJS(zoomStart)())
+      .onUpdate((e) => runOnJS(zoomTo)(-1, 0, e.translationX / chartW))
+      // onEnd runs for every gesture that reached onStart, cancelled or not, so the count balances.
+      .onEnd(() => runOnJS(zoomEnd)())
+    return Gesture.Race(Gesture.Simultaneous(pinch, drift), Gesture.Race(scrub, slide), tap)
+  }, [chartW, slot, firstOffset, count, lastScrub, tapAt, selectIndex, zoomStart, zoomEnd, zoomTo])
 
   if (points.length === 0) return null
 
   const selected = selectedIndex != null ? pixelPts[selectedIndex] : undefined
-  const selectedPoint = selectedIndex != null ? points[selectedIndex] : undefined
-  const selectedLabel = selectedPoint ? `${MONTH_NAMES[selectedPoint.month - 1]} ${selectedPoint.year}` : ''
+  const selectedPoint = selectedIndex != null ? accountPoints[selectedIndex] : undefined
+  const selectedLabel = selectedPoint ? formatTrendLabel(selectedPoint.start, granularity, 'long') : ''
   const selectedLabelHalfW = (selectedLabel.length * LABEL_CHAR_W) / 2
 
+  // Stock-chart convention: green when the period ended above where it opened, red below.
+  const latest = pixelPts[pixelPts.length - 1]
+  const isUp = (points[points.length - 1]?.netWorth ?? 0) >= baseline
+  const lineColor = isUp ? colors.income : colors.expense
+
   return (
-    <View {...panResponder.panHandlers}>
+    <GestureDetector gesture={gesture}>
+    <View>
       <Svg width={chartW} height={CHART_H}>
-        {/* Bars first, so the line always reads on top of them. With a month selected, the
-            others step back, which ties the headline and the account rows to one bar. */}
-        {bars.map((stack, i) => (
-          <G key={i} opacity={selected == null || i === selectedIndex ? 1 : 0.4}>
-            {stack.map((seg) => (
-              <Rect
-                key={seg.key}
-                x={seg.x}
-                y={seg.y + SEGMENT_GAP / 2}
-                width={barW}
-                height={Math.max(seg.height - SEGMENT_GAP, 0)}
-                rx={Math.min(2, barW / 4)}
-                fill={seg.color}
-                opacity={highlightedKey == null || seg.key === highlightedKey ? 1 : 0.25}
-              />
-            ))}
-          </G>
-        ))}
+        {/* Layers that redraw only when their own inputs change: selecting a point redraws the
+            bars (to fade the others) and the marker, not the line or the dates. */}
+        <BarsLayer bars={bars} selectedIndex={selectedIndex} />
+        <LineLayer areaPath={areaPath} linePath={linePath} lineColor={lineColor} />
 
-        {/* The zero line, solid, so debt reads as below zero rather than as a shorter bar. */}
-        <Line x1={0} y1={zeroY} x2={chartW} y2={zeroY} stroke={colors.textSecondary} strokeWidth={1} />
+        {/* The "live" marker on the latest point, while nothing is selected. */}
+        {latest && selected == null ? <LiveDot x={latest.x} y={latest.y} color={lineColor} /> : null}
 
-        <Line
-          x1={0}
-          y1={baselineY}
-          x2={chartW}
-          y2={baselineY}
-          stroke={colors.textPrimary}
-          strokeWidth={1.5}
-          strokeDasharray="1.5,5"
-          strokeLinecap="round"
-        />
-
-        {linePath ? <Path d={linePath} stroke={colors.primary} strokeWidth={2.5} fill="none" strokeLinejoin="round" /> : null}
-
-        {/* A single month has no line to read a trend from — anchor it to the zero baseline. */}
-        {pixelPts.length === 1 ? (
-          <>
-            <Circle cx={pixelPts[0].x} cy={pixelPts[0].y} r={3.5} fill={colors.surface} stroke={colors.primary} strokeWidth={2} />
-            <Line
-              x1={pixelPts[0].x}
-              y1={pixelPts[0].y}
-              x2={pixelPts[0].x}
-              y2={zeroY}
-              stroke={hexToRgba(colors.primary, 0.35)}
-              strokeWidth={1.5}
-            />
-          </>
-        ) : null}
-
-        {xTicks.map((tick) => (
-          <SvgText
-            key={`${tick.text}-${tick.x}`}
-            x={tick.x}
-            y={CHART_H - 6}
-            fontSize={11}
-            fontFamily={fontFamily.mono}
-            fill={colors.textMuted}
-            textAnchor="middle"
-          >
-            {tick.text}
-          </SvgText>
-        ))}
+        <DateLabels ticks={xTicks} />
 
         {selected ? (
           <G>
-            <Line x1={selected.x} y1={PAD_T} x2={selected.x} y2={PAD_T + plotH} stroke={hexToRgba(colors.primary, 0.45)} strokeWidth={1} />
-            {/* The month being read, above its bar — clamped so an edge month isn't clipped. */}
+            {/* Through the line and the band, tying the dot to its bar. */}
+            <Line
+              x1={selected.x}
+              y1={lineTop}
+              x2={selected.x}
+              y2={bandBottom}
+              stroke={colors.textSecondary}
+              strokeWidth={1}
+              strokeDasharray="3,3"
+              opacity={0.7}
+            />
+            {/* The month being read, above the line — clamped so an edge month isn't clipped. */}
             <SvgText
               x={Math.min(Math.max(selected.x, selectedLabelHalfW + 4), chartW - selectedLabelHalfW - 4)}
               y={PAD_T - 10}
@@ -262,10 +322,121 @@ export function NetWorthTrendChart({
             >
               {selectedLabel}
             </SvgText>
-            <Circle cx={selected.x} cy={selected.y} r={5} fill={colors.surface} stroke={colors.primary} strokeWidth={2.5} />
+            <Circle cx={selected.x} cy={selected.y} r={9} fill={hexToRgba(lineColor, 0.18)} />
+            <Circle cx={selected.x} cy={selected.y} r={5} fill={colors.surface} stroke={lineColor} strokeWidth={2.5} />
           </G>
         ) : null}
       </Svg>
     </View>
+    </GestureDetector>
   )
 }
+
+/** The "volume" bars — drawn first so the line and its fill sit over them where the two overlap. */
+const BarsLayer = memo(function BarsLayer({
+  bars,
+  selectedIndex,
+}: {
+  bars: { d: string | null; up: boolean }[]
+  selectedIndex: number | null
+}) {
+  return (
+    <G>
+      {bars.map((bar, i) =>
+        bar.d ? (
+          <Path
+            key={i}
+            d={bar.d}
+            fill={bar.up ? colors.income : colors.expense}
+            // With a point selected the other bars step back.
+            opacity={selectedIndex != null && selectedIndex !== i ? DIMMED_OPACITY : 1}
+          />
+        ) : null,
+      )}
+    </G>
+  )
+})
+
+/** The net worth line and the fading area under it. */
+const LineLayer = memo(function LineLayer({
+  areaPath,
+  linePath,
+  lineColor,
+}: {
+  areaPath: string
+  linePath: string
+  lineColor: string
+}) {
+  return (
+    <G>
+      <Defs>
+        <LinearGradient id="netWorthArea" x1="0" y1="0" x2="0" y2="1">
+          <Stop offset="0" stopColor={lineColor} stopOpacity={0.2} />
+          <Stop offset="1" stopColor={lineColor} stopOpacity={0} />
+        </LinearGradient>
+      </Defs>
+      {areaPath ? <Path d={areaPath} fill="url(#netWorthArea)" /> : null}
+      {linePath ? (
+        <Path d={linePath} stroke={lineColor} strokeWidth={2.5} fill="none" strokeLinejoin="round" strokeLinecap="round" />
+      ) : null}
+    </G>
+  )
+})
+
+/** The dates along the bottom. */
+const DateLabels = memo(function DateLabels({ ticks }: { ticks: { x: number; text: string }[] }) {
+  return (
+    <G>
+      {ticks.map((tick) => (
+        <SvgText
+          key={`${tick.text}-${tick.x}`}
+          x={tick.x}
+          y={CHART_H - 6}
+          fontSize={11}
+          fontFamily={fontFamily.mono}
+          fill={colors.textMuted}
+          textAnchor="middle"
+        >
+          {tick.text}
+        </SvgText>
+      ))}
+    </G>
+  )
+})
+
+const AnimatedCircle = Animated.createAnimatedComponent(Circle)
+
+/** One ripple's length; the ring grows and fades over this, then starts again. */
+const RIPPLE_MS = 1800
+const RIPPLE_FROM = 4
+const RIPPLE_TO = 16
+
+/**
+ * The latest point, marked as live: a solid dot with a ring rippling out of it and fading, on a
+ * loop. Animated on the UI thread through animated props, so the ripple never re-renders the
+ * chart. With Reduce Motion on it holds still as a plain halo.
+ */
+const LiveDot = memo(function LiveDot({ x, y, color }: { x: number; y: number; color: string }) {
+  const reduceMotion = useReducedMotion()
+  const progress = useSharedValue(0)
+  useEffect(() => {
+    if (reduceMotion) return
+    progress.value = 0
+    progress.value = withRepeat(withTiming(1, { duration: RIPPLE_MS, easing: Easing.out(Easing.quad) }), -1, false)
+  }, [reduceMotion, progress])
+  const ripple = useAnimatedProps(() => ({
+    r: RIPPLE_FROM + (RIPPLE_TO - RIPPLE_FROM) * progress.value,
+    opacity: 0.45 * (1 - progress.value),
+  }))
+
+  return (
+    <G>
+      {reduceMotion ? (
+        <Circle cx={x} cy={y} r={8} fill={hexToRgba(color, 0.18)} />
+      ) : (
+        <AnimatedCircle cx={x} cy={y} fill={color} animatedProps={ripple} />
+      )}
+      <Circle cx={x} cy={y} r={3.5} fill={color} />
+    </G>
+  )
+})

@@ -42,6 +42,13 @@ function signed(amount: number, isMasked: boolean): string {
   return `${amount > 0 ? '+' : ''}${formatMaskableAmount(amount, isMasked)}`
 }
 
+const RIBBON_SUBTITLES: Record<Ribbon['kind'], string> = {
+  income: 'Income',
+  spend: 'Spending',
+  unlinked: 'Unlinked account',
+  reimbursement: '',
+}
+
 /**
  * Where the month's money came from and went. The chart looks at one subject at a time — the
  * household, or a single account — with its inflows on the left and outflows on the right, which
@@ -119,7 +126,9 @@ export default function CashFlowScreen() {
       const outside = sideById.get(sideById.has(ribbon.from) ? ribbon.from : ribbon.to)
       setSelection({
         title: `${nameOf(ribbon.from)} → ${nameOf(ribbon.to)}`,
-        subtitle: ribbon.kind === 'income' ? 'Income' : ribbon.kind === 'spend' ? 'Spending' : 'Unlinked account',
+        // A reimbursement ribbon's title already names it ("Reimbursements → …"), so it takes no
+        // subtitle — it used to fall through to "Unlinked account", which it isn't.
+        subtitle: RIBBON_SUBTITLES[ribbon.kind],
         color: ribbonColor(ribbon, outside ? sideMeta(outside) : { label: '', color: colors.textMuted }),
         amount: ribbon.amount,
         items: itemsFor(ribbon.itemIds),

@@ -4,6 +4,7 @@ import { AUTO_MATCH_WINDOW_DAYS } from '@/lib/transfers/autoMatch'
 import { daysBetween } from '@/lib/transfers/registry'
 import { round2 } from './netWorth'
 import { CASH_ON_HAND_KEY } from './composition'
+import { MONTH_NAMES } from '@/lib/format/date'
 
 /**
  * Net worth history is *back-cast* from today's balances rather than read from stored
@@ -127,98 +128,169 @@ function balanceKey(item: FeedItem): string {
   return item.source === 'manual' ? CASH_ON_HAND_KEY : item.accountId!
 }
 
+export type Granularity = 'day' | 'week' | 'month'
+
+const MS_PER_DAY = 86_400_000
+
+/** Whole days since 1970-01-01 for a YYYY-MM-DD key, in UTC so DST never shifts a day. */
+function dayNumber(date: string): number {
+  return Math.floor(Date.parse(`${date.slice(0, 10)}T00:00:00Z`) / MS_PER_DAY)
+}
+
+function isoFromDayNumber(day: number): string {
+  return new Date(day * MS_PER_DAY).toISOString().slice(0, 10)
+}
+
+/** Today's local calendar date as YYYY-MM-DD — "today" is the user's day, not UTC's. */
+function localIso(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
 /**
- * Monthly net flow, keyed by absolute month index and then by balance (balanceKey), over every
- * transaction that moved net worth.
+ * The bucket a date falls in, as an ascending integer: a day number, a Monday-based week number
+ * (1970-01-01 was a Thursday, hence the +3), or the absolute month index.
  */
-function flowByMonth(feed: FeedItem[], linkedAccountIds: Set<string>): Map<number, Map<string, number>> {
+export function bucketOf(date: string, granularity: Granularity): number {
+  if (granularity === 'month') return toIndex(Number(date.slice(0, 4)), Number(date.slice(5, 7)))
+  const day = dayNumber(date)
+  return granularity === 'day' ? day : Math.floor((day + 3) / 7)
+}
+
+/** The first calendar day of a bucket, as YYYY-MM-DD. */
+function bucketStart(bucket: number, granularity: Granularity): string {
+  if (granularity === 'month') {
+    const { year, month } = fromIndex(bucket)
+    return `${year}-${String(month).padStart(2, '0')}-01`
+  }
+  return isoFromDayNumber(granularity === 'day' ? bucket : bucket * 7 - 3)
+}
+
+/**
+ * Net flow per bucket, then per balance (balanceKey), over every transaction that moved net worth.
+ */
+function flowByBucket(
+  feed: FeedItem[],
+  linkedAccountIds: Set<string>,
+  granularity: Granularity,
+): Map<number, Map<string, number>> {
   const flow = new Map<number, Map<string, number>>()
   const countsTowardNetWorth = netWorthPredicate(feed, linkedAccountIds)
   for (const item of feed) {
     if (!countsTowardNetWorth(item)) continue
-    const year = Number(item.date.slice(0, 4))
+    if (!/^\d{4}-\d{2}-\d{2}/.test(item.date)) continue
     const month = Number(item.date.slice(5, 7))
-    if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) continue
+    if (month < 1 || month > 12) continue
     // Gross `amount`, not `netAmount`: a reimbursement's income transaction is its own feed
     // item, so netting it out here would count the same dollars twice.
-    const index = toIndex(year, month)
-    const byKey = flow.get(index) ?? new Map<string, number>()
+    const bucket = bucketOf(item.date, granularity)
+    const byKey = flow.get(bucket) ?? new Map<string, number>()
     byKey.set(balanceKey(item), (byKey.get(balanceKey(item)) ?? 0) + item.amount)
-    flow.set(index, byKey)
+    flow.set(bucket, byKey)
   }
   return flow
 }
 
+interface BucketPoint {
+  bucket: number
+  balances: Map<string, number>
+  flow: Map<string, number>
+  startBalances: Map<string, number>
+}
+
 /**
- * The one backwards walk both histories share, so the per-account bars and the net worth line
- * can never disagree about which months exist or what moved in them.
+ * The one backwards walk every history shares — monthly, weekly or daily — so the per-account
+ * bars and the net worth line can never disagree about which buckets exist or what moved in them.
  *
  * Every balance is signed the way it counts toward net worth (a card's $400 owed is -400), which
  * makes the walk the same for every account type: a row's `amount` moves its balance by -amount,
- * so undoing a month adds the month's flow back.
+ * so undoing a bucket adds its flow back.
+ *
+ * Walks from `nowBucket` back to the oldest bucket with data, keeping those inside
+ * [firstBucket, lastBucket]. Buckets before the oldest data are never emitted — with no ledger to
+ * unwind, their value is unknown, not unchanged.
  */
-function walkBalances(
+function walkBuckets(
   anchors: Map<string, number>,
-  feed: FeedItem[],
-  linkedAccountIds: Set<string>,
-  year: number | undefined,
-  today: Date,
+  flow: Map<number, Map<string, number>>,
+  range: { nowBucket: number; firstBucket: number | null; lastBucket: number },
   /** Which anchor a balanceKey's flow lands on. Identity by default; net worth folds every key into one. */
   anchorFor: (key: string) => string = (key) => key,
   /** Per-account sign a real balance must have; see computeAccountHistory's `expectedSign`. */
   expectedSign?: Map<string, 1 | -1>,
-): AccountMonthPoint[] {
-  const nowIndex = toIndex(today.getFullYear(), today.getMonth() + 1)
-  const flow = flowByMonth(feed, linkedAccountIds)
+): BucketPoint[] {
+  const { nowBucket, lastBucket } = range
 
-  // Each signed account's first month of activity — where "before it existed" begins.
-  const openIndex = new Map<string, number>()
+  // Each signed account's first bucket of activity — where "before it existed" begins.
+  const openBucket = new Map<string, number>()
   if (expectedSign) {
-    for (const [index, byKey] of flow) {
+    for (const [bucket, byKey] of flow) {
       for (const key of byKey.keys()) {
         if (!expectedSign.has(key)) continue
-        const seen = openIndex.get(key)
-        if (seen === undefined || index < seen) openIndex.set(key, index)
+        const seen = openBucket.get(key)
+        if (seen === undefined || bucket < seen) openBucket.set(key, bucket)
       }
     }
   }
 
-  let earliestIndex = nowIndex
-  for (const index of flow.keys()) {
-    if (index < earliestIndex) earliestIndex = index
+  let earliest = nowBucket
+  for (const bucket of flow.keys()) {
+    if (bucket < earliest) earliest = bucket
   }
+  const firstBucket = Math.max(range.firstBucket ?? earliest, earliest)
+  if (firstBucket > nowBucket || lastBucket < earliest) return []
 
-  const requestedFirst = year != null ? toIndex(year, 1) : earliestIndex
-  const requestedLast = year != null ? toIndex(year, 12) : nowIndex
-  if (requestedFirst > nowIndex || requestedLast < earliestIndex) return []
-
+  const running = new Map(anchors)
   const snapshot = () => {
     const balances = new Map<string, number>()
     for (const [key, value] of running) balances.set(key, round2(value))
     return balances
   }
 
-  // Walk back from today one month at a time, keeping only what lands in `year`.
-  const months: AccountMonthPoint[] = []
-  const running = new Map(anchors)
-  for (let index = nowIndex; index >= earliestIndex; index--) {
-    const monthFlow = flow.get(index) ?? new Map<string, number>()
-    const point = index >= requestedFirst && index <= requestedLast ? { ...fromIndex(index), balances: snapshot(), flow: monthFlow } : null
-    for (const [key, amount] of monthFlow) running.set(anchorFor(key), (running.get(anchorFor(key)) ?? 0) + amount)
+  const points: BucketPoint[] = []
+  for (let bucket = nowBucket; bucket >= earliest; bucket--) {
+    const bucketFlow = flow.get(bucket) ?? new Map<string, number>()
+    const point = bucket >= firstBucket && bucket <= lastBucket ? { bucket, balances: snapshot(), flow: bucketFlow } : null
+    for (const [key, amount] of bucketFlow) running.set(anchorFor(key), (running.get(anchorFor(key)) ?? 0) + amount)
 
-    // Having just undone an account's first month, `running` holds its balance before any
+    // Having just undone an account's first bucket, `running` holds its balance before any
     // activity. If that balance has a sign the account cannot have, it did not exist yet: zero.
     // Nothing earlier moves it, so it stays zero for the rest of the walk.
-    for (const [key, open] of openIndex) {
-      if (index !== open) continue
+    for (const [key, open] of openBucket) {
+      if (bucket !== open) continue
       const value = running.get(key) ?? 0
       if (value * expectedSign!.get(key)! < 0) running.set(key, 0)
     }
 
-    if (point) months.push({ ...point, startBalances: snapshot() })
+    if (point) points.push({ ...point, startBalances: snapshot() })
+    // Nothing before the requested range is emitted, and the clamp above only needs the walk
+    // to reach each account's opening — past both, there is no reason to keep going.
+    if (bucket <= firstBucket && [...openBucket.values()].every((open) => bucket <= open)) break
   }
 
-  return months.reverse()
+  return points.reverse()
+}
+
+/** The monthly walk, as every monthly history reads it. */
+function walkBalances(
+  anchors: Map<string, number>,
+  feed: FeedItem[],
+  linkedAccountIds: Set<string>,
+  year: number | undefined,
+  today: Date,
+  anchorFor?: (key: string) => string,
+  expectedSign?: Map<string, 1 | -1>,
+): AccountMonthPoint[] {
+  const nowBucket = toIndex(today.getFullYear(), today.getMonth() + 1)
+  const flow = flowByBucket(feed, linkedAccountIds, 'month')
+  const range = {
+    nowBucket,
+    firstBucket: year != null ? toIndex(year, 1) : null,
+    lastBucket: year != null ? toIndex(year, 12) : nowBucket,
+  }
+  return walkBuckets(anchors, flow, range, anchorFor, expectedSign).map(({ bucket, ...rest }) => ({
+    ...fromIndex(bucket),
+    ...rest,
+  }))
 }
 
 /**
@@ -314,9 +386,130 @@ export function netWorthYearRange(
 ): { first: number; last: number } {
   const last = today.getFullYear()
   let first = last
-  for (const index of flowByMonth(feed, linkedAccountIds).keys()) {
+  for (const index of flowByBucket(feed, linkedAccountIds, 'month').keys()) {
     const { year } = fromIndex(index)
     if (year < first) first = year
   }
   return { first, last }
+}
+
+export type TrendRange = '1W' | '1M' | '3M' | 'YTD' | '1Y' | 'ALL'
+
+/** Past this many days a range draws weekly rather than daily — a stacked bar per day turns into
+ *  thousands of shapes to redraw on every tap. */
+const DAILY_LIMIT_DAYS = 100
+
+export interface TrendPoint extends Omit<BucketPoint, 'bucket'> {
+  /** Ascending bucket number; consecutive buckets are adjacent days, weeks or months. */
+  bucket: number
+  /** The bucket's first day, YYYY-MM-DD. */
+  start: string
+}
+
+/**
+ * Per-account history over a time range, at a resolution chosen for it: days for up to 3 months
+ * (and a young year-to-date), weeks for a year, months for everything. Same walk, same rules as the
+ * monthly history — only the bucket size changes.
+ */
+export function computeTrend(
+  anchors: Map<string, number>,
+  feed: FeedItem[],
+  linkedAccountIds: Set<string>,
+  range: TrendRange,
+  today: Date = new Date(),
+  options: { expectedSign?: Map<string, 1 | -1> } = {},
+): { granularity: Granularity; points: TrendPoint[] } {
+  const todayIso = localIso(today)
+  const todayDay = dayNumber(todayIso)
+  const yearStart = `${today.getFullYear()}-01-01`
+
+  let granularity: Granularity
+  let fromDay: number | null
+  switch (range) {
+    case '1W':
+      granularity = 'day'
+      fromDay = todayDay - 6
+      break
+    case '1M':
+      granularity = 'day'
+      fromDay = todayDay - 29
+      break
+    case '3M':
+      granularity = 'day'
+      fromDay = todayDay - 89
+      break
+    case 'YTD':
+      fromDay = dayNumber(yearStart)
+      granularity = todayDay - fromDay + 1 <= DAILY_LIMIT_DAYS ? 'day' : 'week'
+      break
+    case '1Y':
+      granularity = 'week'
+      fromDay = todayDay - 364
+      break
+    case 'ALL':
+      granularity = 'month'
+      fromDay = null
+      break
+  }
+
+  const nowBucket = bucketOf(todayIso, granularity)
+  const flow = flowByBucket(feed, linkedAccountIds, granularity)
+  const points = walkBuckets(
+    anchors,
+    flow,
+    {
+      nowBucket,
+      firstBucket: fromDay === null ? null : bucketOf(isoFromDayNumber(fromDay), granularity),
+      lastBucket: nowBucket,
+    },
+    undefined,
+    options.expectedSign,
+  )
+  return { granularity, points: points.map((p) => ({ ...p, start: bucketStart(p.bucket, granularity) })) }
+}
+
+/**
+ * The whole history — oldest data through today — at one resolution. The zoomable chart computes
+ * this once per resolution and slices it as the window moves, so a pinch never re-walks the ledger.
+ */
+export function computeFullTrend(
+  anchors: Map<string, number>,
+  feed: FeedItem[],
+  linkedAccountIds: Set<string>,
+  granularity: Granularity,
+  today: Date = new Date(),
+  options: { expectedSign?: Map<string, 1 | -1> } = {},
+): TrendPoint[] {
+  const nowBucket = bucketOf(localIso(today), granularity)
+  const flow = flowByBucket(feed, linkedAccountIds, granularity)
+  return walkBuckets(anchors, flow, { nowBucket, firstBucket: null, lastBucket: nowBucket }, undefined, options.expectedSign).map(
+    (p) => ({ ...p, start: bucketStart(p.bucket, granularity) }),
+  )
+}
+
+/** Net worth and its change for each point of a trend — the line, summed from the accounts. */
+export function trendNetWorth(points: Pick<TrendPoint, 'balances' | 'startBalances'>[]): { netWorth: number; change: number }[] {
+  const sum = (balances: Map<string, number>) => {
+    let total = 0
+    for (const value of balances.values()) total += value
+    return round2(total)
+  }
+  return points.map((p) => {
+    const netWorth = sum(p.balances)
+    return { netWorth, change: round2(netWorth - sum(p.startBalances)) }
+  })
+}
+
+/**
+ * A trend point's name: short for the x-axis ("Sep 12", "Sep 7", "Sep"), long for the selected
+ * point's label ("Sep 12, 2026", "Week of Sep 7, 2026", "Sep 2026").
+ */
+export function formatTrendLabel(start: string, granularity: Granularity, length: 'short' | 'long'): string {
+  const year = start.slice(0, 4)
+  const month = MONTH_NAMES[Number(start.slice(5, 7)) - 1]
+  const day = Number(start.slice(8, 10))
+  if (granularity === 'month') return length === 'short' ? month : `${month} ${year}`
+  const date = `${month} ${day}`
+  if (length === 'short') return date
+  return granularity === 'week' ? `Week of ${date}, ${year}` : `${date}, ${year}`
 }

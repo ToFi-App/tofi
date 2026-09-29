@@ -12,6 +12,7 @@ import { formatAmount } from '@/lib/format/money'
 import type { FeedItem } from '@/lib/transactions/resolveFeed'
 import type { DonutSegment } from '@/lib/transactions/visualizationData'
 import { CategoryDonut } from './CategoryDonut'
+import { SheetHeader } from '@/components/ui/SheetHeader'
 
 interface CategoryDetailSheetProps {
   visible: boolean
@@ -90,6 +91,7 @@ export function CategoryDetailSheet({ visible, segment, allSegments, transaction
 
   return (
     <BottomSheet visible={visible} onClose={onClose} contentScroll={sheetScroll}>
+      <SheetHeader title={segment.name} onClose={onClose} />
       {/* No provider here: it is mounted once in the tabs layout. See AuthedShell there. */}
       <CategoryDetailSheetBody
           segment={segment}

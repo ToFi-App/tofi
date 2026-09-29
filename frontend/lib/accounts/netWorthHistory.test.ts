@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { computeAccountHistory, computeNetWorthHistory, netWorthFromAccounts, netWorthYearRange } from './netWorthHistory'
+import {
+  computeAccountHistory,
+  computeNetWorthHistory,
+  computeTrend,
+  computeFullTrend,
+  formatTrendLabel,
+  netWorthFromAccounts,
+  netWorthYearRange,
+} from './netWorthHistory'
 import { CASH_ON_HAND_KEY } from './composition'
 import type { FeedItem } from '@/lib/transactions/resolveFeed'
 
@@ -417,5 +425,113 @@ describe('computeAccountHistory: accounts that did not exist yet', () => {
       expect(point.netWorth).toBe(Math.round(sum * 100) / 100)
       if (i > 0) expect(point.change).toBe(Math.round((point.netWorth - line[i - 1].netWorth) * 100) / 100)
     })
+  })
+})
+
+describe('computeTrend', () => {
+  const LINKED_T = new Set(['checking'])
+  // TODAY is 2026-08-05 (a Wednesday).
+  const anchors = new Map([['checking', 1000]])
+
+  it('walks day by day for short ranges, one point per day ending today', () => {
+    const feed = [
+      txn({ id: 'a', date: '2026-08-04', amount: 100 }), // spent 100 yesterday
+      txn({ id: 'b', date: '2026-08-01', amount: -300 }), // earned 300 on the 1st
+      txn({ id: 'old', date: '2026-01-10', amount: 5 }),
+    ]
+    const { granularity, points } = computeTrend(anchors, feed, LINKED_T, '1W', TODAY)
+    expect(granularity).toBe('day')
+    expect(points.map((p) => p.start)).toEqual([
+      '2026-07-30', '2026-07-31', '2026-08-01', '2026-08-02', '2026-08-03', '2026-08-04', '2026-08-05',
+    ])
+    const bal = points.map((p) => p.balances.get('checking'))
+    expect(bal).toEqual([800, 800, 1100, 1100, 1100, 1000, 1000])
+    // The first day opens where the day before closed.
+    expect(points[0].startBalances.get('checking')).toBe(800)
+  })
+
+  it('groups a long range into Monday-to-Sunday weeks', () => {
+    const feed = [
+      txn({ id: 'mon', date: '2026-07-27', amount: 10 }), // Monday
+      txn({ id: 'sun', date: '2026-08-02', amount: 20 }), // the Sunday of the same week
+      txn({ id: 'old', date: '2025-01-10', amount: 5 }),
+    ]
+    const { granularity, points } = computeTrend(anchors, feed, LINKED_T, '1Y', TODAY)
+    expect(granularity).toBe('week')
+    const week = points.find((p) => p.start === '2026-07-27')!
+    expect(week.flow.get('checking')).toBe(30)
+    expect(points[points.length - 1].start).toBe('2026-08-03') // this week's Monday
+  })
+
+  it('uses days for a young year-to-date and weeks once it is long', () => {
+    const feed = [txn({ id: 'old', date: '2025-01-10', amount: 5 })]
+    expect(computeTrend(anchors, feed, LINKED_T, 'YTD', new Date('2026-03-01T12:00:00Z')).granularity).toBe('day')
+    expect(computeTrend(anchors, feed, LINKED_T, 'YTD', TODAY).granularity).toBe('week')
+  })
+
+  it('matches the monthly account history for ALL', () => {
+    const feed = [
+      txn({ id: 'a', date: '2026-07-15', amount: 200 }),
+      txn({ id: 'b', date: '2026-05-10', amount: -500 }),
+    ]
+    const { granularity, points } = computeTrend(anchors, feed, LINKED_T, 'ALL', TODAY)
+    const monthly = computeAccountHistory(anchors, feed, LINKED_T, undefined, TODAY)
+    expect(granularity).toBe('month')
+    expect(points.map((p) => p.balances.get('checking'))).toEqual(monthly.map((m) => m.balances.get('checking')))
+    expect(points[0].start).toBe('2026-05-01')
+  })
+
+  it('starts at the oldest data rather than inventing flat days before it', () => {
+    const feed = [txn({ id: 'a', date: '2026-08-03', amount: 50 })]
+    const { points } = computeTrend(anchors, feed, LINKED_T, '1M', TODAY)
+    expect(points[0].start).toBe('2026-08-03')
+  })
+
+  it('applies expectedSign at daily resolution too', () => {
+    // Its first activity is Aug 2 and walks back to -500. The row on another account only pulls
+    // the range back far enough to show Aug 1.
+    const feed = [
+      txn({ id: 'open', date: '2026-08-02', amount: -1500 }),
+      txn({ id: 'old', date: '2026-07-10', amount: 5, accountId: 'other' }),
+    ]
+    const { points } = computeTrend(
+      new Map([['checking', 1000], ['other', 50]]),
+      feed,
+      new Set(['checking', 'other']),
+      '1M',
+      TODAY,
+      { expectedSign: new Map([['checking', 1]]) },
+    )
+    expect(points.find((p) => p.start === '2026-08-01')!.balances.get('checking')).toBe(0)
+    expect(points.find((p) => p.start === '2026-08-02')!.balances.get('checking')).toBe(1000)
+  })
+})
+
+describe('formatTrendLabel', () => {
+  it('names days, weeks and months, short for the axis and long for the selection', () => {
+    expect(formatTrendLabel('2026-09-12', 'day', 'short')).toBe('Sep 12')
+    expect(formatTrendLabel('2026-09-12', 'day', 'long')).toBe('Sep 12, 2026')
+    expect(formatTrendLabel('2026-09-07', 'week', 'short')).toBe('Sep 7')
+    expect(formatTrendLabel('2026-09-07', 'week', 'long')).toBe('Week of Sep 7, 2026')
+    expect(formatTrendLabel('2026-09-01', 'month', 'short')).toBe('Sep')
+    expect(formatTrendLabel('2026-09-01', 'month', 'long')).toBe('Sep 2026')
+  })
+})
+
+describe('computeFullTrend', () => {
+  it('covers the whole history at the given resolution, ending today', () => {
+    const feed = [
+      txn({ id: 'a', date: '2026-07-15', amount: 200 }),
+      txn({ id: 'b', date: '2026-05-10', amount: -500 }),
+    ]
+    const anchors = new Map([['checking', 1000]])
+    const linked = new Set(['checking'])
+    const daily = computeFullTrend(anchors, feed, linked, 'day', TODAY)
+    expect(daily[0].start).toBe('2026-05-10')
+    expect(daily[daily.length - 1].start).toBe('2026-08-05')
+    const monthly = computeFullTrend(anchors, feed, linked, 'month', TODAY)
+    expect(monthly.map((p) => p.balances.get('checking'))).toEqual(
+      computeTrend(anchors, feed, linked, 'ALL', TODAY).points.map((p) => p.balances.get('checking')),
+    )
   })
 })

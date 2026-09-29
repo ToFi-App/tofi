@@ -20,6 +20,7 @@ import { investmentHeadlineGain, netPrincipal } from '@/lib/accounts/principal'
 import { groupByDay } from '@/lib/transactions/groupByDay'
 import type { FeedItem } from '@/lib/transactions/resolveFeed'
 import type { Account, Category } from '@/types/domain'
+import { SheetHeader } from '@/components/ui/SheetHeader'
 
 interface InvestmentDetailSheetProps {
   account: Account | null
@@ -103,15 +104,7 @@ export function InvestmentDetailSheet({
       // The default pill is near-white and disappears into the tinted top edge.
       grabberColor={colors.textMuted}
     >
-      <View className="flex-row items-center justify-between px-5 py-3">
-        <Pressable onPress={onClose} hitSlop={8}>
-          <Ionicons name="close" size={22} color={colors.textSecondary} />
-        </Pressable>
-        <Text className="mx-3 flex-1 text-center font-display text-md text-textPrimary" numberOfLines={1}>
-          {account?.name ?? ''}
-        </Text>
-        <View style={{ width: 22 }} />
-      </View>
+      <SheetHeader title={account?.name ?? ''} onClose={onClose} />
 
       {/* Left-aligned headline, like the Net Worth sheet: value, then the account's gain. */}
       <View className="items-start px-5 pb-2 pt-1">
