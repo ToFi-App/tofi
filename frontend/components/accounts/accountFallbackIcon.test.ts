@@ -11,7 +11,20 @@ import { describe, expect, it, vi } from 'vitest'
 
 // react-native and the icon font cannot be imported under vitest's node environment; the module
 // under test only needs them to exist, since nothing here renders.
-vi.mock('react-native', () => ({ Image: () => null, Pressable: () => null, Text: () => null, View: () => null }))
+vi.mock('react-native', () => ({
+  Image: () => null,
+  Pressable: () => null,
+  ScrollView: () => null,
+  Text: () => null,
+  View: () => null,
+}))
+vi.mock('react-native-svg', () => ({
+  default: () => null,
+  Defs: () => null,
+  LinearGradient: () => null,
+  Rect: () => null,
+  Stop: () => null,
+}))
 vi.mock('@expo/vector-icons', () => ({ Ionicons: () => null }))
 
 const { accountFallbackIcon, variantIcons } = await import('./AccountRow')

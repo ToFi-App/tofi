@@ -35,8 +35,7 @@ export const NetWorthCompositionMap = memo(function NetWorthCompositionMap({
   balances?: Map<string, number>
   /**
    * The tapped tile, owned by the caller. A treemap can only label tiles with room for a label;
-   * rather than a caption of its own, the map hands the selection out so the account list can
-   * highlight the row that names it.
+   * rather than a caption of its own, the map hands the selection out to whoever shows it.
    */
   selectedKey: string | null
   onSelectKey: (key: string | null) => void

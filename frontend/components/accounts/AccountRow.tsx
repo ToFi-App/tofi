@@ -2,13 +2,16 @@ import { Image, Pressable, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { colors } from '@/constants/theme'
 import { FINANCEKIT_ITEM_ID } from '@/lib/financekit/mergeAccounts'
-import { formatMaskableAmount } from '@/lib/format/money'
+import { formatAmount, formatMaskableAmount } from '@/lib/format/money'
+import { ScrollingText } from '@/components/ui/ScrollingText'
 
 interface AccountRowProps {
   name: string
   balance: number
   variant: 'cash' | 'credit' | 'investment' | 'cashOnHand'
   limit?: number | null
+  /** The first row in its section draws no rule above it: the section's header band sits there. */
+  isFirst?: boolean
   isMasked: boolean
   /** Base64 PNG institution logo; replaces the generic variant icon when present. */
   logo?: string | null
@@ -60,11 +63,38 @@ export function accountFallbackIcon(variant: string, itemId?: string | null) {
   return variantIcons[variant] ?? variantIcons.cash
 }
 
+// Above this share of the limit, utilization starts to weigh on a credit score — the usual
+// guideline, and the point where the bar turns from teal to red.
+const HIGH_UTILIZATION = 0.3
+
+// Sized so the rows read as a list under the hero card rather than competing with it.
+const ICON_SIZE = 28
+
+// The icon and name together take at most this share of the row; the rest belongs to the balance.
+const NAME_AREA_MAX_WIDTH = '62%'
+
+function UtilizationLine({ balance, limit, isMasked }: { balance: number; limit: number; isMasked: boolean }) {
+  const used = Math.max(0, balance) / limit
+  const fill = used >= HIGH_UTILIZATION ? colors.expense : colors.primary
+  return (
+    <View className="flex-row items-center gap-1.5">
+      <View className="h-1 w-12 overflow-hidden rounded-full bg-surfaceRaised">
+        {/* A sliver even at 0%, so an empty track still reads as a gauge. */}
+        <View className="h-full rounded-full" style={{ width: `${Math.min(100, Math.max(used * 100, 3))}%`, backgroundColor: fill }} />
+      </View>
+      <Text className="font-sans text-xs text-textSecondary">
+        {Math.round(used * 100)}% of {isMasked ? 'limit' : formatAmount(limit)}
+      </Text>
+    </View>
+  )
+}
+
 export function AccountRow({
   name,
   balance,
   variant,
   limit,
+  isFirst,
   isMasked,
   logo,
   itemId,
@@ -75,6 +105,8 @@ export function AccountRow({
 }: AccountRowProps) {
   const balanceColor = variant === 'credit' ? colors.expense : colors.textPrimary
   const icon = accountFallbackIcon(variant, itemId)
+  // Charge cards report no preset limit as 0, which would read as "0% of $0.00".
+  const hasLimit = variant === 'credit' && limit != null && limit > 0
 
   return (
     <Pressable
@@ -83,27 +115,35 @@ export function AccountRow({
       onPressOut={onPressOut}
       delayLongPress={delayLongPress}
       className="flex-row items-center justify-between py-3.5"
+      // A rule above every row but the first, splitting each account from the one before it.
+      style={isFirst ? undefined : { borderTopWidth: 1, borderColor: colors.primaryHairline }}
     >
-      <View className="flex-1 flex-row items-center gap-3">
+      {/* Capped so the name stops well short of the balance, leaving a clear gap between them. */}
+      <View className="flex-1 flex-row items-center gap-3" style={{ maxWidth: NAME_AREA_MAX_WIDTH }}>
+        {/* The same 28pt box for every row, logo or not, so names line up down the list. A logo sits
+            on the row itself: many are transparent PNGs, and a tinted tile shows through behind
+            them as a grey box. Only the fallback glyphs get a tile, in the console's pale teal. */}
         {logo ? (
-          <Image
-            source={{ uri: `data:image/png;base64,${logo}` }}
-            style={{ width: 36, height: 36, borderRadius: 8 }}
-          />
+          <Image source={{ uri: `data:image/png;base64,${logo}` }} style={{ width: ICON_SIZE, height: ICON_SIZE }} resizeMode="contain" />
         ) : (
-          <View className="h-9 w-9 items-center justify-center rounded-lg bg-surfaceRaised">
-            <Ionicons name={icon.name as any} size={18} color={icon.color} />
+          <View className="h-7 w-7 items-center justify-center rounded-sm" style={{ backgroundColor: colors.primaryMuted }}>
+            <Ionicons name={icon.name as any} size={15} color={icon.color} />
           </View>
         )}
-        <Text className="flex-shrink font-sansMed text-base text-textPrimary" numberOfLines={1}>{name}</Text>
+        <View className="flex-1 justify-center">
+          <ScrollingText
+            className="font-sansMed text-base text-textPrimary"
+            pressProps={{ onPress, onLongPress, onPressOut, delayLongPress }}
+          >
+            {name}
+          </ScrollingText>
+        </View>
       </View>
-      <View className="ml-3 items-end">
-        <Text className="font-mono text-base" style={{ color: balanceColor }}>
+      <View className="ml-3 items-end gap-1">
+        <Text className="font-mono text-amount" style={{ color: balanceColor }}>
           {formatMaskableAmount(balance, isMasked)}
         </Text>
-        {variant === 'credit' && limit != null ? (
-          <Text className="font-sans text-xs text-textMuted">Limit {formatMaskableAmount(limit, isMasked)}</Text>
-        ) : null}
+        {hasLimit ? <UtilizationLine balance={balance} limit={limit!} isMasked={isMasked} /> : null}
       </View>
     </Pressable>
   )

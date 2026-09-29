@@ -1,5 +1,6 @@
-import { Pressable, ScrollView, Text, View } from 'react-native'
-import { colors, hexToRgba } from '@/constants/theme'
+import { Pressable, Text, View } from 'react-native'
+import { blendOver, colors, hexToRgba } from '@/constants/theme'
+import { ScrollingText } from '@/components/ui/ScrollingText'
 import {
   assetClass,
   averageCost,
@@ -17,6 +18,8 @@ import type { Holding } from '@/types/domain'
 
 /** Pinned height for the scrolling name line (text-sm). */
 const NAME_LINE_HEIGHT = 18
+// How strongly a selected row is tinted with the primary colour.
+const SELECTED_TINT = 0.1
 
 interface HoldingRowsProps {
   holdings: Holding[]
@@ -112,6 +115,8 @@ function HoldingRow({
   // name never scrolls. So each part is its own Pressable, and the name's sits INSIDE its scroller —
   // the standard nesting, where a tap presses and a drag scrolls. Each carries the row's vertical
   // padding as hitSlop, so the padding still reads as part of the row.
+  // The fades must match what's behind the name, which a selected row tints.
+  const fadeColor = isSelected ? blendOver(colors.primary, SELECTED_TINT, colors.surface) : colors.surface
   const press = {
     onPress,
     hitSlop: { top: 16, bottom: 16 },
@@ -127,7 +132,7 @@ function HoldingRow({
         // Widened by 12px each side with the same 12px padded back in, so the highlight gets a
         // margin around its content without moving it.
         isSelected
-          ? { marginHorizontal: -12, paddingHorizontal: 12, borderRadius: 14, backgroundColor: hexToRgba(colors.primary, 0.1) }
+          ? { marginHorizontal: -12, paddingHorizontal: 12, borderRadius: 14, backgroundColor: hexToRgba(colors.primary, SELECTED_TINT) }
           : null,
       ]}
     >
@@ -144,28 +149,29 @@ function HoldingRow({
           </View>
         </Pressable>
         <View className="flex-1">
-          <Pressable {...press} hitSlop={{ top: 16 }}>
-            <Text className="font-sansSemi text-base text-textPrimary" numberOfLines={1}>
-              {label}
-            </Text>
-          </Pressable>
+          <ScrollingText
+            className="font-sansSemi text-base text-textPrimary"
+            pressProps={{ ...press, hitSlop: { top: 16 } }}
+            fadeColor={fadeColor}
+          >
+            {label}
+          </ScrollingText>
           {holding.ticker && holding.name ? (
             // Scrolls sideways inside the name column rather than ellipsizing, so a long fund name
             // ("Tidal Trust II - Defiance Daily Target…") stays fully readable without pushing
             // the figures. Height is pinned: a horizontal ScrollView otherwise has no height of
             // its own to lay out against.
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              className="mt-0.5"
-              style={{ height: NAME_LINE_HEIGHT }}
-            >
-              <Pressable {...press} hitSlop={{ bottom: 16 }}>
-                <Text className="font-sans text-sm text-textSecondary" style={{ lineHeight: NAME_LINE_HEIGHT }}>
-                  {holding.name}
-                </Text>
-              </Pressable>
-            </ScrollView>
+            <View className="mt-0.5">
+              <ScrollingText
+                className="font-sans text-sm text-textSecondary"
+                textStyle={{ lineHeight: NAME_LINE_HEIGHT }}
+                style={{ height: NAME_LINE_HEIGHT }}
+                pressProps={{ ...press, hitSlop: { bottom: 16 } }}
+                fadeColor={fadeColor}
+              >
+                {holding.name}
+              </ScrollingText>
+            </View>
           ) : null}
         </View>
         <Pressable {...press} className="items-end gap-0.5">

@@ -2,7 +2,6 @@ import { CASH_ON_HAND_KEY } from './composition'
 import { computeCashOnHand, isInvestmentAccount, isLiabilityAccount } from './netWorth'
 import type { Account } from '@/types/domain'
 import type { FeedItem } from '@/lib/transactions/resolveFeed'
-import type { AccountMonthPoint } from './netWorthHistory'
 
 export type NetWorthSeriesGroup = 'investment' | 'cash' | 'liability'
 
@@ -84,23 +83,16 @@ export function buildNetWorthSeries(
 }
 
 /**
- * Each balance as the period OPENED — the start of its first month, not the end. That is the
- * baseline a change "in 2026" is measured from, and where the dotted reference lines sit.
+ * The sign a real balance must have, per series — see computeAccountHistory's `expectedSign`. Cash
+ * accounts can't sit below zero and debt can't sit in credit, so a leftover of the wrong sign before
+ * an account's first transaction means it didn't exist yet. Investments (their leftover is real
+ * market growth) and the manual cash pot (negative is meaningful there) are left out on purpose.
  */
-export function periodStart(months: Pick<AccountMonthPoint, 'startBalances'>[]): Map<string, number> {
-  return months.length > 0 ? new Map(months[0].startBalances) : new Map()
-}
-
-/**
- * How much each account moved during one point — its close minus its open, signed as net worth
- * counts it, so a card balance rising is negative. Accounts that didn't move are left out. These
- * are what the chart's bars stack: gains up from zero, losses down.
- */
-export function periodChanges(point: Pick<AccountMonthPoint, 'balances' | 'startBalances'>): Map<string, number> {
-  const changes = new Map<string, number>()
-  for (const [key, close] of point.balances) {
-    const change = Math.round((close - (point.startBalances.get(key) ?? 0)) * 100) / 100
-    if (change !== 0) changes.set(key, change)
+export function expectedSignFor(series: NetWorthSeries[]): Map<string, 1 | -1> {
+  const signs = new Map<string, 1 | -1>()
+  for (const s of series) {
+    if (s.key === CASH_ON_HAND_KEY || s.group === 'investment') continue
+    signs.set(s.key, s.group === 'liability' ? -1 : 1)
   }
-  return changes
+  return signs
 }
