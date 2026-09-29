@@ -5,6 +5,11 @@ export interface MonthAggregate {
   spendByCategory: Map<string, number>
   incomeByCategory: Map<string, number>
   spendByDay: Map<string, { net: number; hasReimbursement: boolean }>
+  /**
+   * Each day's spending split by category (null for uncategorized), net of reimbursements — what
+   * the calendar's category squares draw. Spending only: income leaves no square.
+   */
+  spendByDayCategory: Map<string, Map<string | null, number>>
   totalExpense: number
   totalIncome: number
 }
@@ -23,6 +28,7 @@ export function aggregateMonth(feed: FeedItem[]): MonthAggregate {
   const spendByCategory = new Map<string, number>()
   const incomeByCategory = new Map<string, number>()
   const spendByDay = new Map<string, { net: number; hasReimbursement: boolean }>()
+  const spendByDayCategory = new Map<string, Map<string | null, number>>()
   let totalExpense = 0
   let totalIncome = 0
 
@@ -54,6 +60,9 @@ export function aggregateMonth(feed: FeedItem[]): MonthAggregate {
 
     if (net > 0) {
       totalExpense += net
+      const byCategory = spendByDayCategory.get(item.date) ?? new Map<string | null, number>()
+      byCategory.set(item.categoryId, (byCategory.get(item.categoryId) ?? 0) + net)
+      spendByDayCategory.set(item.date, byCategory)
       if (item.categoryId) {
         spendByCategory.set(item.categoryId, (spendByCategory.get(item.categoryId) ?? 0) + net)
       }
@@ -65,5 +74,5 @@ export function aggregateMonth(feed: FeedItem[]): MonthAggregate {
     }
   }
 
-  return { spendByCategory, incomeByCategory, spendByDay, totalExpense, totalIncome }
+  return { spendByCategory, incomeByCategory, spendByDay, spendByDayCategory, totalExpense, totalIncome }
 }

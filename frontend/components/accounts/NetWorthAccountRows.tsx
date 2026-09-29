@@ -1,9 +1,10 @@
+import { memo } from 'react'
 import { Pressable, Text, View } from 'react-native'
 import { colors, hexToRgba } from '@/constants/theme'
 import { AccountGlyph } from '@/components/accounts/AccountGlyph'
 import { GROUP_COLORS, fallbackIconFor, seriesColor } from '@/components/accounts/netWorthPalette'
 import { formatAmount } from '@/lib/format/money'
-import type { AccountMonthPoint } from '@/lib/accounts/netWorthHistory'
+import type { TrendPoint } from '@/lib/accounts/netWorthHistory'
 import type { NetWorthSeries, NetWorthSeriesGroup } from '@/lib/accounts/netWorthSeries'
 
 const GROUP_LABELS: Record<NetWorthSeriesGroup, string> = {
@@ -24,7 +25,8 @@ function formatChange(change: number): string {
 }
 
 interface NetWorthAccountRowsProps {
-  months: AccountMonthPoint[]
+  /** One point per day, week or month; only each point's balances are read. */
+  months: Pick<TrendPoint, 'balances'>[]
   series: NetWorthSeries[]
   /** Balances as the period opened (periodStart) — the baseline every change is measured from. */
   start: Map<string, number>
@@ -45,7 +47,7 @@ interface NetWorthAccountRowsProps {
  * An account that is zero for the entire period is left out — it draws no segment anywhere, so a
  * row would be a legend entry for nothing.
  */
-export function NetWorthAccountRows({ months, series, start, index, highlightedKey, onHighlight }: NetWorthAccountRowsProps) {
+export const NetWorthAccountRows = memo(function NetWorthAccountRows({ months, series, start, index, highlightedKey, onHighlight }: NetWorthAccountRowsProps) {
   const month = months[index]
   if (!month) return null
 
@@ -117,4 +119,4 @@ export function NetWorthAccountRows({ months, series, start, index, highlightedK
       })}
     </View>
   )
-}
+})

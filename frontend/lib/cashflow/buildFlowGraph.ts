@@ -97,7 +97,7 @@ export interface CashFlowHeadline {
   savingsRate: number | null
 }
 
-export type AttentionReason = 'unpairedTransfer' | 'unlinkedCardPayment' | 'unmatchedMovement'
+export type AttentionReason = 'unpairedTransfer' | 'unlinkedCardPayment'
 
 export interface AttentionItem {
   itemId: string
@@ -322,14 +322,12 @@ export function buildFlowGraph(input: { feed: FeedItem[]; accounts: FlowAccount[
       continue
     }
 
-    // What remains is internal movement recognized by PFC on a brokerage cash account. With an
-    // equal counterpart on another account it crossed an account boundary that no transfer record
-    // captures yet; without one it moved between the account's cash and its holdings, which is
-    // not a flow between accounts at all.
-    if (item.hasCrossAccountCounterpart) {
-      addAccountFlow(accountNode(item.accountId).id, UNLINKED_NODE, item.amount, [item.id])
-      attention.push({ itemId: item.id, reason: 'unmatchedMovement' })
-    }
+    // What remains is internal movement recognized by PFC on a brokerage cash account — money
+    // moving between the account's cash and its holdings, which is not a flow between accounts.
+    // Drawn as nothing, whether or not an equal amount landed on another account that week: that
+    // match is by amount alone, and the row is already badged "Internal" (isUnlinkedInternalTransfer),
+    // so drawing it to "Unlinked accounts" would contradict the feed. A real transfer between two
+    // linked accounts gets drawn once it's confirmed, through the transferKind branch above.
   }
 
   const edges: FlowEdge[] = []

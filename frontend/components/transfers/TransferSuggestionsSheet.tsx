@@ -9,6 +9,7 @@ import type { FeedItem } from '@/lib/transactions/resolveFeed'
 import type { TransferDraft } from '@/lib/transfers/autoMatch'
 import type { TransferSuggestion } from '@/hooks/useTransactionFeed'
 import type { Account } from '@/types/domain'
+import { SheetHeader } from '@/components/ui/SheetHeader'
 
 // The medium-confidence tier of transfer auto-detection, surfaced as one-tap decisions.
 // Collapsed to a single banner row on the transactions screen (rendered only when there is
@@ -92,17 +93,14 @@ export function TransferSuggestionsSheet({ visible, suggestions, pendingPreviews
 
   return (
     <BottomSheet visible={visible} onClose={onClose} contentScroll={sheetScroll}>
-      <View className="flex-row items-center justify-between px-5 py-3">
-        <Pressable onPress={onClose} hitSlop={8}>
-          <Ionicons name="close" size={22} color={colors.textSecondary} />
-        </Pressable>
-        <Text className="mx-3 flex-1 text-center font-display text-md text-textPrimary">
-          {suggestions.length + pendingPreviews.length === 1
+      <SheetHeader
+        title={
+          suggestions.length + pendingPreviews.length === 1
             ? 'Possible transfer'
-            : `Possible transfers (${suggestions.length + pendingPreviews.length})`}
-        </Text>
-        <View style={{ width: 22 }} />
-      </View>
+            : `Possible transfers (${suggestions.length + pendingPreviews.length})`
+        }
+        onClose={onClose}
+      />
 
       <ScrollView {...sheetScroll.scrollProps} className="px-5" contentContainerClassName="gap-5 pb-10">
         {suggestions.map((suggestion) => {

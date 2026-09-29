@@ -109,6 +109,22 @@ describe('buildFlowGraph', () => {
     expect(graph.attention).toContainEqual({ itemId: 'venmo', reason: 'unpairedTransfer' })
   })
 
+  it('leaves internal movement out of the chart even when an equal amount landed on another account', () => {
+    // A buy into a fund from a cash management account, with an unrelated equal deposit elsewhere
+    // that week. The row is badged Internal, so the chart must agree and draw nothing for it.
+    const internal = item({
+      id: 'fund-buy',
+      accountId: 'brokerage',
+      amount: 600,
+      isBrokerageCashAccount: true,
+      pfcDetailed: 'TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS',
+      hasCrossAccountCounterpart: true,
+    })
+    const withInternal = buildFlowGraph({ feed: [...feed, internal], accounts, month })
+    expect(withInternal.edges.filter((e) => e.itemIds?.includes('fund-buy'))).toEqual([])
+    expect(withInternal.attention.some((a) => a.itemId === 'fund-buy')).toBe(false)
+  })
+
   it('counts pending rows without drawing them and ignores same-account sweeps', () => {
     expect(graph.pendingCount).toBe(1)
     expect(graph.edges.some((e) => e.itemIds.includes('pending') || e.itemIds.includes('sweep'))).toBe(false)

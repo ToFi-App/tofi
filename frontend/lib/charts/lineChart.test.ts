@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatAxisAmount, formatTick, niceExtent, niceScale, skewedExtent, smoothLine } from './lineChart'
+import { fittedExtent, formatAxisAmount, formatTick, monotoneLine, niceExtent, niceScale, skewedExtent, smoothLine } from './lineChart'
 
 describe('niceScale', () => {
   it('produces a top tick that covers the max', () => {
@@ -155,5 +155,70 @@ describe('skewedExtent', () => {
     expect(max).toBe(0)
     expect(min).toBeLessThanOrEqual(-5_000)
     expect(ticks[ticks.length - 1]).toBe(0)
+  })
+})
+
+describe('fittedExtent', () => {
+  it('fits the data, not zero, with a margin on each side', () => {
+    expect(fittedExtent([50_000, 60_000], 0.1)).toEqual({ min: 49_000, max: 61_000 })
+  })
+
+  it('gives a flat series a band around its value instead of a zero-height range', () => {
+    expect(fittedExtent([500, 500], 0.1)).toEqual({ min: 499, max: 501 })
+  })
+
+  it('is a unit range with no data', () => {
+    expect(fittedExtent([], 0.1)).toEqual({ min: 0, max: 1 })
+  })
+})
+
+describe('fittedExtent: minimum span', () => {
+  it('widens a tiny range to the minimum span, centred on the data', () => {
+    // A $50 wobble on $58K shouldn't fill the chart: at least 2% of the value is shown.
+    const { min, max } = fittedExtent([58_000, 58_050], 0.1, 58_025 * 0.02)
+    expect(max - min).toBeCloseTo(58_025 * 0.02)
+    expect((min + max) / 2).toBeCloseTo(58_025)
+  })
+
+  it('leaves a range already wider than the minimum alone', () => {
+    expect(fittedExtent([40_000, 60_000], 0.1, 1000)).toEqual({ min: 38_000, max: 62_000 })
+  })
+})
+
+describe('monotoneLine', () => {
+  const controlYs = (d: string) =>
+    [...d.matchAll(/C ([\d.-]+) ([\d.-]+) ([\d.-]+) ([\d.-]+) ([\d.-]+) ([\d.-]+)/g)].flatMap((m) => [Number(m[2]), Number(m[4])])
+
+  it('never bulges past a flat stretch — no hump above two equal points', () => {
+    const d = monotoneLine([
+      { x: 0, y: 50 },
+      { x: 10, y: 10 },
+      { x: 20, y: 10 },
+      { x: 30, y: 60 },
+    ])
+    for (const y of controlYs(d)) expect(y).toBeGreaterThanOrEqual(10)
+  })
+
+  it('keeps every segment between its own endpoints', () => {
+    const pts = [
+      { x: 0, y: 100 },
+      { x: 10, y: 20 },
+      { x: 20, y: 30 },
+      { x: 30, y: 25 },
+    ]
+    const ys = controlYs(monotoneLine(pts))
+    for (let i = 0; i < pts.length - 1; i++) {
+      const lo = Math.min(pts[i].y, pts[i + 1].y)
+      const hi = Math.max(pts[i].y, pts[i + 1].y)
+      for (const y of ys.slice(i * 2, i * 2 + 2)) {
+        expect(y).toBeGreaterThanOrEqual(lo - 1e-9)
+        expect(y).toBeLessThanOrEqual(hi + 1e-9)
+      }
+    }
+  })
+
+  it('draws a straight segment for two points and nothing for one', () => {
+    expect(monotoneLine([{ x: 0, y: 0 }, { x: 10, y: 5 }])).toBe('M 0 0 L 10 5')
+    expect(monotoneLine([{ x: 0, y: 0 }])).toBe('')
   })
 })

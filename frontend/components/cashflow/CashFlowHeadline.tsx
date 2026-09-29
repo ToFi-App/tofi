@@ -50,6 +50,9 @@ export function CashFlowHeadline({ headline, isMasked }: { headline: Headline; i
         </Text>
       </View>
 
+      {/* Separates income and spending from the parts below, which split the difference between them. */}
+      <View style={{ height: 1, backgroundColor: colors.border }} />
+
       <View className="flex-row flex-wrap justify-between" style={{ rowGap: 8 }}>
         <Chip label="Saved" amount={headline.saved} color={flowColors.saved} isMasked={isMasked} />
         <Chip label="Invested" amount={headline.invested} color={flowColors.invested} isMasked={isMasked} />
@@ -59,7 +62,10 @@ export function CashFlowHeadline({ headline, isMasked }: { headline: Headline; i
           <Chip label="To unlinked accounts" amount={headline.unlinked} color={flowColors.unlinked} isMasked={isMasked} />
         ) : null}
         {headline.reimbursements !== 0 ? (
-          <Chip label="Reimbursements" amount={headline.reimbursements} color={colors.reimbursed} isMasked={isMasked} />
+          // Shown from the user's side: positive when more was paid back than fronted this month.
+          // The headline's own figure runs the other way (fronted minus repaid), which is what makes
+          // the parts sum to income − spending; only the display flips.
+          <Chip label="Reimbursements" amount={-headline.reimbursements} color={colors.reimbursed} isMasked={isMasked} />
         ) : null}
       </View>
     </View>

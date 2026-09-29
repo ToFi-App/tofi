@@ -9,6 +9,7 @@ import { TRANSFER_TYPE_LIST, daysBetween } from '@/lib/transfers/registry'
 import { remainingExpense, searchReimbursementCandidates, suggestReimbursements } from '@/lib/reimbursements/suggest'
 import type { FeedItem } from '@/lib/transactions/resolveFeed'
 import type { Account, TransferKind } from '@/types/domain'
+import { SheetHeader } from '@/components/ui/SheetHeader'
 
 interface TransferSheetProps {
   /** Owned by the single sheet host, so drag-to-dismiss tracks whichever content is showing. */
@@ -132,13 +133,7 @@ export function TransferSheet({ sheetScroll, item, candidateItems, accounts, for
 
   return (
     <>
-      <View className="flex-row items-center justify-between px-5 py-3">
-        <Pressable onPress={onClose} hitSlop={8}>
-          <Ionicons name="close" size={22} color={colors.textSecondary} />
-        </Pressable>
-        <Text className="font-display text-md text-textPrimary">Transfer</Text>
-        <View style={{ width: 22 }} />
-      </View>
+      <SheetHeader title="Transfer" onClose={onClose} />
 
       <ScrollView {...sheetScroll.scrollProps} className="px-5" contentContainerClassName="gap-4 pb-10" keyboardShouldPersistTaps="handled">
         <Text className={`font-mono text-base ${isStartingFromExpense ? 'text-expense' : 'text-income'}`}>

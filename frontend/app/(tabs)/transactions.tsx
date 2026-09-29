@@ -27,6 +27,11 @@ import { useSelectedMonth } from '@/hooks/useSelectedMonth'
 import { aggregateMonth } from '@/lib/transactions/aggregateMonth'
 import { toDateKey } from '@/lib/dates/dateKey'
 import type { TransferSuggestion } from '@/hooks/useTransactionFeed'
+import { dayHeat, daySquares, type DayHeat, type DaySquare } from '@/lib/transactions/daySquares'
+
+/** Shared empty values, so a quiet day passes the same objects every render. */
+const NO_SQUARES: DaySquare[] = []
+const NO_HEAT: DayHeat = { tone: 'expense', intensity: 0 }
 
 type TransactionFeedState = ReturnType<typeof useTransactionFeed>
 
@@ -100,7 +105,32 @@ function TransactionsScreenContent({ feedState }: { feedState: TransactionFeedSt
     return days
   }, [month, daysInMonth, firstWeekday])
 
-  const { spendByDay, totalExpense, totalIncome } = useMemo(() => aggregateMonth(filteredFeed), [filteredFeed])
+  const { spendByDay, spendByDayCategory, totalExpense, totalIncome } = useMemo(
+    () => aggregateMonth(filteredFeed),
+    [filteredFeed],
+  )
+
+  // Per-day category mix and heat shade. Built once per month, so each memoized cell gets the
+  // same objects back until the data changes. Hidden under a category filter, where every day's
+  // mix would only repeat the filter. The heat follows each day's net — the amount printed on it —
+  // so an income day shades green and a spending day blends its categories.
+  const dayActivity = useMemo(() => {
+    const activity = new Map<string, { squares: DaySquare[]; heat: DayHeat }>()
+    if (categoryFilter) return activity
+    let biggestSpend = 0
+    let biggestIncome = 0
+    for (const { net } of spendByDay.values()) {
+      if (net > 0) biggestSpend = Math.max(biggestSpend, net)
+      else biggestIncome = Math.max(biggestIncome, -net)
+    }
+    const extremes = { biggestSpend, biggestIncome }
+    const colorOf = (id: string | null) => (id ? categoryById.get(id)?.color : undefined) ?? colors.textMuted
+    for (const [date, { net }] of spendByDay) {
+      const { squares } = daySquares(spendByDayCategory.get(date), colorOf)
+      activity.set(date, { squares, heat: dayHeat(net, extremes) })
+    }
+    return activity
+  }, [spendByDay, spendByDayCategory, categoryById, categoryFilter])
 
   // Hoisted out of the JSX so DayGroupedTransactions' memo actually holds. Inline arrows here gave
   // it three fresh props on every render of this screen — including the ten a single sheet round
@@ -210,6 +240,8 @@ function TransactionsScreenContent({ feedState }: { feedState: TransactionFeedSt
                     isSelected={cell.dateKey === selectedDate}
                     dateKey={cell.dateKey}
                     onPress={handleDatePress}
+                    squares={dayActivity.get(cell.dateKey)?.squares ?? NO_SQUARES}
+                    heat={dayActivity.get(cell.dateKey)?.heat ?? NO_HEAT}
                   />
                 </View>
               ) : (

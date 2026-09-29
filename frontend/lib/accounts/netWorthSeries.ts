@@ -83,39 +83,24 @@ export function buildNetWorthSeries(
   return { series, anchors }
 }
 
-/** A single bar segment, in value space: `from` is the end nearer zero. */
-export interface StackSegment {
-  key: string
-  from: number
-  to: number
-}
-
-/**
- * Stacks one month's balances in series order: positive balances upward from zero, negative ones
- * downward. Debt is always negative, but an overdrawn checking account is too, and it belongs
- * below the line with the debt rather than cancelling out part of the bar above it.
- */
-export function stackMonth(series: NetWorthSeries[], balances: Map<string, number>): StackSegment[] {
-  let up = 0
-  let down = 0
-  const segments: StackSegment[] = []
-  for (const { key } of series) {
-    const value = balances.get(key) ?? 0
-    if (value > 0) {
-      segments.push({ key, from: up, to: up + value })
-      up += value
-    } else if (value < 0) {
-      segments.push({ key, from: down, to: down + value })
-      down += value
-    }
-  }
-  return segments
-}
-
 /**
  * Each balance as the period OPENED — the start of its first month, not the end. That is the
  * baseline a change "in 2026" is measured from, and where the dotted reference lines sit.
  */
 export function periodStart(months: Pick<AccountMonthPoint, 'startBalances'>[]): Map<string, number> {
   return months.length > 0 ? new Map(months[0].startBalances) : new Map()
+}
+
+/**
+ * How much each account moved during one point — its close minus its open, signed as net worth
+ * counts it, so a card balance rising is negative. Accounts that didn't move are left out. These
+ * are what the chart's bars stack: gains up from zero, losses down.
+ */
+export function periodChanges(point: Pick<AccountMonthPoint, 'balances' | 'startBalances'>): Map<string, number> {
+  const changes = new Map<string, number>()
+  for (const [key, close] of point.balances) {
+    const change = Math.round((close - (point.startBalances.get(key) ?? 0)) * 100) / 100
+    if (change !== 0) changes.set(key, change)
+  }
+  return changes
 }

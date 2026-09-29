@@ -40,7 +40,7 @@ export function FlowTransactionsSheet({ selection, categoryFor, isMasked, accoun
         <ScrollView {...sheetScroll.scrollProps} showsVerticalScrollIndicator={false} className="px-5">
           <View className="items-center gap-1" style={{ marginBottom: 12 }}>
             <Text className="font-sansSemi text-md text-textPrimary">{selection.title}</Text>
-            <Text className="font-sans text-sm text-textSecondary">{selection.subtitle}</Text>
+            {selection.subtitle ? <Text className="font-sans text-sm text-textSecondary">{selection.subtitle}</Text> : null}
             <Text className="font-display text-lg" style={{ color: selection.color }}>
               {formatMaskableAmount(selection.amount, isMasked)}
             </Text>

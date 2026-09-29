@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { memo, useMemo, useState } from 'react'
 import { View } from 'react-native'
 import { TreemapTile } from '@/components/accounts/TreemapTile'
 import { GROUP_COLORS, fallbackIconFor } from '@/components/accounts/netWorthPalette'
@@ -22,7 +22,7 @@ const ACCOUNT_TINT_MIN = 0.22
  * Debt shares the cash block as tiles sized by the amount owed, so every tile's area is a share
  * of the gross balance sheet — see composition.ts.
  */
-export function NetWorthCompositionMap({
+export const NetWorthCompositionMap = memo(function NetWorthCompositionMap({
   accounts,
   feed,
   balances,
@@ -84,4 +84,4 @@ export function NetWorthCompositionMap({
       })}
     </View>
   )
-}
+})
