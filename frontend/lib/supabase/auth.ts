@@ -4,8 +4,13 @@ import { createClient, type Session } from '@supabase/supabase-js'
 import * as SecureStore from 'expo-secure-store'
 import { useEffect, useState } from 'react'
 import { Platform } from 'react-native'
+import { reportError } from '@/lib/observability/log'
+import { fetchWithTimeout } from '@/lib/api/fetchTimeout'
 
-// Auth only: sign in, session, refresh — no data queries (see architecture.md).
+// Auth only: sign in, session, refresh — no data queries (see architecture.md). reportError is
+// the one deliberate exception: it dynamically imports the api client only inside a failure
+// path, so a sign-in failure gets the same off-device visibility a background failure does,
+// without giving this module a real dependency on the query layer.
 // Apple and Google are the identity providers; the Email provider is disabled in the Supabase
 // dashboard, so there is no password path to fall back to.
 
@@ -57,6 +62,12 @@ export const supabaseAuth = createClient(
       persistSession: true,
       detectSessionInUrl: false,
     },
+    // Without this, a stalled token refresh (this client's own network call, not one that goes
+    // through lib/api/client.ts) can hang indefinitely — the same "app hanging" failure mode
+    // this whole observability effort exists to catch, reachable from a path fetchWithNetworkRetry
+    // never sees, since httpBatchLink's headers() callback (which calls getSession(), which can
+    // trigger this exact refresh) runs and is awaited before fetchWithNetworkRetry is ever called.
+    global: { fetch: fetchWithTimeout() },
   },
 )
 
@@ -84,12 +95,19 @@ export async function signInWithGoogle() {
     throw err
   }
 
-  const { data, error } = await supabaseAuth.auth.signInWithIdToken({
-    provider: 'google',
-    token: idToken,
-  })
-  if (error) throw error
-  return data
+  try {
+    const { data, error } = await supabaseAuth.auth.signInWithIdToken({
+      provider: 'google',
+      token: idToken,
+    })
+    if (error) throw error
+    return data
+  } catch (err) {
+    // A platform-wide Supabase outage looks identical to an isolated bad connection from here —
+    // reportError is what turns a handful of these into a visible pattern. See its own doc.
+    reportError('auth-sign-in', err, { provider: 'google' })
+    throw err
+  }
 }
 
 // The App Store requires Sign in with Apple alongside any third-party login (guideline 4.8).
@@ -120,12 +138,17 @@ export async function signInWithApple() {
     throw err
   }
 
-  const { data, error } = await supabaseAuth.auth.signInWithIdToken({
-    provider: 'apple',
-    token: identityToken,
-  })
-  if (error) throw error
-  return data
+  try {
+    const { data, error } = await supabaseAuth.auth.signInWithIdToken({
+      provider: 'apple',
+      token: identityToken,
+    })
+    if (error) throw error
+    return data
+  } catch (err) {
+    reportError('auth-sign-in', err, { provider: 'apple' })
+    throw err
+  }
 }
 
 // Google's own session is cleared too, not just Supabase's. Left signed in, the SDK would

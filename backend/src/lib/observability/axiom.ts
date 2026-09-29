@@ -12,6 +12,20 @@
 const INGEST_HOST = 'https://api.axiom.co'
 
 /**
+ * The two fields every Axiom event needs regardless of what emitted it, kept in one place so
+ * the backend's own error events (errorLogging.ts) and the frontend-reported ones
+ * (observabilityService.ts) can't quietly drift apart on how a timestamp or environment is
+ * resolved.
+ */
+export function axiomEnvelope(): { _time: string; env: string } {
+  return {
+    // Axiom reads _time as the event timestamp.
+    _time: new Date().toISOString(),
+    env: process.env.VERCEL_ENV ?? process.env.NODE_ENV ?? 'development',
+  }
+}
+
+/**
  * Bounded so a hung sink cannot outlive its usefulness. On Vercel this no longer delays any
  * response (runAfterResponse hands the send to waitUntil), but it still occupies the invocation,
  * and on the awaited fallback path it does hold the response open. A typical ingest is well

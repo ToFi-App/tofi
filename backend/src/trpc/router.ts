@@ -16,6 +16,7 @@ import { transferDismissalsRouter } from '../routers/transferDismissals.js'
 import { investmentsRouter } from '../routers/investments.js'
 import { onboardingRouter } from '../routers/onboarding.js'
 import { accountRouter } from '../routers/account.js'
+import { observabilityRouter } from '../routers/observability.js'
 
 export const appRouter = router({
   plaidCredentials: plaidCredentialsRouter,
@@ -35,6 +36,7 @@ export const appRouter = router({
   investments: investmentsRouter,
   onboarding: onboardingRouter,
   account: accountRouter,
+  observability: observabilityRouter,
 })
 
 export type AppRouter = typeof appRouter

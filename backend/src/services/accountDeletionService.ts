@@ -44,7 +44,10 @@ export const accountDeletionService = {
     await accountDeletionRepository.deleteAllUserData(userId)
 
     const { error } = await getServiceClient().auth.admin.deleteUser(userId)
-    if (error) throw new Error(`Could not delete the account: ${error.message}`)
+    // Cause kept, not just the message: this is the one step that isn't retried or undone, so
+    // whether it failed because Supabase's admin API is genuinely down (networkErrorOf reads
+    // this in errorLogging.ts) versus a real rejection matters for whoever has to follow up.
+    if (error) throw new Error(`Could not delete the account: ${error.message}`, { cause: error })
 
     return { deleted: true }
   },

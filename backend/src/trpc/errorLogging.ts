@@ -1,4 +1,6 @@
 import { plaidErrorOf } from '../lib/plaid/errors.js'
+import { networkErrorOf } from '../lib/network/errors.js'
+import { axiomEnvelope } from '../lib/observability/axiom.js'
 
 /**
  * Codes that mean "the client asked for something it can't have" rather than "we broke".
@@ -65,10 +67,20 @@ function describeTrpcError(event: TrpcErrorEvent) {
   // A Plaid failure's message is only ever "Request failed with status code 400"; the code that
   // says what to actually do about it is in the response body hanging off the cause.
   const plaid = plaidErrorOf(error.cause)
+  // A connectivity failure to ANY downstream (Supabase, Plaid, or otherwise) — a platform
+  // outage, not a bad query — would otherwise log as a bare INTERNAL_SERVER_ERROR
+  // indistinguishable from an actual defect. Deliberately not attributed to a specific service:
+  // see lib/network/errors.ts for why a generic network error can't honestly be pinned on one.
+  const network = networkErrorOf(error.cause)
   return {
-    level: EXPECTED_CODES.has(error.code) ? ('warn' as const) : ('error' as const),
+    // Checked first: an UNAUTHORIZED caused by a stalled JWKS fetch (see trpc.ts's
+    // protectedProcedure) is not the routine, expected-traffic UNAUTHORIZED the warn bucket
+    // exists for — it means auth verification itself is down, which is worth error-level
+    // attention regardless of which TRPCError code the failure happened to surface as.
+    level: !network.matched && EXPECTED_CODES.has(error.code) ? ('warn' as const) : ('error' as const),
     trpc: { path: path ?? '<unknown>', type, code: error.code },
     ...(plaid.errorType || plaid.errorCode ? { plaid } : {}),
+    ...(network.matched ? { dependency: 'network', dependencyReason: network.reason } : {}),
     ...(userId ? { userId } : {}),
   }
 }
@@ -95,11 +107,9 @@ export function toAxiomEvent(event: TrpcErrorEvent, context: { requestId?: strin
   const { level, ...detail } = describeTrpcError(event)
   const error = event.error as { name?: string; message?: string; stack?: string }
   return {
-    // Axiom reads _time as the event timestamp.
-    _time: new Date().toISOString(),
+    ...axiomEnvelope(),
     level,
     service: 'tofi-backend',
-    env: process.env.VERCEL_ENV ?? process.env.NODE_ENV ?? 'development',
     ...(context.requestId ? { requestId: context.requestId } : {}),
     ...detail,
     err: { type: error?.name ?? 'Error', message: error?.message, stack: error?.stack },
