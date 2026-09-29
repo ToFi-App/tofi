@@ -18,6 +18,8 @@ export const colors = {
   primary: '#0F766E',
   primaryDim: '#0B5C56',
   primaryMuted: 'rgba(15,118,110,0.10)',
+  // Rules on glass surfaces, where `border` is too close to the glass to show.
+  primaryHairline: 'rgba(15,118,110,0.16)',
 
   income: '#059669',
   expense: '#E11D48',
@@ -120,6 +122,24 @@ export function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }
 
+/**
+ * The solid colour `hex` at `alpha` produces when laid over `baseHex` — what a translucent tint
+ * actually looks like on screen. For overlays that must match a tinted background exactly, such as
+ * an edge fade over a selected row, where a second translucent layer would stack instead.
+ */
+export function blendOver(hex: string, alpha: number, baseHex: string): string {
+  const channels = (value: string) => {
+    const normalized = value.replace('#', '')
+    if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return [...FALLBACK_RGB]
+    return [0, 2, 4].map((i) => parseInt(normalized.slice(i, i + 2), 16))
+  }
+  const top = channels(hex)
+  const base = channels(baseHex)
+  return `#${top
+    .map((c, i) => Math.round(c * alpha + base[i] * (1 - alpha)).toString(16).padStart(2, '0'))
+    .join('')}`
+}
+
 export const fontFamily = {
   display: 'DMSans_700Bold',
   sans: 'Inter_400Regular',
@@ -131,6 +151,8 @@ export const fontFamily = {
 export const fontSize = {
   xs: 11,
   sm: 13,
+  // Account balances: a step under the 15pt section totals they sit beneath.
+  amount: 14,
   base: 15,
   md: 17,
   lg: 22,

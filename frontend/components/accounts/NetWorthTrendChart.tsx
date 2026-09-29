@@ -48,6 +48,10 @@ interface NetWorthTrendChartProps {
   onZoom: (scale: number, focus: number, drift: number) => void
   /** An account highlighted from the map or the rows: the bars then measure that account's moves. */
   highlightedKey?: string | null
+  /** Drawing width. Defaults to the full window, for a chart that runs edge to edge. */
+  width?: number
+  /** Drawing height. Defaults to CHART_H; the bar band scales with it so the layout keeps its shape. */
+  height?: number
 }
 
 const CHART_H = 380
@@ -55,7 +59,8 @@ const CHART_H = 380
 const PAD_T = 28
 /** Rough advance of the 11px label font, to keep a label clear of the screen edges. */
 const LABEL_CHAR_W = 6.5
-const X_H = 24
+/** Breathing room under the bars, which rise from the chart's bottom edge. */
+const BOTTOM_PAD = 4
 
 // Price-and-volume layout, overlapping like a stock chart's: the bars rise from the bottom on
 // their own scale, and the line, on its own, may come down into their upper half.
@@ -68,17 +73,16 @@ const LINE_OVERLAP = 0.5
 const BAR_FILL = 0.6
 const BAR_MAX_W = 20
 const BAR_MIN_W = 1.5
-/** How many dates the x-axis names, spread evenly. */
-const X_TICKS = 5
-/** Half the widest short label ("May 18"), so the outermost ones sit fully on screen. */
-const X_LABEL_INSET = 24
 /** The line's scale spans at least this share of net worth. */
 const MIN_LINE_SPAN = 0.02
 /** Corner radius for a stack's outer end: one rounded cap per column, square seams inside it. */
 const BAR_RADIUS = 3
 
-/** A bar that isn't the selected one, or a band that isn't the highlighted account. */
-const DIMMED_OPACITY = 0.3
+// The bars are faded by default so the net worth line reads first; they are the backdrop of daily
+// moves, not the headline. A selected point's bar comes forward and the rest step further back.
+const BAR_OPACITY = 0.35
+const SELECTED_BAR_OPACITY = 0.9
+const DIMMED_OPACITY = 0.15
 
 /**
  * A rect with only its top corners rounded (or only its bottom ones), as a path — the outer end of
@@ -116,13 +120,18 @@ export function NetWorthTrendChart({
   onZoomEnd,
   onZoom,
   highlightedKey,
+  width,
+  height,
 }: NetWorthTrendChartProps) {
-  const { width: chartW } = useWindowDimensions()
+  const { width: windowW } = useWindowDimensions()
+  const chartW = width ?? windowW
+  const chartH = height ?? CHART_H
+  const bandH = BAND_H * (chartH / CHART_H)
   const lineTop = PAD_T
-  const bandBottom = CHART_H - X_H
-  const lineBottom = bandBottom - BAND_H * LINE_OVERLAP
+  const bandBottom = chartH - BOTTOM_PAD
+  const lineBottom = bandBottom - bandH * LINE_OVERLAP
 
-  const { slot, firstOffset, pixelPts, bars, linePath, areaPath, xTicks } = useMemo(() => {
+  const { slot, firstOffset, pixelPts, bars, linePath, areaPath } = useMemo(() => {
     // One slot per bucket in the window, point at its centre. Laid out against the window, not the
     // data, so a window past today keeps empty slots on the right.
     const slot = chartW / Math.max(slotCount, 1)
@@ -159,26 +168,11 @@ export function NetWorthTrendChart({
     const biggest = Math.max(...moves.map(Math.abs), 0)
     const barRects = moves.map((move, i) => {
       // A move too small to see still gets a sliver, so every non-zero point shows its direction.
-      const height = move === 0 || biggest === 0 ? 0 : Math.max((Math.abs(move) / biggest) * BAND_H, 1.5)
+      const height = move === 0 || biggest === 0 ? 0 : Math.max((Math.abs(move) / biggest) * bandH, 1.5)
       const x = toX(accountPoints[i]) - width / 2
       // The shape is built here, once per window, rather than on every render of the bars.
       return { d: height > 0 ? capPath(x, bandBottom - height, width, height, BAR_RADIUS, 'top') : null, up: move >= 0 }
     })
-
-    // Every Nth point gets a date, at its own bar — the slots are uniform, so a fixed N is evenly
-    // spaced both on screen and in time. N is the smallest step that keeps it to X_TICKS labels,
-    // so a week labels every day. Points too close to an edge for a centred label are skipped.
-    const n = accountPoints.length
-    const step = Math.max(1, Math.ceil((n - 1) / (X_TICKS - 1)))
-    const labels: { x: number; text: string }[] = []
-    const fits = (x: number) => x >= X_LABEL_INSET && x <= chartW - X_LABEL_INSET
-    let first = 0
-    while (first < n && !fits(toX(accountPoints[first]))) first++
-    for (let i = first; i < n; i += step) {
-      const x = toX(accountPoints[i])
-      if (!fits(x)) break
-      labels.push({ x, text: formatTrendLabel(accountPoints[i].start, granularity, 'short') })
-    }
 
     return {
       slot,
@@ -187,9 +181,8 @@ export function NetWorthTrendChart({
       bars: barRects,
       linePath: line,
       areaPath: area,
-      xTicks: labels,
     }
-  }, [points, accountPoints, granularity, slotStart, slotCount, baseline, highlightedKey, chartW, lineTop, lineBottom, bandBottom])
+  }, [points, accountPoints, slotStart, slotCount, baseline, highlightedKey, chartW, lineTop, lineBottom, bandBottom, bandH])
 
   const nearestIndex = (x: number) => {
     if (pixelPts.length === 0) return null
@@ -228,7 +221,7 @@ export function NetWorthTrendChart({
       if (success) runOnJS(tapAt)(e.x)
     })
     // A plain one-finger drag slides the window through time; horizontal only, so a vertical swipe
-    // over the chart still scrolls the sheet. It reports through the same totals as a pinch.
+    // over the chart still scrolls the page. It reports through the same totals as a pinch.
     const slide = Gesture.Pan()
       .maxPointers(1)
       .activeOffsetX([-TAP_SLOP, TAP_SLOP])
@@ -287,16 +280,15 @@ export function NetWorthTrendChart({
   return (
     <GestureDetector gesture={gesture}>
     <View>
-      <Svg width={chartW} height={CHART_H}>
+      <Svg width={chartW} height={chartH}>
         {/* Layers that redraw only when their own inputs change: selecting a point redraws the
-            bars (to fade the others) and the marker, not the line or the dates. */}
+            bars (to fade the others) and the marker, not the line. */}
         <BarsLayer bars={bars} selectedIndex={selectedIndex} />
         <LineLayer areaPath={areaPath} linePath={linePath} lineColor={lineColor} />
 
         {/* The "live" marker on the latest point, while nothing is selected. */}
         {latest && selected == null ? <LiveDot x={latest.x} y={latest.y} color={lineColor} /> : null}
 
-        <DateLabels ticks={xTicks} />
 
         {selected ? (
           <G>
@@ -348,8 +340,7 @@ const BarsLayer = memo(function BarsLayer({
             key={i}
             d={bar.d}
             fill={bar.up ? colors.income : colors.expense}
-            // With a point selected the other bars step back.
-            opacity={selectedIndex != null && selectedIndex !== i ? DIMMED_OPACITY : 1}
+            opacity={selectedIndex == null ? BAR_OPACITY : selectedIndex === i ? SELECTED_BAR_OPACITY : DIMMED_OPACITY}
           />
         ) : null,
       )}
@@ -377,29 +368,8 @@ const LineLayer = memo(function LineLayer({
       </Defs>
       {areaPath ? <Path d={areaPath} fill="url(#netWorthArea)" /> : null}
       {linePath ? (
-        <Path d={linePath} stroke={lineColor} strokeWidth={2.5} fill="none" strokeLinejoin="round" strokeLinecap="round" />
+        <Path d={linePath} stroke={lineColor} strokeWidth={1.5} fill="none" strokeLinejoin="round" strokeLinecap="round" />
       ) : null}
-    </G>
-  )
-})
-
-/** The dates along the bottom. */
-const DateLabels = memo(function DateLabels({ ticks }: { ticks: { x: number; text: string }[] }) {
-  return (
-    <G>
-      {ticks.map((tick) => (
-        <SvgText
-          key={`${tick.text}-${tick.x}`}
-          x={tick.x}
-          y={CHART_H - 6}
-          fontSize={11}
-          fontFamily={fontFamily.mono}
-          fill={colors.textMuted}
-          textAnchor="middle"
-        >
-          {tick.text}
-        </SvgText>
-      ))}
     </G>
   )
 })

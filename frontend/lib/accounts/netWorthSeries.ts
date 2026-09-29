@@ -84,11 +84,18 @@ export function buildNetWorthSeries(
 }
 
 /**
- * Each balance as the period OPENED — the start of its first month, not the end. That is the
- * baseline a change "in 2026" is measured from, and where the dotted reference lines sit.
+ * The sign a real balance must have, per series — see computeAccountHistory's `expectedSign`. Cash
+ * accounts can't sit below zero and debt can't sit in credit, so a leftover of the wrong sign before
+ * an account's first transaction means it didn't exist yet. Investments (their leftover is real
+ * market growth) and the manual cash pot (negative is meaningful there) are left out on purpose.
  */
-export function periodStart(months: Pick<AccountMonthPoint, 'startBalances'>[]): Map<string, number> {
-  return months.length > 0 ? new Map(months[0].startBalances) : new Map()
+export function expectedSignFor(series: NetWorthSeries[]): Map<string, 1 | -1> {
+  const signs = new Map<string, 1 | -1>()
+  for (const s of series) {
+    if (s.key === CASH_ON_HAND_KEY || s.group === 'investment') continue
+    signs.set(s.key, s.group === 'liability' ? -1 : 1)
+  }
+  return signs
 }
 
 /**

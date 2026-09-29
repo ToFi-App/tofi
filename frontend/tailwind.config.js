@@ -21,6 +21,7 @@ module.exports = {
         primary: '#0F766E',
         primaryDim: '#0B5C56',
         primaryMuted: 'rgba(15,118,110,0.10)',
+        primaryHairline: 'rgba(15,118,110,0.16)',
 
         income: '#059669',
         expense: '#E11D48',
@@ -61,6 +62,7 @@ module.exports = {
       fontSize: {
         xs: '11px',
         sm: '13px',
+        amount: '14px',
         base: '15px',
         md: '17px',
         lg: '22px',

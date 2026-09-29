@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildNetWorthSeries, periodChanges, periodStart } from './netWorthSeries'
+import { buildNetWorthSeries, expectedSignFor, periodChanges } from './netWorthSeries'
 import { CASH_ON_HAND_KEY } from './composition'
 import type { FeedItem } from '@/lib/transactions/resolveFeed'
 import type { Account } from '@/types/domain'
@@ -44,20 +44,6 @@ describe('buildNetWorthSeries', () => {
   })
 })
 
-describe('periodStart', () => {
-  it("is the first month's opening balances", () => {
-    const months = [
-      { balances: new Map([['a', 900]]), startBalances: new Map([['a', 1000], ['card', -350]]) },
-      { balances: new Map([['a', 800]]), startBalances: new Map([['a', 900]]) },
-    ]
-    expect(periodStart(months)).toEqual(new Map([['a', 1000], ['card', -350]]))
-  })
-
-  it('is empty when there are no months', () => {
-    expect(periodStart([]).size).toBe(0)
-  })
-})
-
 describe('periodChanges', () => {
   it("is each account's move during the point — close minus open — leaving out accounts that didn't move", () => {
     const changes = periodChanges({
@@ -70,5 +56,18 @@ describe('periodChanges', () => {
   it('counts an account that appeared this period from zero', () => {
     const changes = periodChanges({ balances: new Map([['cma', 350]]), startBalances: new Map([['cma', 0]]) })
     expect(changes.get('cma')).toBe(350)
+  })
+})
+
+describe('expectedSignFor', () => {
+  it('signs cash positive and debt negative, leaving investments and cash on hand out', () => {
+    const { series } = buildNetWorthSeries(
+      [account('checking', 'depository', 100), account('card', 'credit', 50), account('ira', 'investment', 900)],
+      [manualCash],
+    )
+    expect([...expectedSignFor(series)]).toEqual([
+      ['checking', 1],
+      ['card', -1],
+    ])
   })
 })
