@@ -18,9 +18,12 @@ export function SheetHeader({
   onClose,
   right,
   closeDisabled = false,
+  onBack,
 }: {
   title: string
   onClose: () => void
+  /** Turns the leading button into a back chevron, for a view pushed inside the sheet. */
+  onBack?: () => void
   /** An action for the right slot, sized like the close button (a 22pt icon). */
   right?: ReactNode
   /** Holds the sheet open, e.g. while something irreversible is in flight. */
@@ -28,8 +31,14 @@ export function SheetHeader({
 }) {
   return (
     <View className="flex-row items-center gap-3 px-5 py-3">
-      <Pressable onPress={onClose} hitSlop={8} disabled={closeDisabled} accessibilityRole="button" accessibilityLabel="Close">
-        <Ionicons name="close" size={SLOT} color={colors.textSecondary} />
+      <Pressable
+        onPress={onBack ?? onClose}
+        hitSlop={8}
+        disabled={closeDisabled}
+        accessibilityRole="button"
+        accessibilityLabel={onBack ? 'Back' : 'Close'}
+      >
+        <Ionicons name={onBack ? 'chevron-back' : 'close'} size={SLOT} color={colors.textSecondary} />
       </Pressable>
       <Text className="flex-1 text-center font-display text-md text-textPrimary" numberOfLines={1}>
         {title}

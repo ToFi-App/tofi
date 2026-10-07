@@ -222,3 +222,29 @@ describe('monotoneLine', () => {
     expect(monotoneLine([{ x: 0, y: 0 }])).toBe('')
   })
 })
+
+describe('slotX', () => {
+  it('puts the window’s first slot on the left edge and its last at the right, less the inset', async () => {
+    const { slotX } = await import('./lineChart')
+    // 7 slots across 400 with an 8 inset: 6 gaps over 392.
+    expect(slotX(0, 7, 400, 8)).toBe(0)
+    expect(slotX(6, 7, 400, 8)).toBe(392)
+    expect(slotX(3, 7, 400, 8)).toBe(196)
+  })
+
+  it('places a lone slot at the right, where the latest point belongs', async () => {
+    const { slotX } = await import('./lineChart')
+    expect(slotX(0, 1, 400, 8)).toBe(392)
+  })
+})
+
+describe('slotAt', () => {
+  it('reads the nearest slot under a finger, inside the window', async () => {
+    const { slotAt } = await import('./lineChart')
+    expect(slotAt(0, 7, 400, 8)).toBe(0)
+    expect(slotAt(100, 7, 400, 8)).toBe(2) // 100 / 65.3 = 1.53, nearest 2
+    expect(slotAt(392, 7, 400, 8)).toBe(6)
+    expect(slotAt(-20, 7, 400, 8)).toBe(0)
+    expect(slotAt(1000, 7, 400, 8)).toBe(6)
+  })
+})

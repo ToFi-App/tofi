@@ -1,37 +1,28 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { Pressable, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { colors, spacing } from '@/constants/theme'
 import { MASKED_AMOUNT, formatAmount, formatMaskableAmount } from '@/lib/format/money'
 import { formatGainPct } from '@/lib/accounts/holdings'
-import { computeFullTrend, trendNetWorth, type Granularity, type TrendRange } from '@/lib/accounts/netWorthHistory'
 import {
-  dayOf,
-  futureBuffer,
-  panViewport,
-  rangeViewport,
-  viewportBuckets,
-  visiblePoints,
-  zoomViewport,
-  type Viewport,
-} from '@/lib/accounts/trendViewport'
+  computeFullTrend,
+  overlayAccountHistories,
+  trendNetWorth,
+  type Granularity,
+  type TrendRange,
+} from '@/lib/accounts/netWorthHistory'
+import { dayOf, viewportBuckets, visiblePoints } from '@/lib/accounts/trendViewport'
 import { useNetWorthTrendInputs } from '@/hooks/useNetWorthTrendInputs'
 import type { NetWorthSeries, NetWorthSeriesGroup } from '@/lib/accounts/netWorthSeries'
-import { NetWorthTrendChart } from './NetWorthTrendChart'
+import { TrendChart } from '@/components/visualizations/TrendChart'
+import { useTrendViewport } from '@/hooks/useTrendViewport'
+import { Pill, RangePills } from '@/components/ui/RangePills'
 import { NetWorthCompositionMap } from './NetWorthCompositionMap'
 import { GROUP_COLORS } from './netWorthPalette'
 import type { FeedItem } from '@/lib/transactions/resolveFeed'
 import type { Account } from '@/types/domain'
 
 const TREND_RANGES: TrendRange[] = ['1M', '3M', 'YTD', '1Y', 'ALL']
-const RANGE_LABELS: Record<TrendRange, string> = {
-  '1W': 'Past week',
-  '1M': 'Past month',
-  '3M': 'Past 3 months',
-  YTD: 'Year to date',
-  '1Y': 'Past year',
-  ALL: 'All time',
-}
 
 // Every range draws one point per day — a year is 365 of them, never "Week of …" buckets. The
 // chart's own default steps up to weeks and months as the window widens; here the finer grain wins.
@@ -43,44 +34,13 @@ const CHART_HEIGHT = 260
 
 const DEFAULT_RANGE: TrendRange = '1M'
 
+const NO_OVERLAYS = new Map<string, Array<{ date: string; value: number }>>()
+
 type PanelView = 'trend' | 'breakdown'
 const VIEWS: { value: PanelView; label: string }[] = [
   { value: 'trend', label: 'Trend' },
   { value: 'breakdown', label: 'Breakdown' },
 ]
-
-/** One pill: the view switch above the figure and the ranges under the chart share it, lettered like the account console's headers. */
-function Pill({
-  label,
-  isSelected,
-  onPress,
-  accessibilityLabel,
-}: {
-  label: string
-  isSelected: boolean
-  onPress: () => void
-  accessibilityLabel?: string
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel ?? label}
-      accessibilityState={{ selected: isSelected }}
-      hitSlop={6}
-      className="rounded-full px-3 py-1.5"
-      style={isSelected ? { backgroundColor: colors.primary } : undefined}
-    >
-      {/* The console's instrument lettering: uppercase mono, widely tracked. */}
-      <Text
-        className="font-mono text-xs uppercase"
-        style={{ color: isSelected ? colors.surface : colors.primary, letterSpacing: 1.6 }}
-      >
-        {label}
-      </Text>
-    </Pressable>
-  )
-}
 
 const GROUP_LABELS: Record<NetWorthSeriesGroup, string> = {
   investment: 'Investments',
@@ -129,6 +89,11 @@ interface NetWorthPanelProps {
   onToggleMask: () => void
   /** The screen's own controls (adding an account), drawn beside the eye button. */
   actions?: ReactNode
+  /**
+   * Investment accounts' rebuilt daily values (useInvestmentHistories), by account id. Their bands
+   * take these in place of the walk's, which can't see the market (overlayAccountHistories).
+   */
+  investmentHistories?: Map<string, Array<{ date: string; value: number }>>
 }
 
 /**
@@ -151,13 +116,18 @@ export function NetWorthPanel({
   isMasked,
   onToggleMask,
   actions,
+  investmentHistories,
 }: NetWorthPanelProps) {
   const { linkedAccountIds, series, anchors, expectedSign } = useNetWorthTrendInputs(accounts, feed)
   // The whole history, day by day, once. Zooming only slices it, so a pinch never re-walks the
   // ledger.
   const history = useMemo(
-    () => computeFullTrend(anchors, feed, linkedAccountIds, GRANULARITY, new Date(), { expectedSign }),
-    [anchors, feed, linkedAccountIds, expectedSign],
+    () =>
+      overlayAccountHistories(
+        computeFullTrend(anchors, feed, linkedAccountIds, GRANULARITY, new Date(), { expectedSign }),
+        investmentHistories ?? NO_OVERLAYS,
+      ),
+    [anchors, feed, linkedAccountIds, expectedSign, investmentHistories],
   )
 
   const today = new Date()
@@ -165,74 +135,8 @@ export function NetWorthPanel({
   const todayDay = dayOf(todayIso)
   const earliestDay = history[0] ? dayOf(history[0].start) : todayDay
   const yearStartDay = dayOf(`${today.getFullYear()}-01-01`)
-  const bounds = useMemo(() => ({ minDay: earliestDay, maxDay: todayDay }), [earliestDay, todayDay])
-
-  // The pills set the window; pinching moves it and leaves no pill selected. Tapping a pill snaps
-  // back to exactly its range.
-  const [activeRange, setActiveRange] = useState<TrendRange | null>(DEFAULT_RANGE)
-  const [viewport, setViewport] = useState<Viewport>(() => rangeViewport(DEFAULT_RANGE, todayDay, earliestDay, yearStartDay))
-  const chooseRange = (range: TrendRange) => {
-    setActiveRange(range)
-    setViewport(rangeViewport(range, todayDay, earliestDay, yearStartDay))
-  }
-  // History can arrive after the first render (the feed loads): keep a pill's window in step.
-  useEffect(() => {
-    if (activeRange) setViewport(rangeViewport(activeRange, todayDay, earliestDay, yearStartDay))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [earliestDay, todayDay])
-
-  // A pinch is applied as totals to the window as it stood when the pinch began.
-  const viewportRef = useRef(viewport)
-  viewportRef.current = viewport
-  const pinchBase = useRef({ viewport, scale: 1, focus: 0.5, drift: 0 })
-  // The pinch and the two-finger drag start and end separately; the window is noted when the
-  // first begins, so whichever comes second doesn't reset the other's progress.
-  const activeZooms = useRef(0)
-  const handleZoomStart = useCallback(() => {
-    if (activeZooms.current === 0) pinchBase.current = { viewport: viewportRef.current, scale: 1, focus: 0.5, drift: 0 }
-    activeZooms.current += 1
-  }, [])
-  const handleZoomEnd = useCallback(() => {
-    activeZooms.current = Math.max(0, activeZooms.current - 1)
-  }, [])
-  const pendingViewport = useRef<Viewport | null>(null)
-  const frameRequest = useRef<number | null>(null)
-  const handleZoom = useCallback(
-    (scale: number, focus: number, drift: number) => {
-      const base = pinchBase.current
-      // The pinch and the two-finger drag report separately; each keeps its latest total here.
-      if (scale > 0) {
-        base.scale = scale
-        base.focus = focus
-      } else {
-        base.drift = drift
-      }
-      // Gestures may carry the window a little past today (futureBuffer), sized to the window
-      // they produce so a year view gets proportionally more room than a week.
-      const pastToday = (span: number) => ({ ...bounds, maxDay: bounds.maxDay + futureBuffer(span) })
-      const baseSpan = base.viewport.endDay - base.viewport.startDay + 1
-      const zoomed = zoomViewport(base.viewport, base.scale, base.focus, pastToday(Math.round(baseSpan / base.scale)))
-      const span = zoomed.endDay - zoomed.startDay + 1
-      // Fingers moving right drag the chart right, which brings earlier days into view.
-      pendingViewport.current = panViewport(zoomed, -base.drift * span, pastToday(span))
-      // Gestures report faster than the screen draws; apply the latest once per frame, and only
-      // when it lands on different days — sub-day finger movement redraws nothing.
-      if (frameRequest.current != null) return
-      frameRequest.current = requestAnimationFrame(() => {
-        frameRequest.current = null
-        const next = pendingViewport.current
-        if (!next) return
-        setViewport((current) =>
-          current.startDay === next.startDay && current.endDay === next.endDay ? current : next,
-        )
-        setActiveRange(null)
-      })
-    },
-    [bounds],
-  )
-  useEffect(() => () => {
-    if (frameRequest.current != null) cancelAnimationFrame(frameRequest.current)
-  }, [])
+  const { activeRange, chooseRange, viewport, handleZoomStart, handleZoomEnd, handleZoom, selectedIndex, handleSelect } =
+    useTrendViewport({ earliestDay, todayDay, yearStartDay, defaultRange: DEFAULT_RANGE })
 
   const granularity = GRANULARITY
   const accountPoints = useMemo(() => visiblePoints(history, granularity, viewport), [history, granularity, viewport])
@@ -240,16 +144,10 @@ export function NetWorthPanel({
   const slots = useMemo(() => viewportBuckets(viewport, granularity), [viewport, granularity])
   // The line summed from the per-account history.
   const points = useMemo(() => trendNetWorth(accountPoints), [accountPoints])
+  const linePoints = useMemo(() => points.map((p) => ({ value: p.netWorth })), [points])
   // Net worth where the window opens: what the headline change, and the line's colour, measure from.
   const baseline = points.length > 0 ? points[0].netWorth - points[0].change : 0
 
-  // Everything that reads a point follows the selection, and falls back to the latest one in view
-  // when nothing is selected. The window moving makes an old index meaningless, so it clears.
-  const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
-  useEffect(() => {
-    setSelectedIndex((current) => (current === null ? current : null))
-  }, [viewport.startDay, viewport.endDay, granularity])
-  const handleSelect = useCallback((index: number | null) => setSelectedIndex(index), [])
   const readIndex = selectedIndex != null && selectedIndex < points.length ? selectedIndex : points.length - 1
   const reading = points[readIndex]
   const headlineChange = reading ? Math.round((reading.netWorth - baseline) * 100) / 100 : 0
@@ -323,9 +221,9 @@ export function NetWorthPanel({
                 <Text className="font-sans text-sm text-textMuted">{isHistoryLoading ? 'Loading history…' : 'No history yet'}</Text>
               </View>
             ) : (
-              <NetWorthTrendChart
-                points={points}
-                accountPoints={accountPoints}
+              <TrendChart
+                points={linePoints}
+                slots={accountPoints}
                 granularity={granularity}
                 slotStart={slots.first}
                 slotCount={slots.count}
@@ -337,20 +235,13 @@ export function NetWorthPanel({
                 onZoom={handleZoom}
                 width={panelWidth}
                 height={CHART_HEIGHT}
+                gradientId="netWorthArea"
               />
             )}
           </View>
 
-          <View className="flex-row justify-between px-4 pt-3">
-            {TREND_RANGES.map((option) => (
-              <Pill
-                key={option}
-                label={option === 'ALL' ? 'All' : option}
-                accessibilityLabel={RANGE_LABELS[option]}
-                isSelected={option === activeRange}
-                onPress={() => chooseRange(option)}
-              />
-            ))}
+          <View className="px-4 pt-3">
+            <RangePills ranges={TREND_RANGES} value={activeRange} onChange={chooseRange} />
           </View>
         </>
       ) : (

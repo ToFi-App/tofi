@@ -18,6 +18,8 @@ import { ReorderableList } from '@/components/accounts/ReorderableList'
 import { AddAccountSheet } from '@/components/accounts/AddAccountSheet'
 import { AccountDetailSheet } from '@/components/accounts/AccountDetailSheet'
 import { InvestmentDetailSheet } from '@/components/accounts/InvestmentDetailSheet'
+import { useLiveInvestments } from '@/hooks/useLiveInvestments'
+import { useInvestmentHistories } from '@/hooks/useInvestmentHistory'
 import { ErrorBanner } from '@/components/ui/ErrorBanner'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { computeNetWorthTotals, isInvestmentAccount, isLiabilityAccount } from '@/lib/accounts/netWorth'
@@ -34,6 +36,10 @@ export default function AccountsTab() {
   const [detailTarget, setDetailTarget] = useState<Account | 'cash' | null>(null)
   const [investmentDetail, setInvestmentDetail] = useState<Account | null>(null)
   const accounts = useAccounts()
+  // Investment balances at the market's latest prices. Everything on this screen reads these, so
+  // the list, net worth and the account sheet all show the same figure for an account.
+  const live = useLiveInvestments(accounts.data)
+  const liveAccounts = live.accounts
   const accountOrder = useAccountOrder()
   // A lifted row and a scrolling page are the same downward drag, so the page stops while
   // a row is in the air.
@@ -50,21 +56,40 @@ export default function AccountsTab() {
   // neither household expenses nor income, so they get their own section and a holdings
   // view instead of a transaction list.
   const cashAccounts = useMemo(
-    () => (accounts.data ?? []).filter((a) => !isLiabilityAccount(a) && !isInvestmentAccount(a)),
-    [accounts.data],
+    () => (liveAccounts ?? []).filter((a) => !isLiabilityAccount(a) && !isInvestmentAccount(a)),
+    [liveAccounts],
   )
-  const investmentAccounts = useMemo(() => (accounts.data ?? []).filter(isInvestmentAccount), [accounts.data])
+  const investmentAccounts = useMemo(() => (liveAccounts ?? []).filter(isInvestmentAccount), [liveAccounts])
+  // Every investment account's history, rebuilt once here: net worth's investment bands and each
+  // account's sheet read the same rebuild, from one price request for the whole screen.
+  const historyInputs = useMemo(
+    () =>
+      investmentAccounts.map((a) => ({
+        itemId: a.itemId,
+        accountId: a.account_id,
+        anchorValue: a.balances?.current ?? 0,
+        holdings: live.holdingsByAccount.get(a.account_id),
+        holdingsFailed: live.failedHoldings.has(a.account_id),
+      })),
+    [investmentAccounts, live.holdingsByAccount, live.failedHoldings],
+  )
+  const investmentHistories = useInvestmentHistories(historyInputs)
+  const rebuiltSeries = useMemo(() => {
+    const series = new Map<string, Array<{ date: string; value: number }>>()
+    for (const [accountId, state] of investmentHistories) if (state.history) series.set(accountId, state.history.points)
+    return series
+  }, [investmentHistories])
   const investmentsValue = useMemo(
     () => investmentAccounts.reduce((sum, a) => sum + (a.balances?.current ?? 0), 0),
     [investmentAccounts],
   )
-  const creditAccounts = useMemo(() => (accounts.data ?? []).filter(isLiabilityAccount), [accounts.data])
+  const creditAccounts = useMemo(() => (liveAccounts ?? []).filter(isLiabilityAccount), [liveAccounts])
 
   // totalAssets includes cash on hand, which is exactly what the Cash Accounts section totals
   // now that the Cash row lives inside it.
   const { totalAssets, totalLiabilities, cashOnHand, netWorth } = useMemo(
-    () => computeNetWorthTotals(accounts.data ?? [], feed),
-    [accounts.data, feed],
+    () => computeNetWorthTotals(liveAccounts ?? [], feed),
+    [liveAccounts, feed],
   )
 
   // Sliced off the same feed the other sheets read, rather than from the MMKV cache this sheet
@@ -189,7 +214,7 @@ export default function AccountsTab() {
         ))}
 
         <NetWorthPanel
-          accounts={accounts.data ?? EMPTY_ACCOUNTS}
+          accounts={liveAccounts ?? EMPTY_ACCOUNTS}
           feed={feed}
           netWorth={netWorth}
           totalAssets={totalAssets}
@@ -198,6 +223,7 @@ export default function AccountsTab() {
           isHistoryLoading={accounts.isLoading || feedIsLoading}
           isMasked={isMasked}
           onToggleMask={toggleMask}
+          investmentHistories={rebuiltSeries}
           actions={
             <Pressable onPress={addAccount.beginAddAccount} hitSlop={8} accessibilityLabel="Add account" disabled={isConnecting}>
               <Ionicons name="add-circle-outline" size={24} color={colors.textPrimary} />
@@ -333,7 +359,10 @@ export default function AccountsTab() {
       />
 
       <InvestmentDetailSheet
-        account={investmentDetail}
+        // The tapped account, read back from the live list so its balance keeps up with quotes.
+        account={investmentDetail ? (liveAccounts?.find((a) => a.account_id === investmentDetail.account_id) ?? investmentDetail) : null}
+        liveHoldings={investmentDetail ? live.holdingsByAccount.get(investmentDetail.account_id) : undefined}
+        investmentHistory={investmentDetail ? investmentHistories.get(investmentDetail.account_id) : undefined}
         items={investmentDetailItems}
         feed={feed}
         categoryById={categoryById}

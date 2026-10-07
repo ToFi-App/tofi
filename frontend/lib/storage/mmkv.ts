@@ -1,6 +1,6 @@
 import { MMKV } from 'react-native-mmkv'
 import { reportError } from '@/lib/observability/log'
-import type { InvestmentTransaction, PlaidTransaction } from '@/types/domain'
+import type { DailyClose, InvestmentTransaction, PlaidTransaction, Split } from '@/types/domain'
 
 const storage = new MMKV({ id: 'ledge-transaction-cache' })
 
@@ -187,6 +187,58 @@ export function getInvestmentFailedAttempts(itemId: string): number {
 
 export function setInvestmentFailedAttempts(itemId: string, count: number): void {
   storage.set(investmentFailedAttemptsKey(itemId), count)
+}
+
+/**
+ * Daily closes per symbol per settled month, from Alpaca via the backend. Never expire: a settled
+ * month's raw closes don't change (lib/investments/priceCache.ts decides what's settled), and
+ * splits are applied on read, never baked in. Prices aren't user data, but which symbols are
+ * cached says what the user holds — so they live in this instance and go with clearTransactionCache.
+ */
+const PRICE_KEY_PREFIX = 'prices-v1'
+
+function priceMonthKey(symbol: string, month: string): string {
+  return `${PRICE_KEY_PREFIX}:${symbol}:${month}`
+}
+
+export function getCachedPriceMonth(symbol: string, month: string): DailyClose[] | null {
+  const raw = storage.getString(priceMonthKey(symbol, month))
+  if (raw == null) return null
+  try {
+    return JSON.parse(raw) as DailyClose[]
+  } catch (err) {
+    // Treated as not held, so the month is simply fetched again.
+    reportError('price-cache', err, { symbol, month })
+    return null
+  }
+}
+
+export function setCachedPriceMonth(symbol: string, month: string, closes: DailyClose[]): void {
+  storage.set(priceMonthKey(symbol, month), JSON.stringify(closes))
+}
+
+/**
+ * The last splits seen per symbol, overwritten on every successful fetch. Kept so a failed fetch
+ * still adjusts cached closes; a split landing on the very day a fetch fails is the one case it
+ * misses, and the next successful fetch corrects it.
+ */
+function priceSplitsKey(symbol: string): string {
+  return `${PRICE_KEY_PREFIX}-splits:${symbol}`
+}
+
+export function getCachedSplits(symbol: string): Split[] {
+  const raw = storage.getString(priceSplitsKey(symbol))
+  if (!raw) return []
+  try {
+    return JSON.parse(raw) as Split[]
+  } catch (err) {
+    reportError('price-cache', err, { symbol })
+    return []
+  }
+}
+
+export function setCachedSplits(symbol: string, splits: Split[]): void {
+  storage.set(priceSplitsKey(symbol), JSON.stringify(splits))
 }
 
 /**
