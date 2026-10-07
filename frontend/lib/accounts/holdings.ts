@@ -126,11 +126,14 @@ export function sortHoldingsByValue(holdings: Holding[]): Holding[] {
  *
  * Undated holdings are skipped rather than treated as infinitely old: cash sweeps routinely
  * carry no price date, and letting one veto the label would hide the staleness of every real
- * position beside it. Null only when nothing is dated at all.
+ * position beside it. Cash is skipped even when dated, for the same reason: a money-market core
+ * position is held at $1 a share, so its date says nothing about how current the total is — and
+ * with stocks repriced live (applyLivePrices), the brokerage's day-old date on it would otherwise
+ * pin the label to yesterday. Null only when nothing is dated at all.
  */
 export function holdingsPricedAsOf(holdings: Holding[]): string | null {
   return holdings.reduce<string | null>((oldest, holding) => {
-    if (!holding.priceAsOf) return oldest
+    if (!holding.priceAsOf || holding.type === 'cash') return oldest
     // ISO 8601 sorts lexicographically, but only within one precision — comparing a date-only
     // "2026-08-23" against "2026-08-23T20:00:00Z" would call the bare date older by prefix.
     // Parsing sidesteps that entirely.

@@ -193,3 +193,22 @@ export function smoothLine(pts: { x: number; y: number }[], yMin: number, yMax: 
   }
   return d
 }
+
+/**
+ * The x of slot `offset` (0-based within the window) on a chart `width` wide: the first slot on the
+ * left edge and the last on the right, less `endInset` so a dot drawn there isn't clipped. Edge to
+ * edge rather than at slot centres, so the line meets both sides of the chart however few slots the
+ * window has — at a week's seven, centres left half a day of blank at each end.
+ */
+export function slotX(offset: number, slotCount: number, width: number, endInset: number): number {
+  const usable = width - endInset
+  if (slotCount <= 1) return usable
+  return (offset / (slotCount - 1)) * usable
+}
+
+/** The slot nearest x on the same layout as slotX, clamped inside the window. */
+export function slotAt(x: number, slotCount: number, width: number, endInset: number): number {
+  if (slotCount <= 1) return 0
+  const offset = Math.round((x / (width - endInset)) * (slotCount - 1))
+  return Math.min(Math.max(offset, 0), slotCount - 1)
+}

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const credRepoMock = { getDecrypted: vi.fn() }
 const itemRepoMock = { listDecryptedTokens: vi.fn() }
-const investmentRepoMock = { getHoldings: vi.fn() }
+const investmentRepoMock = { getHoldings: vi.fn(), getAccountActivity: vi.fn() }
 vi.mock('../repositories/plaidCredentialRepository.js', () => ({ plaidCredentialRepository: credRepoMock }))
 vi.mock('../repositories/plaidItemRepository.js', () => ({ plaidItemRepository: itemRepoMock }))
 vi.mock('../repositories/investmentRepository.js', () => ({ investmentRepository: investmentRepoMock }))
@@ -41,5 +41,39 @@ describe('investments router', () => {
     credRepoMock.getDecrypted.mockResolvedValue(null)
 
     await expect((await caller()).holdings({ itemId: 'item-1', accountId: 'acc-1' })).rejects.toThrow(/credentials/i)
+  })
+
+  it('activity fetches one account\'s full activity with that item\'s token', async () => {
+    credRepoMock.getDecrypted.mockResolvedValue({ clientId: 'c', secret: 's', environment: 'sandbox' })
+    itemRepoMock.listDecryptedTokens.mockResolvedValue([
+      { itemId: 'item-1', accessToken: 'token-1', institutionName: 'Chase', institutionId: 'ins_1', institutionLogo: null },
+    ])
+    investmentRepoMock.getAccountActivity.mockResolvedValue({ transactions: [], securities: [] })
+
+    const result = await (await caller()).activity({
+      itemId: 'item-1',
+      accountId: 'acc-ira',
+      startDate: '2023-10-06',
+      endDate: '2025-10-06',
+    })
+
+    expect(investmentRepoMock.getAccountActivity).toHaveBeenCalledWith(
+      { tag: 'client' },
+      'token-1',
+      'acc-ira',
+      '2023-10-06',
+      '2025-10-06',
+    )
+    expect(result).toEqual({ transactions: [], securities: [] })
+  })
+
+  it('activity rejects an itemId that does not belong to the user', async () => {
+    credRepoMock.getDecrypted.mockResolvedValue({ clientId: 'c', secret: 's', environment: 'sandbox' })
+    itemRepoMock.listDecryptedTokens.mockResolvedValue([])
+
+    await expect(
+      (await caller()).activity({ itemId: 'item-x', accountId: 'a', startDate: '2023-10-06', endDate: '2025-10-06' }),
+    ).rejects.toThrow(/not linked/i)
+    expect(investmentRepoMock.getAccountActivity).not.toHaveBeenCalled()
   })
 })

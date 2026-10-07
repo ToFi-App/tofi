@@ -86,6 +86,34 @@ describe('mmkv storage', () => {
     expect(getPendingRemovedTransactionIds()).toEqual([])
   })
 
+  it('tells a held empty price month apart from one never fetched', async () => {
+    const { getCachedPriceMonth, setCachedPriceMonth } = await import('./mmkv')
+    expect(getCachedPriceMonth('ZZZ', '2025-01')).toBeNull()
+
+    // Alpaca had nothing for this ticker that month: held as empty, so it is never asked for again.
+    setCachedPriceMonth('ZZZ', '2025-01', [])
+    expect(getCachedPriceMonth('ZZZ', '2025-01')).toEqual([])
+    expect(getCachedPriceMonth('ZZZ', '2025-02')).toBeNull()
+  })
+
+  it('treats a corrupted price month as not held, so it is fetched again', async () => {
+    backing.set('prices-v1:AAA:2025-01', '{not json')
+    const { getCachedPriceMonth } = await import('./mmkv')
+    expect(getCachedPriceMonth('AAA', '2025-01')).toBeNull()
+  })
+
+  it('clears cached prices and splits on a user change, since they reveal what was held', async () => {
+    const { clearTransactionCache, getCachedPriceMonth, getCachedSplits, setCachedPriceMonth, setCachedSplits } =
+      await import('./mmkv')
+    setCachedPriceMonth('AAA', '2025-01', [{ date: '2025-01-02', close: 1 }])
+    setCachedSplits('AAA', [{ symbol: 'AAA', exDate: '2025-01-03', oldRate: 1, newRate: 2 }])
+
+    clearTransactionCache()
+
+    expect(getCachedPriceMonth('AAA', '2025-01')).toBeNull()
+    expect(getCachedSplits('AAA')).toEqual([])
+  })
+
   describe('stale investment cache purge', () => {
     // The backend filter governs new fetches only, and the merge is additive, so rows an older
     // filter admitted are replayed from disk forever: shown in the feed and the account sheet,

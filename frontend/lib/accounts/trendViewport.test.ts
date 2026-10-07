@@ -12,6 +12,10 @@ describe('rangeViewport', () => {
     expect(rangeViewport('YTD', TODAY, EARLIEST, TODAY - 250)).toEqual({ startDay: TODAY - 250, endDay: TODAY })
   })
 
+  it('reaches five years back for 5Y', () => {
+    expect(rangeViewport('5Y', TODAY, TODAY - 3000, TODAY - 250)).toEqual({ startDay: TODAY - 1824, endDay: TODAY })
+  })
+
   it('starts ALL at the oldest data, and never starts a range before it', () => {
     expect(rangeViewport('ALL', TODAY, EARLIEST, TODAY - 250)).toEqual({ startDay: EARLIEST, endDay: TODAY })
     expect(rangeViewport('1Y', TODAY, TODAY - 100, TODAY - 250)).toEqual({ startDay: TODAY - 100, endDay: TODAY })

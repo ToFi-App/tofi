@@ -393,7 +393,7 @@ export function netWorthYearRange(
   return { first, last }
 }
 
-export type TrendRange = '1W' | '1M' | '3M' | 'YTD' | '1Y' | 'ALL'
+export type TrendRange = '1W' | '1M' | '3M' | 'YTD' | '1Y' | '5Y' | 'ALL'
 
 /** Past this many days a range draws weekly rather than daily — a stacked bar per day turns into
  *  thousands of shapes to redraw on every tap. */
@@ -445,6 +445,10 @@ export function computeTrend(
     case '1Y':
       granularity = 'week'
       fromDay = todayDay - 364
+      break
+    case '5Y':
+      granularity = 'month'
+      fromDay = todayDay - 1824
       break
     case 'ALL':
       granularity = 'month'
@@ -512,4 +516,55 @@ export function formatTrendLabel(start: string, granularity: Granularity, length
   const date = `${month} ${day}`
   if (length === 'short') return date
   return granularity === 'week' ? `Week of ${date}, ${year}` : `${date}, ${year}`
+}
+
+/**
+ * Net worth history with some accounts' bands taken from a better source: the investment rebuild,
+ * which sees the market where this file's walk cannot (see the note at the top — it carries an
+ * investment account's growth flat).
+ *
+ * Inside a rebuilt series' range an account's balance is the rebuilt value on that day, carried
+ * over days the series has no point for (weekends, holidays). Before the range — the rebuild stops
+ * where Plaid's activity does — the band starts from the rebuilt value at the range's first day and
+ * moves only by what the walk itself saw, its transfers, so the line meets the rebuilt range without
+ * a jump. Both `balances` and `startBalances` are rewritten, so a point's change stays its own.
+ *
+ * `overlays` is keyed like the walk's balances (an account id), each series ascending by date.
+ */
+export function overlayAccountHistories(
+  points: TrendPoint[],
+  overlays: Map<string, Array<{ date: string; value: number }>>,
+): TrendPoint[] {
+  if (overlays.size === 0) return points
+
+  const plans = [...overlays].flatMap(([key, series]) => {
+    if (series.length === 0) return []
+    const rangeStart = series[0].date
+    // The walk's own balance on the rebuilt range's first day: what earlier days are measured from.
+    const join = [...points].reverse().find((p) => p.start <= rangeStart) ?? points[0]
+    const walkAtJoin = join?.balances.get(key) ?? 0
+    const valueOn = (date: string) => {
+      let value = series[0].value
+      for (const p of series) {
+        if (p.date > date) break
+        value = p.value
+      }
+      return value
+    }
+    // A balance on `date`, given what the walk had for it.
+    const rewrite = (date: string, walkValue: number) =>
+      date >= rangeStart ? valueOn(date) : round2(series[0].value + (walkValue - walkAtJoin))
+    return [{ key, rewrite }]
+  })
+
+  return points.map((point) => {
+    const balances = new Map(point.balances)
+    const startBalances = new Map(point.startBalances)
+    const dayBefore = isoFromDayNumber(dayNumber(point.start) - 1)
+    for (const { key, rewrite } of plans) {
+      balances.set(key, rewrite(point.start, point.balances.get(key) ?? 0))
+      startBalances.set(key, rewrite(dayBefore, point.startBalances.get(key) ?? 0))
+    }
+    return { ...point, balances, startBalances }
+  })
 }

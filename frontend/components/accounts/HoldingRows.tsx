@@ -1,4 +1,6 @@
+import { useState } from 'react'
 import { Pressable, Text, View } from 'react-native'
+import { Ionicons } from '@expo/vector-icons'
 import { blendOver, colors, hexToRgba } from '@/constants/theme'
 import { ScrollingText } from '@/components/ui/ScrollingText'
 import {
@@ -20,6 +22,8 @@ import type { Holding } from '@/types/domain'
 const NAME_LINE_HEIGHT = 18
 // How strongly a selected row is tinted with the primary colour.
 const SELECTED_TINT = 0.1
+/** The brief tint under a finger pressing a row that opens a page. */
+const PRESSED_TINT = 0.05
 
 interface HoldingRowsProps {
   holdings: Holding[]
@@ -27,6 +31,8 @@ interface HoldingRowsProps {
   /** The highlighted holding — from a tapped tile or a tapped row. Its row is tinted and opens. */
   selectedId: string | null
   onSelect: (securityId: string | null) => void
+  /** Opens a holding's own page. When given, tapping a row opens it instead of highlighting it. */
+  onOpen?: (securityId: string) => void
 }
 
 /**
@@ -38,7 +44,7 @@ interface HoldingRowsProps {
  * detail line with them, so nothing the old table showed is lost; it just stops competing with
  * the two figures most rows are read for.
  */
-export function HoldingRows({ holdings, isMasked, selectedId, onSelect }: HoldingRowsProps) {
+export function HoldingRows({ holdings, isMasked, selectedId, onSelect, onOpen }: HoldingRowsProps) {
   const groups = new Map<string, { cls: ReturnType<typeof assetClass>; rows: Holding[]; total: number }>()
   for (const holding of sortHoldingsByValue(holdings)) {
     const cls = assetClass(holding.type)
@@ -69,7 +75,10 @@ export function HoldingRows({ holdings, isMasked, selectedId, onSelect }: Holdin
               isMasked={isMasked}
               isFirst={rowIndex === 0}
               isSelected={holding.securityId === selectedId}
-              onPress={() => onSelect(holding.securityId === selectedId ? null : holding.securityId)}
+              opensPage={onOpen != null}
+              onPress={() =>
+                onOpen ? onOpen(holding.securityId) : onSelect(holding.securityId === selectedId ? null : holding.securityId)
+              }
             />
           ))}
         </View>
@@ -83,14 +92,20 @@ function HoldingRow({
   isMasked,
   isFirst,
   isSelected,
+  opensPage,
   onPress,
 }: {
   holding: Holding
   isMasked: boolean
   isFirst: boolean
   isSelected: boolean
+  /** Tapping opens the holding's page: shown with a chevron, like the app's other rows that do. */
+  opensPage: boolean
   onPress: () => void
 }) {
+  // The row is several Pressables (see below), so they share one pressed state and the whole row
+  // lights up under the finger rather than whichever part was touched.
+  const [isPressed, setIsPressed] = useState(false)
   const label = holdingLabel(holding)
   const cls = assetClass(holding.type)
   const gain = holdingGain(holding)
@@ -119,6 +134,8 @@ function HoldingRow({
   const fadeColor = isSelected ? blendOver(colors.primary, SELECTED_TINT, colors.surface) : colors.surface
   const press = {
     onPress,
+    onPressIn: () => setIsPressed(true),
+    onPressOut: () => setIsPressed(false),
     hitSlop: { top: 16, bottom: 16 },
     accessibilityRole: 'button' as const,
     accessibilityState: { selected: isSelected },
@@ -133,7 +150,9 @@ function HoldingRow({
         // margin around its content without moving it.
         isSelected
           ? { marginHorizontal: -12, paddingHorizontal: 12, borderRadius: 14, backgroundColor: hexToRgba(colors.primary, SELECTED_TINT) }
-          : null,
+          : isPressed
+            ? { marginHorizontal: -12, paddingHorizontal: 12, borderRadius: 14, backgroundColor: hexToRgba(colors.textPrimary, PRESSED_TINT) }
+            : null,
       ]}
     >
       <View className="flex-row items-center gap-4">
@@ -186,6 +205,12 @@ function HoldingRow({
             {gainText}
           </Text>
         </Pressable>
+        {opensPage ? (
+          // Pulled in against the row's 16pt gap: the chevron belongs to the figures beside it.
+          <Pressable {...press} hitSlop={{ top: 16, bottom: 16, right: 8 }} style={{ marginLeft: -8 }}>
+            <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+          </Pressable>
+        ) : null}
       </View>
       {/* Labelled stats in columns rather than one run-on line: each figure sits under its own
           name, so the eye finds "price" without parsing a sentence. Each column is centred across

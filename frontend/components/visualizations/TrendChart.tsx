@@ -1,26 +1,21 @@
-import { memo, useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useMemo, useRef } from 'react'
 import { View, useWindowDimensions } from 'react-native'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
-import Animated, {
-  Easing,
-  runOnJS,
-  useAnimatedProps,
-  useReducedMotion,
-  useSharedValue,
-  withRepeat,
-  withTiming,
-} from 'react-native-reanimated'
-import Svg, { Circle, Defs, G, Line, LinearGradient, Path, Stop, Text as SvgText } from 'react-native-svg'
+import { runOnJS, useSharedValue } from 'react-native-reanimated'
+import Svg, { Circle, G, Line, Text as SvgText } from 'react-native-svg'
 import { colors, fontFamily, hexToRgba } from '@/constants/theme'
-import { fittedExtent, monotoneLine } from '@/lib/charts/lineChart'
+import { fittedExtent, monotoneLine, slotX } from '@/lib/charts/lineChart'
 import { formatTrendLabel, type Granularity, type TrendPoint } from '@/lib/accounts/netWorthHistory'
 
-interface NetWorthTrendChartProps {
-  /** Net worth per point, for the line — the same points as `accountPoints`. */
-  points: { netWorth: number; change: number }[]
-  /** Per-account balances per point (day, week or month) — for the x positions and dates, and a
-   *  highlighted account's moves. */
-  accountPoints: TrendPoint[]
+/** What the chart reads of a point's position: its bucket for x, its first day for the label. */
+export type TrendSlot = Pick<TrendPoint, 'bucket' | 'start'>
+import { LineLayer, LiveDot } from '@/components/visualizations/TrendLine'
+
+interface TrendChartProps {
+  /** The line's value per point — the same points as `slots`. */
+  points: { value: number }[]
+  /** Each point's bucket and first day (day, week or month) — for the x positions and dates. */
+  slots: TrendSlot[]
   granularity: Granularity
   /**
    * The window's buckets, first and count — the chart's horizontal layout. May run past the last
@@ -49,16 +44,32 @@ interface NetWorthTrendChartProps {
   width?: number
   /** Drawing height. Defaults to CHART_H; the bar band scales with it so the layout keeps its shape. */
   height?: number
+  /**
+   * Overrides the line's colour, which otherwise follows the last point against `baseline`. For a
+   * series whose movement isn't its performance: an investment account's line rises with deposits.
+   */
+  isUp?: boolean
+  /** The area fill's gradient id; distinct per mounted chart. */
+  gradientId?: string
+  /**
+   * Dots on the line at these points' indices — a stock's buys and sells. `label` is the tooltip
+   * shown with the date while that point is selected (tapped, or reached by press-and-hold).
+   */
+  markers?: Array<{ index: number; color: string; radius?: number; label?: string }>
 }
 
 const CHART_H = 380
+/** Room left after the last slot, so the live dot's ripple isn't clipped by the chart's edge. */
+const END_INSET = 8
 /** Room above the line for the selected month's label. */
 const PAD_T = 28
+/** The extra line a trade tooltip takes above the date. */
+const TOOLTIP_LINE_H = 15
 /** Rough advance of the 11px label font, to keep a label clear of the screen edges. */
 const LABEL_CHAR_W = 6.5
 /** Breathing room under the line's lowest point, above the chart's bottom edge. */
 const BOTTOM_PAD = 4
-/** The line's scale spans at least this share of net worth. */
+/** The line's scale spans at least this share of its typical value. */
 const MIN_LINE_SPAN = 0.02
 
 /** Finger travel under this is a tap, not a drag. */
@@ -67,14 +78,14 @@ const TAP_SLOP = 8
 const SCRUB_HOLD_MS = 250
 
 /**
- * Full-bleed, axis-free trend chart: the net worth line alone, smoothed and green when the period is
+ * Full-bleed, axis-free trend chart — net worth, an account's value: the line alone, smoothed and green when the period is
  * up (red when down), scaled to its own low and high the way a stock chart is, so its movement fills
  * the space. A day's size is read by tapping it — the headline shows its change — rather than drawn
  * as a bar beside the line that would only repeat its slope.
  */
-export function NetWorthTrendChart({
+export function TrendChart({
   points,
-  accountPoints,
+  slots,
   granularity,
   slotStart,
   slotCount,
@@ -86,47 +97,48 @@ export function NetWorthTrendChart({
   onZoom,
   width,
   height,
-}: NetWorthTrendChartProps) {
+  isUp: isUpOverride,
+  gradientId = 'trendArea',
+  markers,
+}: TrendChartProps) {
   const { width: windowW } = useWindowDimensions()
   const chartW = width ?? windowW
   const chartH = height ?? CHART_H
-  const lineTop = PAD_T
+  // A chart with trade markers keeps a second line of headroom for a selected trade's tooltip.
+  const padTop = markers && markers.length > 0 ? PAD_T + TOOLTIP_LINE_H : PAD_T
+  const lineTop = padTop
   const lineBottom = chartH - BOTTOM_PAD
 
-  const { slot, firstOffset, pixelPts, linePath, areaPath } = useMemo(() => {
-    // One slot per bucket in the window, point at its centre. Laid out against the window, not the
-    // data, so a window past today keeps empty slots on the right.
-    const slot = chartW / Math.max(slotCount, 1)
-    const toX = (p: { bucket: number }) => (p.bucket - slotStart + 0.5) * slot
+  const { firstOffset, pixelPts, linePath, areaPath } = useMemo(() => {
+    // One slot per bucket in the window, the first on the left edge and the last on the right (see
+    // slotX). Laid out against the window, not the data, so a window past today keeps empty slots on
+    // the right.
+    const toX = (p: { bucket: number }) => slotX(p.bucket - slotStart, slotCount, chartW, END_INSET)
     // Where the first point sits among the slots — for turning a finger's slot back into a point.
-    const firstOffset = (accountPoints[0]?.bucket ?? slotStart) - slotStart
+    const firstOffset = (slots[0]?.bucket ?? slotStart) - slotStart
 
     // The line: fitted to its own range. The opening value is included so the period's start is
     // in frame even when the first month moved a lot.
     // At least 2% of net worth tall, so a quiet week reads as quiet rather than as a cliff.
-    const lineValues = [...points.map((p) => p.netWorth), baseline]
+    const lineValues = [...points.map((p) => p.value), baseline]
     const typical = Math.abs(lineValues.reduce((sum, v) => sum + v, 0) / lineValues.length)
     const lineRange = fittedExtent(lineValues, 0.12, typical * MIN_LINE_SPAN)
     const toLineY = (v: number) =>
       lineBottom - ((v - lineRange.min) / (lineRange.max - lineRange.min)) * (lineBottom - lineTop)
-    const pts = points.map((p, i) => ({ x: toX(accountPoints[i]), y: toLineY(p.netWorth) }))
+    const pts = points.map((p, i) => ({ x: toX(slots[i]), y: toLineY(p.value) }))
     // Smoothed without overshoot: monotone, so no peak or dip appears that the data doesn't have.
-    // Points sit at slot centres, so the line is carried flat out to the left edge it would
-    // otherwise stop half a slot short of. It always ENDS at the latest point, though — the live
-    // dot — the way a stock chart's line ends at the last price.
-    const traced = pts.length >= 2 && firstOffset === 0 ? [{ x: 0, y: pts[0].y }, ...pts] : pts
-    const line = monotoneLine(traced)
-    const area =
-      traced.length < 2 ? '' : `${line} L ${traced[traced.length - 1].x} ${lineBottom} L ${traced[0].x} ${lineBottom} Z`
+    // It ENDS at the latest point — the live dot — the way a stock chart's line ends at the last
+    // price; with the window ending today, that's the right edge.
+    const line = monotoneLine(pts)
+    const area = pts.length < 2 ? '' : `${line} L ${pts[pts.length - 1].x} ${lineBottom} L ${pts[0].x} ${lineBottom} Z`
 
     return {
-      slot,
       firstOffset,
       pixelPts: pts,
       linePath: line,
       areaPath: area,
     }
-  }, [points, accountPoints, slotStart, slotCount, baseline, chartW, lineTop, lineBottom])
+  }, [points, slots, slotStart, slotCount, baseline, chartW, lineTop, lineBottom])
 
   const nearestIndex = (x: number) => {
     if (pixelPts.length === 0) return null
@@ -160,6 +172,9 @@ export function NetWorthTrendChart({
   const zoomEnd = useCallback(() => handlers.current.onZoomEnd(), [])
   const zoomTo = useCallback((scale: number, focus: number, drift: number) => handlers.current.onZoom(scale, focus, drift), [])
 
+  // slotAt's layout, as plain numbers the scrub worklet can close over.
+  const usableW = chartW - END_INSET
+  const span = Math.max(slotCount - 1, 1)
   const gesture = useMemo(() => {
     const tap = Gesture.Tap().onEnd((e, success) => {
       if (success) runOnJS(tapAt)(e.x)
@@ -179,14 +194,15 @@ export function NetWorthTrendChart({
       .maxPointers(1)
       .activateAfterLongPress(SCRUB_HOLD_MS)
       .onStart((e) => {
-        // Points sit one per slot, so the one under the finger is plain arithmetic; a finger over
-        // an empty slot past today reads the last point.
-        const index = Math.min(Math.max(Math.floor(e.x / slot) - firstOffset, 0), count - 1)
+        // Points must sit one per slot — callers fill calendar days (fillCalendarDays) — so the one
+        // under the finger is plain arithmetic — slotAt's, inlined,
+        // since this runs on the UI thread; a finger over an empty slot past today reads the last point.
+        const index = Math.min(Math.max(Math.round((e.x / usableW) * span) - firstOffset, 0), count - 1)
         lastScrub.value = index
         runOnJS(selectIndex)(index)
       })
       .onUpdate((e) => {
-        const index = Math.min(Math.max(Math.floor(e.x / slot) - firstOffset, 0), count - 1)
+        const index = Math.min(Math.max(Math.round((e.x / usableW) * span) - firstOffset, 0), count - 1)
         if (index === lastScrub.value) return
         lastScrub.value = index
         runOnJS(selectIndex)(index)
@@ -207,18 +223,24 @@ export function NetWorthTrendChart({
       // onEnd runs for every gesture that reached onStart, cancelled or not, so the count balances.
       .onEnd(() => runOnJS(zoomEnd)())
     return Gesture.Race(Gesture.Simultaneous(pinch, drift), Gesture.Race(scrub, slide), tap)
-  }, [chartW, slot, firstOffset, count, lastScrub, tapAt, selectIndex, zoomStart, zoomEnd, zoomTo])
+  }, [usableW, span, firstOffset, count, lastScrub, tapAt, selectIndex, zoomStart, zoomEnd, zoomTo])
 
   if (points.length === 0) return null
 
   const selected = selectedIndex != null ? pixelPts[selectedIndex] : undefined
-  const selectedPoint = selectedIndex != null ? accountPoints[selectedIndex] : undefined
+  const selectedPoint = selectedIndex != null ? slots[selectedIndex] : undefined
+  // A selected trade day reads its trades ("BUY 5 shares") on a line of their own above the date, in
+  // the dot's colour; a day with both a buy and a sell names both.
+  const selectedMarkers = selectedIndex != null ? (markers ?? []).filter((m) => m.index === selectedIndex && m.label) : []
   const selectedLabel = selectedPoint ? formatTrendLabel(selectedPoint.start, granularity, 'long') : ''
-  const selectedLabelHalfW = (selectedLabel.length * LABEL_CHAR_W) / 2
+  const tradeLabel = selectedMarkers.map((m) => m.label).join(', ')
+  const tradeLabelColor = selectedMarkers.length === 1 ? selectedMarkers[0].color : colors.textPrimary
+  const selectedLabelHalfW = (Math.max(selectedLabel.length, tradeLabel.length) * LABEL_CHAR_W) / 2
+  const labelX = selected ? Math.min(Math.max(selected.x, selectedLabelHalfW + 4), chartW - selectedLabelHalfW - 4) : 0
 
   // Stock-chart convention: green when the period ended above where it opened, red below.
   const latest = pixelPts[pixelPts.length - 1]
-  const isUp = (points[points.length - 1]?.netWorth ?? 0) >= baseline
+  const isUp = isUpOverride ?? (points[points.length - 1]?.value ?? 0) >= baseline
   const lineColor = isUp ? colors.income : colors.expense
 
   return (
@@ -227,7 +249,23 @@ export function NetWorthTrendChart({
       <Svg width={chartW} height={chartH}>
         {/* A layer that redraws only when its own inputs change: selecting a point redraws the
             marker, not the line. */}
-        <LineLayer areaPath={areaPath} linePath={linePath} lineColor={lineColor} />
+        <LineLayer gradientId={gradientId} areaPath={areaPath} linePath={linePath} lineColor={lineColor} />
+
+        {markers?.map((marker) => {
+          const at = pixelPts[marker.index]
+          if (!at) return null
+          return (
+            <Circle
+              key={`m${marker.index}-${marker.color}`}
+              cx={at.x}
+              cy={at.y}
+              r={marker.radius ?? 3.5}
+              fill={marker.color}
+              stroke={colors.surface}
+              strokeWidth={1.5}
+            />
+          )
+        })}
 
         {/* The "live" marker on the latest point, while nothing is selected. */}
         {latest && selected == null ? <LiveDot x={latest.x} y={latest.y} color={lineColor} /> : null}
@@ -246,13 +284,25 @@ export function NetWorthTrendChart({
               strokeDasharray="3,3"
               opacity={0.7}
             />
-            {/* The month being read, above the line — clamped so an edge month isn't clipped. */}
+            {/* The point being read, above the line — clamped so an edge point isn't clipped. */}
+            {tradeLabel ? (
+              <SvgText
+                x={labelX}
+                y={padTop - 10 - TOOLTIP_LINE_H}
+                fontSize={11}
+                fontFamily={fontFamily.sansSemi}
+                fill={tradeLabelColor}
+                textAnchor="middle"
+              >
+                {tradeLabel}
+              </SvgText>
+            ) : null}
             <SvgText
-              x={Math.min(Math.max(selected.x, selectedLabelHalfW + 4), chartW - selectedLabelHalfW - 4)}
-              y={PAD_T - 10}
+              x={labelX}
+              y={padTop - 10}
               fontSize={11}
               fontFamily={fontFamily.sansSemi}
-              fill={colors.textPrimary}
+              fill={tradeLabel ? colors.textSecondary : colors.textPrimary}
               textAnchor="middle"
             >
               {selectedLabel}
@@ -266,66 +316,3 @@ export function NetWorthTrendChart({
     </GestureDetector>
   )
 }
-
-/** The net worth line and the fading area under it. */
-const LineLayer = memo(function LineLayer({
-  areaPath,
-  linePath,
-  lineColor,
-}: {
-  areaPath: string
-  linePath: string
-  lineColor: string
-}) {
-  return (
-    <G>
-      <Defs>
-        <LinearGradient id="netWorthArea" x1="0" y1="0" x2="0" y2="1">
-          <Stop offset="0" stopColor={lineColor} stopOpacity={0.2} />
-          <Stop offset="1" stopColor={lineColor} stopOpacity={0} />
-        </LinearGradient>
-      </Defs>
-      {areaPath ? <Path d={areaPath} fill="url(#netWorthArea)" /> : null}
-      {linePath ? (
-        <Path d={linePath} stroke={lineColor} strokeWidth={1.5} fill="none" strokeLinejoin="round" strokeLinecap="round" />
-      ) : null}
-    </G>
-  )
-})
-
-const AnimatedCircle = Animated.createAnimatedComponent(Circle)
-
-/** One ripple's length; the ring grows and fades over this, then starts again. */
-const RIPPLE_MS = 1800
-const RIPPLE_FROM = 4
-const RIPPLE_TO = 16
-
-/**
- * The latest point, marked as live: a solid dot with a ring rippling out of it and fading, on a
- * loop. Animated on the UI thread through animated props, so the ripple never re-renders the
- * chart. With Reduce Motion on it holds still as a plain halo.
- */
-const LiveDot = memo(function LiveDot({ x, y, color }: { x: number; y: number; color: string }) {
-  const reduceMotion = useReducedMotion()
-  const progress = useSharedValue(0)
-  useEffect(() => {
-    if (reduceMotion) return
-    progress.value = 0
-    progress.value = withRepeat(withTiming(1, { duration: RIPPLE_MS, easing: Easing.out(Easing.quad) }), -1, false)
-  }, [reduceMotion, progress])
-  const ripple = useAnimatedProps(() => ({
-    r: RIPPLE_FROM + (RIPPLE_TO - RIPPLE_FROM) * progress.value,
-    opacity: 0.45 * (1 - progress.value),
-  }))
-
-  return (
-    <G>
-      {reduceMotion ? (
-        <Circle cx={x} cy={y} r={8} fill={hexToRgba(color, 0.18)} />
-      ) : (
-        <AnimatedCircle cx={x} cy={y} fill={color} animatedProps={ripple} />
-      )}
-      <Circle cx={x} cy={y} r={3.5} fill={color} />
-    </G>
-  )
-})

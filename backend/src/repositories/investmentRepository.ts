@@ -61,6 +61,35 @@ export interface InvestmentTransaction {
 }
 
 /**
+ * One row of an account's FULL activity — trades, fees, dividends and transfers alike — for
+ * rebuilding its past positions. Deliberately a different type from InvestmentTransaction above and
+ * served by a different procedure: these rows must never reach the feed, the matcher or net worth,
+ * where a buy reads exactly like spending (see CASH_TRANSFER_SUBTYPES).
+ */
+export interface InvestmentActivity {
+  investmentTransactionId: string
+  date: string
+  securityId: string | null
+  type: string
+  subtype: string
+  /** Units moved: positive into the account (a buy), negative out (a sell). */
+  quantity: number
+  /** Cash moved, Plaid convention: positive when cash leaves the account's cash balance. */
+  amount: number
+  price: number
+  /** Money crossing the account boundary: the deposits and withdrawals the chart's gain leaves out. */
+  isCashTransfer: boolean
+}
+
+/** The securities an account's activity names, including ones no longer held. */
+export interface ActivitySecurity {
+  securityId: string
+  ticker: string | null
+  type: string | null
+  isOption: boolean
+}
+
+/**
  * The only investment subtypes this app ingests: cash crossing the boundary between the user and
  * the brokerage. These are the rows that have a counterpart in a linked checking account, which is
  * the entire reason the investments product is read at all — /transactions/sync returns nothing
@@ -163,6 +192,57 @@ export const investmentRepository = {
         isoCurrencyCode: holding.iso_currency_code ?? null,
       }
     })
+  },
+
+  async getAccountActivity(
+    client: PlaidApi,
+    accessToken: string,
+    accountId: string,
+    startDate: string,
+    endDate: string,
+  ): Promise<{ transactions: InvestmentActivity[]; securities: ActivitySecurity[] }> {
+    const transactions: InvestmentActivity[] = []
+    const securities = new Map<string, ActivitySecurity>()
+
+    for (let page = 0; page < MAX_INVESTMENT_PAGES; page++) {
+      const request: InvestmentsTransactionsGetRequest = {
+        access_token: accessToken,
+        start_date: startDate,
+        end_date: endDate,
+        options: { account_ids: [accountId], count: INVESTMENT_PAGE_SIZE, offset: transactions.length },
+      }
+      const response = await client.investmentsTransactionsGet(request)
+
+      const rows = response.data.investment_transactions
+      for (const txn of rows) {
+        transactions.push({
+          investmentTransactionId: txn.investment_transaction_id,
+          date: txn.date,
+          securityId: txn.security_id ?? null,
+          type: txn.type,
+          subtype: txn.subtype,
+          quantity: txn.quantity,
+          amount: txn.amount,
+          price: txn.price,
+          isCashTransfer: isCashTransfer(txn),
+        })
+      }
+      for (const security of response.data.securities) {
+        if (securities.has(security.security_id)) continue
+        securities.set(security.security_id, {
+          securityId: security.security_id,
+          ticker: security.ticker_symbol ?? null,
+          type: security.type ?? null,
+          isOption: security.option_contract != null,
+        })
+      }
+
+      // Same drain rules as getTransactions below.
+      if (rows.length === 0) break
+      if (transactions.length >= response.data.total_investment_transactions) break
+    }
+
+    return { transactions, securities: [...securities.values()] }
   },
 
   async getTransactions(

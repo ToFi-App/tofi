@@ -274,6 +274,17 @@ describe('holdingsPricedAsOf', () => {
     expect(holdingsPricedAsOf([holding({ priceAsOf: null }), holding({ priceAsOf: '2026-08-23' })])).toBe('2026-08-23')
   })
 
+  // A cash line (a money-market core position) is held at $1 a share: its price date says nothing
+  // about how current the account is, so an old one must not hold the label back.
+  it('ignores cash, whose price never goes stale', () => {
+    expect(
+      holdingsPricedAsOf([
+        holding({ type: 'cash', priceAsOf: '2026-08-20T20:00:00Z' }),
+        holding({ type: 'equity', priceAsOf: '2026-08-25T20:00:00Z' }),
+      ]),
+    ).toBe('2026-08-25T20:00:00Z')
+  })
+
   it('is null when nothing is dated at all', () => {
     expect(holdingsPricedAsOf([holding({ priceAsOf: null })])).toBeNull()
     expect(holdingsPricedAsOf([])).toBeNull()

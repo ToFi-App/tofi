@@ -29,7 +29,7 @@ export function dayOf(iso: string): number {
 
 /** The window a range pill stands for: ending today, starting no earlier than the oldest data. */
 export function rangeViewport(range: TrendRange, todayDay: number, earliestDay: number, yearStartDay: number): Viewport {
-  const back: Record<Exclude<TrendRange, 'YTD' | 'ALL'>, number> = { '1W': 6, '1M': 29, '3M': 89, '1Y': 364 }
+  const back: Record<Exclude<TrendRange, 'YTD' | 'ALL'>, number> = { '1W': 6, '1M': 29, '3M': 89, '1Y': 364, '5Y': 1824 }
   const start =
     range === 'ALL' ? earliestDay : range === 'YTD' ? yearStartDay : todayDay - back[range]
   return { startDay: Math.max(start, earliestDay), endDay: todayDay }
