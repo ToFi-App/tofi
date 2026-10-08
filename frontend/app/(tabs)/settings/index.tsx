@@ -20,7 +20,7 @@ export default function SettingsIndexScreen() {
   }
 
   return (
-    <ScrollView className="flex-1 bg-background" contentContainerClassName="gap-6 px-5 py-6">
+    <ScrollView contentInsetAdjustmentBehavior="automatic" className="flex-1 bg-background" contentContainerClassName="gap-6 px-5 py-6">
       {error ? <ErrorBanner message={error} onDismiss={() => setError(null)} /> : null}
 
       <View className="gap-1">

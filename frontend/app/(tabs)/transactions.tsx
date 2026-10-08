@@ -218,7 +218,12 @@ function TransactionsScreenContent({ feedState }: { feedState: TransactionFeedSt
       <TransactionEditorErrorBanner />
       {suggestionError ? <ErrorBanner message={suggestionError} onDismiss={() => setSuggestionError(null)} /> : null}
 
-      <ScrollView ref={scrollRef} contentContainerStyle={{ paddingBottom: 40 }} refreshControl={refreshControl}>
+      <ScrollView
+        ref={scrollRef}
+        contentInsetAdjustmentBehavior="automatic"
+        contentContainerStyle={{ paddingBottom: 40 }}
+        refreshControl={refreshControl}
+      >
         {/* Calendar */}
         <View className="mx-5 mb-4 rounded-xl bg-surface p-3">
           <View className="mb-1 flex-row">

@@ -165,7 +165,7 @@ export default function BudgetsScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
-      <ScrollView contentContainerClassName="gap-4 px-5 py-4">
+      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerClassName="gap-4 px-5 py-4">
         <View className="flex-row items-center justify-between">
           <Text className="font-sansSemi text-lg text-textPrimary">Budgets</Text>
           <MonthNavigator month={month} onPrevious={() => setMonth(shiftMonth(month, -1))} onNext={() => setMonth(shiftMonth(month, 1))} onSelect={setMonth} />

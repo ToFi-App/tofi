@@ -155,7 +155,7 @@ export default function DashboardScreen() {
       <MonthNavigator month={month} onPrevious={() => setMonth(shiftMonth(month, -1))} onNext={() => setMonth(shiftMonth(month, 1))} onSelect={setMonth} />
       <View className="flex-1 items-end">
         <Pressable
-          onPress={() => router.push({ pathname: '/(tabs)/cash-flow', params: { year: String(month.year), month: String(month.month) } })}
+          onPress={() => router.push({ pathname: '/(tabs)/(home)/cash-flow', params: { year: String(month.year), month: String(month.month) } })}
           hitSlop={10}
           accessibilityLabel="Cash flow"
         >
@@ -189,7 +189,7 @@ export default function DashboardScreen() {
           />
         </>
       ) : (
-        <ScrollView contentContainerClassName="gap-5 px-5 py-4" refreshControl={refreshControl}>
+        <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerClassName="gap-5 px-5 py-4" refreshControl={refreshControl}>
           {topBar}
           {errorBanner}
 
