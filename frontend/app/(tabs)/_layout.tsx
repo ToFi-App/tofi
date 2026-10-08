@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons'
 import { Redirect, usePathname } from 'expo-router'
 import { NativeTabs } from 'expo-router/unstable-native-tabs'
+import { isLiquidGlassAvailable } from 'expo-glass-effect'
 import { useSession } from '@/lib/supabase/auth'
 import { useBudgetAlerts } from '@/hooks/useBudgetAlerts'
 import { TransactionFeedProvider } from '@/components/transactions/TransactionFeedProvider'
@@ -39,6 +40,22 @@ function AuthedShell({ children }: { children: React.ReactNode }) {
 const { Trigger } = NativeTabs
 
 /**
+ * Without Liquid Glass — iOS 17/18, and Android — the bar keeps the look the JS tab bar had: solid
+ * white with a hairline on top, unselected tabs in the muted grey. With it, the system glass is
+ * left alone: a fill would paint over it. Fixed for the life of the process, since it depends on
+ * the OS and the SDK the binary was built with.
+ */
+const PRE_GLASS_BAR = isLiquidGlassAvailable()
+  ? {}
+  : ({
+      backgroundColor: colors.surface,
+      blurEffect: 'none',
+      shadowColor: colors.border,
+      iconColor: { default: colors.textMuted, selected: colors.primary },
+      labelStyle: { default: { color: colors.textMuted }, selected: { color: colors.primary } },
+    } as const)
+
+/**
  * Ionicons rather than SF Symbols, tinted by the bar itself: teal when selected, grey otherwise.
  *
  * A function, not a component: a Trigger reads its children by element type, so a wrapper
@@ -67,12 +84,23 @@ export default function TabsLayout() {
       <BudgetAlertWatcher />
       <AuthedShell>
       {/* NativeTabs is the system UITabBarController, not a JS-drawn bar: built against the iOS 26
-          SDK it is the floating Liquid Glass bar, and on older iOS the standard translucent one. No
-          background color on purpose — any fill would paint over the glass. The bar floats above
-          screen content, so each tab's main ScrollView sets contentInsetAdjustmentBehavior to
-          inset for it, and anything pinned to the bottom offsets by useSafeAreaInsets().bottom.
-          Cash flow hides it, as it did when it was a hidden tab. */}
-      <NativeTabs tintColor={colors.primary} hidden={pathname === '/cash-flow'}>
+          SDK it is the floating Liquid Glass bar; on older iOS it is styled to match the old JS
+          bar (PRE_GLASS_BAR). The bar sits over screen content, so each tab's main ScrollView sets
+          contentInsetAdjustmentBehavior to inset for it, and anything pinned to the bottom offsets
+          by useSafeAreaInsets().bottom. Cash flow hides it, as it did when it was a hidden tab.
+
+          disableTransparentOnScrollEdge is for iOS 17/18. There the bar goes fully transparent —
+          no background, no divider — whenever it believes its screen's list is scrolled to the
+          bottom, and it only tracks a ScrollView that is first in the screen. Details puts a header
+          first, so the bar never found its list and stayed transparent with rows showing through
+          it. This keeps the same bar at the edge too; iOS 26's glass bar has no transparent edge
+          state, so it is unaffected. */}
+      <NativeTabs
+        tintColor={colors.primary}
+        hidden={pathname === '/cash-flow'}
+        disableTransparentOnScrollEdge
+        {...PRE_GLASS_BAR}
+      >
         <Trigger name="(home)">
           <Trigger.Label>Home</Trigger.Label>
           {tabIcon('wallet')}
