@@ -12,7 +12,7 @@ export default function CategoriesListScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
-      <ScrollView contentContainerClassName="gap-4 px-5 py-4">
+      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerClassName="gap-4 px-5 py-4">
         <View className="flex-row items-center justify-between">
           <Text className="font-sansSemi text-lg text-textPrimary">Categories</Text>
           <Pressable onPress={() => router.push({ pathname: '/(tabs)/settings/category-form' })} accessibilityLabel="Add category">

@@ -1,6 +1,7 @@
 import { useRef, useMemo, useState } from 'react'
 import { ScrollView, Text, View, useWindowDimensions } from 'react-native'
 import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { colors } from '@/constants/theme'
 import type { FeedItem } from '@/lib/transactions/resolveFeed'
 import type { YearMonth } from '@/lib/transactions/filterByMonth'
@@ -34,6 +35,7 @@ export function VisualizationPager({
   onSegmentPress,
 }: VisualizationPagerProps) {
   const { width } = useWindowDimensions()
+  const insets = useSafeAreaInsets()
   const [mode, setMode] = useState<'expense' | 'income'>('expense')
   const [pageIndex, setPageIndex] = useState(0)
   const scrollRef = useRef<ScrollView>(null)
@@ -134,8 +136,8 @@ export function VisualizationPager({
         </ScrollView>
       </ScrollView>
 
-      {/* Dot indicators */}
-      <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 6, paddingBottom: 52 }}>
+      {/* Dot indicators — the bottom inset clears the floating tab bar, the 52 the toggle pill above it */}
+      <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 6, paddingBottom: insets.bottom + 52 }}>
         {[0, 1].map((i) => (
           <View
             key={i}

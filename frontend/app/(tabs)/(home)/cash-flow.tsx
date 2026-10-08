@@ -189,7 +189,7 @@ export default function CashFlowScreen() {
   const header = (
     <View className="flex-row items-center">
       <View className="flex-1 flex-row">
-        <Pressable onPress={() => router.navigate('/(tabs)')} hitSlop={10} accessibilityLabel="Back">
+        <Pressable onPress={() => router.back()} hitSlop={10} accessibilityLabel="Back">
           <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
         </Pressable>
       </View>

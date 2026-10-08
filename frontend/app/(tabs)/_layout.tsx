@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons'
-import { Redirect, Tabs } from 'expo-router'
+import { Redirect, usePathname } from 'expo-router'
+import { NativeTabs } from 'expo-router/unstable-native-tabs'
 import { useSession } from '@/lib/supabase/auth'
 import { useBudgetAlerts } from '@/hooks/useBudgetAlerts'
 import { TransactionFeedProvider } from '@/components/transactions/TransactionFeedProvider'
@@ -35,8 +36,22 @@ function AuthedShell({ children }: { children: React.ReactNode }) {
   return <TransactionEditorProvider feed={feed}>{children}</TransactionEditorProvider>
 }
 
+const { Trigger } = NativeTabs
+
+/**
+ * Ionicons rather than SF Symbols, tinted by the bar itself: teal when selected, grey otherwise.
+ *
+ * A function, not a component: a Trigger reads its children by element type, so a wrapper
+ * component around Trigger.Icon would not be recognized as the icon.
+ */
+function tabIcon(name: React.ComponentProps<typeof Ionicons>['name']) {
+  return <Trigger.Icon src={<Trigger.VectorIcon family={Ionicons} name={name} />} renderingMode="template" />
+}
+
 export default function TabsLayout() {
   const { session, isLoading } = useSession()
+  // Groups are not part of the path, so this is cash flow inside Home's stack.
+  const pathname = usePathname()
 
   if (isLoading) return <LoadingScreen />
   if (!session) return <Redirect href="/(auth)/login" />
@@ -51,53 +66,34 @@ export default function TabsLayout() {
     <TransactionFeedProvider>
       <BudgetAlertWatcher />
       <AuthedShell>
-      <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.textMuted,
-        tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.border },
-      }}
-    >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Home',
-          tabBarIcon: ({ color, size }) => <Ionicons name="wallet" color={color} size={size} />,
-        }}
-      />
-      <Tabs.Screen
-        name="accounts"
-        options={{
-          title: 'Accounts',
-          tabBarIcon: ({ color, size }) => <Ionicons name="card" color={color} size={size} />,
-        }}
-      />
-      <Tabs.Screen
-        name="transactions"
-        options={{
-          title: 'Details',
-          tabBarIcon: ({ color, size }) => <Ionicons name="calendar" color={color} size={size} />,
-        }}
-      />
-      <Tabs.Screen
-        name="budgets"
-        options={{
-          title: 'Budgets',
-          tabBarIcon: ({ color, size }) => <Ionicons name="pie-chart" color={color} size={size} />,
-        }}
-      />
-      <Tabs.Screen
-        name="settings"
-        options={{
-          title: 'Settings',
-          tabBarIcon: ({ color, size }) => <Ionicons name="settings" color={color} size={size} />,
-        }}
-      />
-      {/* Opened from Home's top bar rather than the tab bar. A hidden tab rather than a root stack
-          screen because it needs the feed and editor providers mounted here. */}
-      <Tabs.Screen name="cash-flow" options={{ href: null, tabBarStyle: { display: 'none' } }} />
-      </Tabs>
+      {/* NativeTabs is the system UITabBarController, not a JS-drawn bar: built against the iOS 26
+          SDK it is the floating Liquid Glass bar, and on older iOS the standard translucent one. No
+          background color on purpose — any fill would paint over the glass. The bar floats above
+          screen content, so each tab's main ScrollView sets contentInsetAdjustmentBehavior to
+          inset for it, and anything pinned to the bottom offsets by useSafeAreaInsets().bottom.
+          Cash flow hides it, as it did when it was a hidden tab. */}
+      <NativeTabs tintColor={colors.primary} hidden={pathname === '/cash-flow'}>
+        <Trigger name="(home)">
+          <Trigger.Label>Home</Trigger.Label>
+          {tabIcon('wallet')}
+        </Trigger>
+        <Trigger name="accounts">
+          <Trigger.Label>Accounts</Trigger.Label>
+          {tabIcon('card')}
+        </Trigger>
+        <Trigger name="transactions">
+          <Trigger.Label>Details</Trigger.Label>
+          {tabIcon('calendar')}
+        </Trigger>
+        <Trigger name="budgets">
+          <Trigger.Label>Budgets</Trigger.Label>
+          {tabIcon('pie-chart')}
+        </Trigger>
+        <Trigger name="settings">
+          <Trigger.Label>Settings</Trigger.Label>
+          {tabIcon('settings')}
+        </Trigger>
+      </NativeTabs>
       </AuthedShell>
     </TransactionFeedProvider>
     </AccountMarksProvider>

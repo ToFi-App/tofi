@@ -159,6 +159,7 @@ export default function AccountsTab() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
       <ScrollView
+        contentInsetAdjustmentBehavior="automatic"
         contentContainerClassName="gap-5 px-5 py-4"
         refreshControl={refreshControl}
         scrollEnabled={!isDragging}

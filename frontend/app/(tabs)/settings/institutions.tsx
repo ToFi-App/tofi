@@ -95,7 +95,7 @@ export default function InstitutionsScreen() {
   }
 
   return (
-    <ScrollView className="flex-1 bg-background" contentContainerClassName="gap-3 px-5 py-4">
+    <ScrollView contentInsetAdjustmentBehavior="automatic" className="flex-1 bg-background" contentContainerClassName="gap-3 px-5 py-4">
       {error ? <ErrorBanner message={error} onDismiss={() => setError(null)} /> : null}
       {linkError ? <ErrorBanner message={linkError} onDismiss={() => setLinkError(null)} /> : null}
 
