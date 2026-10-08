@@ -1,5 +1,6 @@
 import { formatAmount } from '@/lib/format/money'
 import type { FeedItem } from './resolveFeed'
+import { hasReimbursementSurplus } from './totals'
 
 /**
  * The pill a reimbursement leg wears under its amount.
@@ -19,7 +20,12 @@ export function linkPillLabel(item: FeedItem): string | null {
   if (item.isReimbursementIncome) {
     // Several links can't happen here — one income pays back one expense — so the first link is
     // the whole story. It still may not name anything, if the expense is outside the feed.
-    const merchant = item.links[0]?.merchantName
+    const link = item.links[0]
+    const merchant = link?.merchantName
+    // Only part of a surplus income went to the expense. Saying how much is what tells the user the
+    // rest of the row's amount still counts as income. No merchant: the amount already makes the
+    // pill long enough to squeeze the row's title, and the title names the expense's category.
+    if (link && hasReimbursementSurplus(item)) return `${formatAmount(link.amount)} reimbursed`
     return merchant ? `Reimbursed: ${merchant}` : 'Reimbursed'
   }
   return null

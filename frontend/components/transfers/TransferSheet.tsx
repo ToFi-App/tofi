@@ -232,12 +232,23 @@ export function TransferSheet({ sheetScroll, item, candidateItems, accounts, for
         )}
 
         {reimbursement ? (
-          <Text className="font-sans text-base text-textPrimary">
-            Net expense: {formatAmount(reimbursement.expense)} − {formatAmount(reimbursement.income)} ={' '}
-            <Text className="font-mono text-expense">
-              {formatAmount(Math.max(0, reimbursement.expense - reimbursement.income))}
+          <View className="gap-1">
+            <Text className="font-sans text-base text-textPrimary">
+              Net expense: {formatAmount(reimbursement.expense)} − {formatAmount(reimbursement.income)} ={' '}
+              <Text className="font-mono text-expense">
+                {formatAmount(Math.max(0, reimbursement.expense - reimbursement.income))}
+              </Text>
             </Text>
-          </Text>
+            {/* More came back than the expense cost. Only what covers it is netted; the rest is
+                income, and saying so here is what keeps the $0 above from reading as all of it. */}
+            {reimbursement.income > reimbursement.expense ? (
+              <Text className="font-sans text-sm text-textSecondary">
+                The other{' '}
+                <Text className="font-mono text-income">{formatAmount(reimbursement.income - reimbursement.expense)}</Text>{' '}
+                still counts as income.
+              </Text>
+            ) : null}
+          </View>
         ) : null}
 
         <Button

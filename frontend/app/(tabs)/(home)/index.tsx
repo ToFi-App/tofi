@@ -22,6 +22,7 @@ import { formatAmount } from '@/lib/format/money'
 import { filterByMonth, shiftMonth } from '@/lib/transactions/filterByMonth'
 import { useSelectedMonth } from '@/hooks/useSelectedMonth'
 import { aggregateMonth } from '@/lib/transactions/aggregateMonth'
+import { hasReimbursementSurplus } from '@/lib/transactions/totals'
 import { UNCATEGORIZED_ID, computeDonutSegments } from '@/lib/transactions/visualizationData'
 import type { DonutSegment } from '@/lib/transactions/visualizationData'
 import { resolveBudgetsForMonth } from '@/lib/budgets/budgetMath'
@@ -77,12 +78,14 @@ export default function DashboardScreen() {
         // dropping the row left it unexplained. It adds nothing to the totals (the day header
         // filters on countsTowardTotals), and it's matched on the expense's category rather than
         // its own, which is where the money it offsets sits.
-        if (item.isReimbursementIncome) {
-          if (detailState.mode !== 'expense') return false
+        if (item.isReimbursementIncome && detailState.mode === 'expense') {
           return isUncategorized
             ? item.reimbursementCategoryId === null
             : item.reimbursementCategoryId === detailState.segment.categoryId
         }
+        // In income mode only a surplus belongs — the part beyond the expense, which is income
+        // under the leg's own category and falls through to the ordinary check below.
+        if (item.isReimbursementIncome && !hasReimbursementSurplus(item)) return false
         if (isUncategorized ? item.categoryId !== null : item.categoryId !== detailState.segment.categoryId)
           return false
         const net = item.netAmount ?? item.amount

@@ -394,6 +394,29 @@ export function applyTransfers(feed: FeedItem[], transfers: Transfer[]): FeedIte
   const categoryByFeedId = new Map(feed.map((item) => [item.id, item.categoryId]))
   const itemById = new Map(feed.map((item) => [item.id, item]))
 
+  // How much of each reimbursement actually went to paying its expense back. A link records the
+  // whole income, and an income can be bigger than the expense — $5,000 back against a $2,000
+  // charge — so the incomes fill the expense in date order and stop when it's covered. What's left
+  // of an income is ordinary income (its netAmount below), not money that vanishes.
+  //
+  // An expense outside the feed can't be measured, so its incomes count in full, as before.
+  const usedByTransferId = new Map<string, number>()
+  for (const [expenseId, list] of reimbByExpenseId) {
+    const expense = itemById.get(expenseId)
+    let remaining = expense ? Math.max(0, expense.amount) : Infinity
+    const byIncomeDate = [...list].sort((a, b) => {
+      const dateA = itemById.get(legIds(a).incomeId ?? '')?.postedDate ?? ''
+      const dateB = itemById.get(legIds(b).incomeId ?? '')?.postedDate ?? ''
+      return dateA.localeCompare(dateB) || a.id.localeCompare(b.id)
+    })
+    for (const t of byIncomeDate) {
+      const used = Math.min(Number(t.amount), remaining)
+      usedByTransferId.set(t.id, used)
+      remaining -= used
+    }
+  }
+  const usedOf = (t: Transfer) => usedByTransferId.get(t.id) ?? Number(t.amount)
+
   return feed.map((item) => {
     // Non-reimbursement transfer legs
     const asExpense = byExpenseId.get(item.id)
@@ -420,25 +443,31 @@ export function applyTransfers(feed: FeedItem[], transfers: Transfer[]): FeedIte
     }
 
     // Reimbursement expense side: accumulate amounts, set netAmount. One expense can be paid back
-    // by several incomes, so this leg carries a link per reimbursement, each with its own amount.
+    // by several incomes, so this leg carries a link per reimbursement, each with the part of it
+    // that went to this expense.
     const reimbLinks = reimbByExpenseId.get(item.id)
     if (reimbLinks) {
-      const reimbursedAmount = reimbLinks.reduce((sum, t) => sum + Number(t.amount), 0)
+      const reimbursedAmount = reimbLinks.reduce((sum, t) => sum + usedOf(t), 0)
       const netAmount = Math.max(0, item.amount - reimbursedAmount)
-      const links = reimbLinks.map((t) => toLink(t.id, t.kind, legIds(t).incomeId, Number(t.amount), itemById))
+      const links = reimbLinks.map((t) => toLink(t.id, t.kind, legIds(t).incomeId, usedOf(t), itemById))
       return { ...item, reimbursedAmount, netAmount, links }
     }
 
-    // Reimbursement income side: mark as reimbursement income, carry expense's category
+    // Reimbursement income side: mark as reimbursement income, carry expense's category. The part
+    // that paid the expense back is already netted out of it; anything beyond that is income, and
+    // netAmount carries it (negative, the feed's sign for money in) so the totals count just that.
     const reimbIncome = reimbByIncomeId.get(item.id)
     if (reimbIncome) {
       const { expenseId } = legIds(reimbIncome)
       const expenseCategoryId = expenseId ? categoryByFeedId.get(expenseId) ?? null : null
+      const used = usedOf(reimbIncome)
+      const surplus = Math.max(0, Math.abs(item.amount) - used)
       return {
         ...item,
         isReimbursementIncome: true,
         reimbursementCategoryId: expenseCategoryId,
-        links: [toLink(reimbIncome.id, reimbIncome.kind, expenseId, Number(reimbIncome.amount), itemById)],
+        netAmount: surplus > 0 ? -surplus : 0,
+        links: [toLink(reimbIncome.id, reimbIncome.kind, expenseId, used, itemById)],
       }
     }
 

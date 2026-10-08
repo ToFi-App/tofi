@@ -43,15 +43,17 @@ export function aggregateMonth(feed: FeedItem[]): MonthAggregate {
     // countsTowardTotals rejects it (its expense is already netted), but it does mark its
     // calendar day as reimbursement-touched. Everything else countsTowardTotals rejects marks
     // nothing — there is nothing about the day for the user to notice.
-    if (!item.isReimbursementIncome && !countsTowardTotals(item)) continue
+    const counts = countsTowardTotals(item)
+    if (!item.isReimbursementIncome && !counts) continue
 
     const net = item.netAmount ?? item.amount
     const existingDay = spendByDay.get(item.date) ?? { net: 0, hasReimbursement: false }
     const hasReimbursement = existingDay.hasReimbursement || item.reimbursedAmount != null || item.isReimbursementIncome
 
     // A reimbursement's income leg is already netted out of its expense, so counting it
-    // again would double-credit it — it only marks the day as reimbursement-touched.
-    if (item.isReimbursementIncome) {
+    // again would double-credit it — it only marks the day as reimbursement-touched. Unless it
+    // brought back more than the expense cost: then it counts, and its net is just that surplus.
+    if (item.isReimbursementIncome && !counts) {
       spendByDay.set(item.date, { net: existingDay.net, hasReimbursement })
       continue
     }

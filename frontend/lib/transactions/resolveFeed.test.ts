@@ -484,7 +484,8 @@ describe('applyTransfers', () => {
     ]
     const result = applyTransfers(feed, transfers)
 
-    expect(find(result, 'out')).toMatchObject({ reimbursedAmount: 600, netAmount: 0 })
+    // Reimbursed is capped at what the expense cost: nothing can be paid back beyond the charge.
+    expect(find(result, 'out')).toMatchObject({ reimbursedAmount: 500, netAmount: 0 })
   })
 
   it('carries the expense category to the reimbursement income leg', () => {

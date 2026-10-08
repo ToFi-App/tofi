@@ -1,5 +1,5 @@
 import { FALLBACK_ICON_SLUG } from '@/lib/categories/icons'
-import { countsTowardTotals } from './totals'
+import { countsTowardTotals, hasReimbursementSurplus } from './totals'
 import type { FeedItem } from './resolveFeed'
 import type { YearMonth } from './filterByMonth'
 
@@ -39,11 +39,12 @@ export function computeDonutSegments(
   //
   // A reimbursement's income leg is the one exclusion, and it is not about totals: the sheet files
   // that leg under the expense it paid back and refuses to list it in income mode, so counting it
-  // here would conjure a zero income category that opens onto nothing.
+  // here would conjure a zero income category that opens onto nothing. One with a surplus is the
+  // exception both ways — that part is income, and the sheet lists it under its own category.
   const countByCategory = new Map<string, number>()
   let uncategorizedCount = 0
   for (const item of feed) {
-    if (item.isReimbursementIncome) continue
+    if (item.isReimbursementIncome && !hasReimbursementSurplus(item)) continue
     const net = item.netAmount ?? item.amount
     const isRelevant = mode === 'expense' ? net > 0 : net < 0
     if (!isRelevant) continue
