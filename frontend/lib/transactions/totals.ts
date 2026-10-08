@@ -107,11 +107,21 @@ export function isUnlinkedInternalTransfer(item: FeedItem): boolean {
   return !countsTowardTotals(item)
 }
 
+/**
+ * A reimbursement's income that brought back more than its expense cost — $5,000 against a $2,000
+ * charge. The $2,000 is netted out of the expense; the other $3,000 is ordinary income, carried as
+ * the leg's netAmount, and this is what lets it count.
+ */
+export function hasReimbursementSurplus(item: FeedItem): boolean {
+  return item.isReimbursementIncome && item.netAmount != null && item.netAmount < 0
+}
+
 // Single predicate for "does this item belong in spend/income aggregates", so the donut, top
 // merchants, the daily chart and the per-day IN/OUT rows can never disagree about what counts.
 //
 // Excluded:
-//  - a reimbursement's income leg, already netted out of its expense — counting it double-credits;
+//  - a reimbursement's income leg, already netted out of its expense — counting it double-credits.
+//    Only what paid the expense back, though: a surplus beyond it counts, through its netAmount;
 //  - internal movement, which is money shifted between the user's own accounts or holdings, not
 //    spending or income. Unpaired transfers are excluded too: the money still didn't leave the user;
 //  - a swept outflow (applySweepExclusion): a brokerage-cash outflow that only mirrors an equal
@@ -128,5 +138,10 @@ export function isUnlinkedInternalTransfer(item: FeedItem): boolean {
 // always household money: it counts when nothing pairs it, and is excluded by isInternalMovement
 // when something does.
 export function countsTowardTotals(item: FeedItem): boolean {
-  return !item.pending && !item.isReimbursementIncome && !isInternalMovement(item) && !item.isSweptOutflow
+  return (
+    !item.pending &&
+    (!item.isReimbursementIncome || hasReimbursementSurplus(item)) &&
+    !isInternalMovement(item) &&
+    !item.isSweptOutflow
+  )
 }

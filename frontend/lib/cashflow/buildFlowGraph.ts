@@ -236,8 +236,9 @@ export function buildFlowGraph(input: { feed: FeedItem[]; accounts: FlowAccount[
    * the repayment arrives from the reimbursements node in its own month. When the two months differ,
    * the headline's `reimbursements` part carries the gap, so the parts still sum to income - spending.
    *
-   * Repayment beyond the expense is ignored, exactly as netAmount (floored at zero) ignores it on
-   * Home. A repayment outside the synced window can't be placed, so its share stays netted.
+   * Repayment beyond the expense isn't a repayment: applyTransfers leaves it on the income leg's
+   * netAmount, and it's drawn as ordinary income below. A repayment outside the synced window can't
+   * be placed, so its share stays netted.
    */
   const accountOf = (row: FeedItem) => accountNodeId(row.source === 'manual' ? null : row.accountId)
   function reimbursementShares(expense: FeedItem): Array<{ leg: FeedItem; portion: number; drawn: boolean }> {
@@ -281,10 +282,11 @@ export function buildFlowGraph(input: { feed: FeedItem[]; accounts: FlowAccount[
       continue
     }
     // Never income: already netted out of its expense via netAmount, exactly as aggregateMonth
-    // skips it. It is still money arriving, drawn in its own month (see bookRepayment).
+    // skips it. It is still money arriving, drawn in its own month (see bookRepayment). The one
+    // exception is a surplus beyond the expense, which countsTowardTotals lets through as income.
     if (item.isReimbursementIncome) {
       bookRepayment(item)
-      continue
+      if (!countsTowardTotals(item)) continue
     }
 
     if (countsTowardTotals(item)) {
