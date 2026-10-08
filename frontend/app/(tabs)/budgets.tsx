@@ -1,16 +1,23 @@
 import { useMemo, useState } from 'react'
-import { Pressable, ScrollView, Switch, Text, View } from 'react-native'
+import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native'
+import { Ionicons } from '@expo/vector-icons'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { colors, shadow } from '@/constants/theme'
+import { borderRadius, colors, shadow } from '@/constants/theme'
 import { useTransactionFeed } from '@/hooks/useTransactionFeed'
 import { useBudgets } from '@/hooks/useBudgets'
 import { useCategories } from '@/hooks/useCategories'
 import { CategoryIcon } from '@/components/categories/CategoryIcon'
-import { BudgetCard } from '@/components/budgets/BudgetCard'
-import { BudgetSplitBar } from '@/components/budgets/BudgetSplitBar'
+import { BudgetOverview } from '@/components/budgets/BudgetOverview'
+import { BudgetBadge, BudgetRingTile } from '@/components/budgets/BudgetRingTile'
+import { statusColor } from '@/components/budgets/statusColor'
+import { BudgetSuggestions } from '@/components/budgets/BudgetSuggestions'
+import { AmountInput } from '@/components/budgets/AmountInput'
+import { Eyebrow } from '@/components/budgets/Eyebrow'
+import { SpendingSummary } from '@/components/budgets/SpendingSummary'
 import { MonthNavigator } from '@/components/transactions/MonthNavigator'
 import { BottomSheet, useSheetScroll } from '@/components/ui/BottomSheet'
 import { TextField } from '@/components/ui/TextField'
+import { Pill } from '@/components/ui/RangePills'
 import { Button } from '@/components/ui/Button'
 import { ErrorBanner } from '@/components/ui/ErrorBanner'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -27,9 +34,20 @@ import {
   monthKey,
   resolveBudgetsForMonth,
   suggestBudgetAmount,
+  type BudgetStatus,
 } from '@/lib/budgets/budgetMath'
+import { compareWithPreviousMonth } from '@/lib/budgets/monthComparison'
 
 const ALERT_PRESETS = [50, 75, 90, 100]
+const DEFAULT_ALERT_PRESET = 90
+
+// Budgets that need attention lead the grid, so a problem is never below the fold.
+const STATUS_RANK: Record<BudgetStatus, number> = { over: 0, 'at-risk': 1, 'on-track': 2 }
+
+// Two rows of the grid. More than that stops reading at a glance and pushes the spending summary
+// a screen down; the rest wait behind "Show more", and since problems sort first, what's folded
+// away is the calmest of the lot.
+const GRID_PREVIEW = 6
 
 /** Dollars → whole-percent-of-budget, the unit alerts are stored in (they scale with edits). */
 function toThresholdPercent(alertDollars: number, budgetDollars: number): number {
@@ -51,9 +69,13 @@ export default function BudgetsScreen() {
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null)
   const [amountText, setAmountText] = useState('')
   const [alertOn, setAlertOn] = useState(false)
+  // A preset percentage, or null for a custom alert entered in dollars (alertAmountText).
+  const [alertPreset, setAlertPreset] = useState<number | null>(DEFAULT_ALERT_PRESET)
   const [alertAmountText, setAlertAmountText] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [showOtherCategories, setShowOtherCategories] = useState(false)
+  const [showAllBudgets, setShowAllBudgets] = useState(false)
 
   const { feed, isLoading, error } = useTransactionFeed()
   const budgets = useBudgets()
@@ -75,7 +97,9 @@ export default function BudgetsScreen() {
         const spent = spendByCategory.get(budget.categoryId) ?? 0
         return { budget, spent, status: budgetStatus(spent, budget.amount, elapsed) }
       })
-      .sort((a, b) => b.spent / b.budget.amount - a.spent / a.budget.amount)
+      .sort(
+        (a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status] || b.spent / b.budget.amount - a.spent / a.budget.amount,
+      )
   }, [resolved, spendByCategory, elapsed])
 
   // Categories with real spending history float to the top with their typical month shown —
@@ -88,42 +112,69 @@ export default function BudgetsScreen() {
       .sort((a, b) => (b.typical?.amount ?? 0) - (a.typical?.amount ?? 0) || a.category.name.localeCompare(b.category.name))
   }, [categories.data, resolved, feed, month])
 
+  // Categories with a typical month are worth suggesting; the rest wait behind a disclosure.
+  const suggestedCategories = unbudgetedCategories.flatMap(({ category, typical }) =>
+    typical != null && typical.amount > 0 ? [{ category, typical: typical.amount }] : [],
+  )
+  const otherCategories = unbudgetedCategories.filter(({ typical }) => typical == null || typical.amount <= 0)
+
+  const comparison = useMemo(() => compareWithPreviousMonth(feed, month), [feed, month])
+
   const totalBudget = budgetedRows.reduce((sum, row) => sum + row.budget.amount, 0)
   const totalSpent = budgetedRows.reduce((sum, row) => sum + row.spent, 0)
   const totalRemaining = totalBudget - totalSpent
   const allowance = dailyAllowance(totalRemaining, month)
   const overallStatus = budgetStatus(totalSpent, totalBudget, elapsed)
+  const foldedRows = showAllBudgets ? [] : budgetedRows.slice(GRID_PREVIEW)
+  const visibleRows = showAllBudgets ? budgetedRows : budgetedRows.slice(0, GRID_PREVIEW)
+  // Only possible with more problems than fit in the preview, but then it must not stay silent.
+  const foldedNeedingAttention = foldedRows.filter((row) => row.status !== 'on-track').length
+  const daysLeft = paceFraction != null ? new Date(month.year, month.month, 0).getDate() - new Date().getDate() + 1 : null
 
   const editingBudget = editingCategoryId ? (resolved.get(editingCategoryId) ?? null) : null
   const editingCategory = editingCategoryId ? categoryById.get(editingCategoryId) : null
+  const editingSpent = editingCategoryId ? (spendByCategory.get(editingCategoryId) ?? 0) : 0
+  const editingStatus = editingBudget ? budgetStatus(editingSpent, editingBudget.amount, elapsed) : 'on-track'
+  const editingLeft = editingBudget ? editingBudget.amount - editingSpent : 0
+  const editingTone = editingStatus === 'on-track' ? colors.textPrimary : statusColor(editingStatus)
   const suggestion = useMemo(
     () => (editingCategoryId && !editingBudget ? suggestBudgetAmount(feed, editingCategoryId, month) : null),
     [feed, editingCategoryId, editingBudget, month],
   )
 
   const isValidAmount = /^\d+(\.\d{1,2})?$/.test(amountText) && Number(amountText) > 0
-  const isValidAlertAmount =
+  const budgetAmount = isValidAmount ? Number(amountText) : null
+  const customAlertDollars =
+    budgetAmount != null &&
     /^\d+(\.\d{1,2})?$/.test(alertAmountText) &&
     Number(alertAmountText) > 0 &&
-    isValidAmount &&
-    Number(alertAmountText) <= Number(amountText)
-  const alertPercent = isValidAlertAmount ? toThresholdPercent(Number(alertAmountText), Number(amountText)) : null
+    Number(alertAmountText) <= budgetAmount
+      ? Number(alertAmountText)
+      : null
+  // A preset stays a percentage when the budget is edited — 75% of whatever the budget becomes —
+  // rather than a dollar figure that silently drifts to 68% of it. Only custom is in dollars.
+  const alertPercent =
+    alertPreset ?? (customAlertDollars != null && budgetAmount != null ? toThresholdPercent(customAlertDollars, budgetAmount) : null)
+  const alertDollars = budgetAmount == null ? null : alertPreset != null ? budgetAmount * (alertPreset / 100) : customAlertDollars
+  const daysInViewedMonth = new Date(month.year, month.month, 0).getDate()
 
   function openSheet(categoryId: string) {
     const existing = resolved.get(categoryId)
+    const threshold = existing?.alertThreshold ?? null
     setAmountText(existing ? String(existing.amount) : '')
-    setAlertOn(existing?.alertThreshold != null)
-    setAlertAmountText(
-      existing?.alertThreshold != null ? toDollarText((existing.alertThreshold / 100) * existing.amount) : '',
-    )
+    setAlertOn(threshold != null)
+    // A saved threshold off the presets reopens as the custom amount it was set as.
+    const isCustom = threshold != null && !ALERT_PRESETS.includes(threshold)
+    setAlertPreset(isCustom ? null : (threshold ?? DEFAULT_ALERT_PRESET))
+    setAlertAmountText(isCustom && existing ? toDollarText((threshold / 100) * existing.amount) : '')
     setSaveError(null)
     setEditingCategoryId(categoryId)
   }
 
-  function enableAlert(on: boolean) {
-    setAlertOn(on)
-    // Seed a sensible default so the box isn't empty the moment the toggle flips on.
-    if (on && alertAmountText === '' && isValidAmount) setAlertAmountText(toDollarText(Number(amountText) * 0.9))
+  function chooseCustomAlert() {
+    // Start from the line the preset drew, so switching to custom is a nudge rather than a blank.
+    if (alertAmountText === '' && alertDollars != null) setAlertAmountText(toDollarText(alertDollars))
+    setAlertPreset(null)
   }
 
   async function save(amount: string | null) {
@@ -165,78 +216,103 @@ export default function BudgetsScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
-      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerClassName="gap-4 px-5 py-4">
-        <View className="flex-row items-center justify-between">
-          <Text className="font-sansSemi text-lg text-textPrimary">Budgets</Text>
+      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerClassName="gap-8 px-5 pb-6 pt-3">
+        <View className="items-center">
           <MonthNavigator month={month} onPrevious={() => setMonth(shiftMonth(month, -1))} onNext={() => setMonth(shiftMonth(month, 1))} onSelect={setMonth} />
         </View>
 
         {error ? <ErrorBanner message="Something went wrong loading your budgets." /> : null}
 
         {budgetedRows.length > 0 ? (
-          <View className="gap-3 rounded-md bg-surface p-4" style={shadow.sm}>
-            <View className="flex-row items-baseline justify-between">
-              <Text className="font-sansSemi text-base text-textPrimary">Monthly budget</Text>
-              <Text className="font-mono text-base text-textPrimary">{formatAmount(totalBudget)}</Text>
+          <>
+            <BudgetOverview
+              totalBudget={totalBudget}
+              totalSpent={totalSpent}
+              status={overallStatus}
+              elapsed={elapsed}
+              daysLeft={daysLeft}
+              dailyAllowance={allowance}
+            />
+
+            <View className="gap-3">
+              <Eyebrow>Your budgets</Eyebrow>
+              <View className="flex-row flex-wrap" style={{ rowGap: 12 }}>
+                {visibleRows.map(({ budget, spent, status }) => {
+                  const category = categoryById.get(budget.categoryId)
+                  return (
+                    <View key={budget.budgetId} style={{ width: '33.333%' }}>
+                      <BudgetRingTile
+                        name={category?.name ?? 'Unknown'}
+                        icon={category?.icon ?? null}
+                        color={category?.color}
+                        spent={spent}
+                        amount={budget.amount}
+                        status={status}
+                        onPress={() => openSheet(budget.categoryId)}
+                      />
+                    </View>
+                  )
+                })}
+              </View>
+              {budgetedRows.length > GRID_PREVIEW ? (
+                <Pressable
+                  onPress={() => setShowAllBudgets((v) => !v)}
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: showAllBudgets }}
+                  className="flex-row items-center justify-center gap-1.5 py-1"
+                >
+                  <Text className="font-sansMed text-sm text-primary">
+                    {showAllBudgets ? 'Show less' : `Show ${foldedRows.length} more`}
+                  </Text>
+                  {foldedNeedingAttention > 0 ? (
+                    <Text className="font-sansMed text-sm text-warning">· {foldedNeedingAttention} need attention</Text>
+                  ) : null}
+                  <Ionicons name={showAllBudgets ? 'chevron-up' : 'chevron-down'} size={14} color={colors.primary} />
+                </Pressable>
+              ) : null}
             </View>
-            <BudgetSplitBar spent={totalSpent} amount={totalBudget} status={overallStatus} paceFraction={paceFraction} todayLabel />
-            {allowance != null && totalRemaining > 0 ? (
-              <Text className="font-sans text-sm text-textMuted">
-                About <Text className="font-mono text-textSecondary">{formatAmount(allowance)}</Text> a day for the rest of the month.
-              </Text>
-            ) : null}
-          </View>
+          </>
         ) : (
-          <EmptyState message="No budgets for this month yet. Pick a category below to set one." />
+          <View className="items-center gap-2 px-4 py-6">
+            <Eyebrow>No budgets yet</Eyebrow>
+            <Text className="text-center font-sans text-base text-textSecondary">
+              Set a monthly limit on a category to see what&apos;s left to spend.
+            </Text>
+          </View>
         )}
 
-        <View className="gap-3">
-          {budgetedRows.map(({ budget, spent, status }) => (
-            <BudgetCard
-              key={budget.budgetId}
-              categoryName={categoryById.get(budget.categoryId)?.name ?? 'Unknown'}
-              categoryIcon={categoryById.get(budget.categoryId)?.icon ?? null}
-              categoryColor={categoryById.get(budget.categoryId)?.color}
-              spent={spent}
-              amount={budget.amount}
-              status={status}
-              paceFraction={paceFraction}
-              onPress={() => openSheet(budget.categoryId)}
-            />
-          ))}
-        </View>
+        {/* Nothing to compare in a month that hasn't started. */}
+        {elapsed > 0 ? <SpendingSummary month={month} comparison={comparison} isCurrentMonth={paceFraction != null} /> : null}
 
-        {unbudgetedCategories.length > 0 ? (
-          <View className="gap-2">
-            <Text className="font-sansMed text-sm text-textMuted">No budget set</Text>
-            {unbudgetedCategories.map(({ category, typical }) => (
-              <Pressable
-                key={category.id}
-                onPress={() => openSheet(category.id)}
-                accessibilityRole="button"
-                className="flex-row items-center justify-between rounded-md bg-surface p-4"
-              >
-                <View className="flex-1 flex-row items-center gap-2 pr-3">
-                  <CategoryIcon icon={category.icon} size={18} color={category.color} />
-                  <Text className="font-sansMed text-base text-textPrimary" numberOfLines={1}>
-                    {category.name}
-                  </Text>
-                  {typical != null ? (
-                    <Text className="font-sans text-xs text-textMuted">~{formatAmount(typical.amount)}/mo</Text>
-                  ) : null}
-                </View>
-                <Text className="font-sansMed text-sm text-primary">Set</Text>
-              </Pressable>
-            ))}
-          </View>
+        {suggestedCategories.length > 0 ? <BudgetSuggestions items={suggestedCategories} onSelect={openSheet} /> : null}
+
+        {otherCategories.length > 0 ? (
+          <OtherCategories
+            items={otherCategories.map(({ category }) => category)}
+            // With no budgets and nothing to suggest, this list is the only way in, so it opens.
+            isOpen={showOtherCategories || (budgetedRows.length === 0 && suggestedCategories.length === 0)}
+            onToggle={() => setShowOtherCategories((v) => !v)}
+            onSelect={openSheet}
+          />
         ) : null}
       </ScrollView>
 
       <BottomSheet visible={editingCategoryId != null} onClose={() => setEditingCategoryId(null)} contentScroll={sheetScroll}>
         {/* Scrollable so the save button stays reachable when the keyboard shrinks the sheet. */}
         <ScrollView {...sheetScroll.scrollProps} className="px-5" contentContainerClassName="pb-8" keyboardShouldPersistTaps="handled">
+          {/* The badge the user tapped, so the sheet reads as that budget opened up, with how this
+              month is going beside it. */}
           <View className="mb-5 flex-row items-center gap-3">
-            {editingCategory ? <CategoryIcon icon={editingCategory.icon} size={34} color={editingCategory.color} /> : null}
+            {editingCategory ? (
+              <BudgetBadge
+                icon={editingCategory.icon}
+                color={editingCategory.color}
+                spent={editingSpent}
+                amount={editingBudget?.amount ?? null}
+                status={editingStatus}
+                size={52}
+              />
+            ) : null}
             <View className="flex-1">
               <Text className="font-sansSemi text-base text-textPrimary" numberOfLines={1}>
                 {editingCategory?.name ?? 'Set budget'}
@@ -247,6 +323,16 @@ export default function BudgetsScreen() {
                 </Text>
               ) : null}
             </View>
+            {editingBudget ? (
+              <View className="items-end">
+                <Text className="font-mono text-base" style={{ color: editingTone }}>
+                  {formatAmount(Math.abs(editingLeft))}
+                </Text>
+                <Text className="font-sans text-xs" style={{ color: editingStatus === 'on-track' ? colors.textMuted : editingTone }}>
+                  {editingLeft < 0 ? 'over' : 'left'} this month
+                </Text>
+              </View>
+            ) : null}
           </View>
 
           {saveError ? (
@@ -255,27 +341,36 @@ export default function BudgetsScreen() {
             </View>
           ) : null}
 
-          <View className="gap-2">
-            <TextField
-              label="Monthly amount"
+          {/* The amount as the headline it becomes, and what it means per day. */}
+          <View className="items-center gap-3">
+            <Eyebrow>Monthly budget</Eyebrow>
+            <AmountInput
               value={amountText}
               onChangeText={setAmountText}
-              keyboardType="decimal-pad"
-              placeholder={suggestion != null ? String(suggestion.amount) : '200.00'}
-              mono
+              placeholder={suggestion != null ? String(suggestion.amount) : '0'}
+              accessibilityLabel="Monthly budget"
             />
-            {suggestion != null && !editingBudget ? (
-              <Pressable onPress={() => setAmountText(String(suggestion.amount))}>
-                <Text className="font-sans text-sm text-textMuted">
-                  You've spent about <Text className="font-mono text-textSecondary">{formatAmount(suggestion.amount)}</Text> a month over the past{' '}
-                  {suggestion.months === 1 ? 'month' : `${suggestion.months} months`} —{' '}
-                  <Text className="font-sansMed text-primary">use it</Text>
+            {budgetAmount != null ? (
+              <Text className="font-sans text-sm text-textMuted">
+                About <Text className="font-mono text-textSecondary">{formatAmount(budgetAmount / daysInViewedMonth)}</Text> a day
+              </Text>
+            ) : null}
+            {suggestion != null && !editingBudget && amountText !== String(suggestion.amount) ? (
+              <Pressable
+                onPress={() => setAmountText(String(suggestion.amount))}
+                accessibilityRole="button"
+                className="rounded-full px-3.5 py-2"
+                style={{ backgroundColor: colors.primaryMuted }}
+              >
+                <Text className="font-sansMed text-sm text-primary">
+                  Use ${suggestion.amount.toLocaleString('en-US')} ·{' '}
+                  {suggestion.months === 1 ? 'what you spent last month' : `your ${suggestion.months}-month average`}
                 </Text>
               </Pressable>
             ) : null}
           </View>
 
-          <View className="my-5 h-px bg-border" />
+          <View className="my-6 h-px bg-border" />
 
           <View className="gap-4">
             <View className="flex-row items-center justify-between">
@@ -283,46 +378,55 @@ export default function BudgetsScreen() {
                 <Text className="font-sansMed text-base text-textPrimary">Notify me</Text>
                 <Text className="font-sans text-xs text-textMuted">Get an alert when spending reaches your line.</Text>
               </View>
-              <Switch value={alertOn} onValueChange={enableAlert} />
+              <Switch value={alertOn} onValueChange={setAlertOn} />
             </View>
 
             {alertOn ? (
-              <View className="gap-2">
-                <TextField
-                  label="Alert me at"
-                  value={alertAmountText}
-                  onChangeText={setAlertAmountText}
-                  keyboardType="decimal-pad"
-                  placeholder={isValidAmount ? toDollarText(Number(amountText) * 0.9) : '450.00'}
-                  mono
-                />
-                <View className="flex-row gap-2">
-                  {ALERT_PRESETS.map((pct) => {
-                    const isSelected = alertPercent === pct
-                    return (
-                      <Pressable
-                        key={pct}
-                        onPress={() => {
-                          if (isValidAmount) setAlertAmountText(toDollarText(Number(amountText) * (pct / 100)))
-                        }}
-                        className={`flex-1 items-center rounded-full border px-3 py-1.5 ${
-                          isSelected ? 'border-primary bg-primaryMuted' : 'border-border bg-surface'
-                        }`}
-                      >
-                        <Text className={`font-sansMed text-sm ${isSelected ? 'text-primary' : 'text-textSecondary'}`}>
-                          {pct}%
-                        </Text>
-                      </Pressable>
-                    )
-                  })}
+              <View className="gap-3">
+                {/* Presets are fractions of the budget, so they wait for one to exist. */}
+                <View
+                  className="flex-row justify-between"
+                  style={{ opacity: budgetAmount == null ? 0.4 : 1 }}
+                  pointerEvents={budgetAmount == null ? 'none' : 'auto'}
+                >
+                  {ALERT_PRESETS.map((pct) => (
+                    <Pill
+                      key={pct}
+                      label={`${pct}%`}
+                      accessibilityLabel={`Alert at ${pct}% of the budget`}
+                      isSelected={alertPreset === pct}
+                      onPress={() => setAlertPreset(pct)}
+                    />
+                  ))}
+                  <Pill label="Custom" accessibilityLabel="Custom alert amount" isSelected={alertPreset == null} onPress={chooseCustomAlert} />
                 </View>
-                {alertPercent != null ? (
-                  <Text className="font-sans text-xs text-textMuted">
-                    That&apos;s about {alertPercent}% of this budget.
-                  </Text>
-                ) : alertAmountText !== '' ? (
-                  <Text className="font-sans text-xs text-textMuted">Pick an amount between $0 and your budget.</Text>
+                {alertPreset == null ? (
+                  <TextField
+                    label="Alert me at"
+                    value={alertAmountText}
+                    onChangeText={setAlertAmountText}
+                    keyboardType="decimal-pad"
+                    placeholder={budgetAmount != null ? toDollarText(budgetAmount * 0.9) : '450.00'}
+                    mono
+                  />
                 ) : null}
+                {/* One line that says the result in dollars, whichever way it was chosen — amber when
+                    a custom amount can't be used, since that is what's holding the button back. */}
+                <Text
+                  className="font-sans text-sm"
+                  style={{ color: budgetAmount != null && alertDollars == null ? colors.warning : colors.textSecondary }}
+                >
+                  {budgetAmount == null ? (
+                    "Set a monthly amount to choose when you're alerted."
+                  ) : alertDollars != null && alertPercent != null ? (
+                    <>
+                      You&apos;ll get an alert at <Text className="font-mono text-textPrimary">{formatAmount(alertDollars)}</Text>,{' '}
+                      {alertPercent}% of your budget.
+                    </>
+                  ) : (
+                    `Enter an amount up to ${formatAmount(budgetAmount)}.`
+                  )}
+                </Text>
               </View>
             ) : null}
           </View>
@@ -346,5 +450,52 @@ export default function BudgetsScreen() {
         </ScrollView>
       </BottomSheet>
     </SafeAreaView>
+  )
+}
+
+interface OtherCategoriesProps {
+  items: Array<{ id: string; name: string; icon: string | null; color: string }>
+  isOpen: boolean
+  onToggle: () => void
+  onSelect: (categoryId: string) => void
+}
+
+/** Categories with no spending to go on, folded away behind one row until asked for. */
+function OtherCategories({ items, isOpen, onToggle, onSelect }: OtherCategoriesProps) {
+  return (
+    <View className="gap-3">
+      <Pressable
+        onPress={onToggle}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: isOpen }}
+        className="flex-row items-center justify-between"
+      >
+        <Text className="font-sansMed text-sm text-primary">Budget another category</Text>
+        <Ionicons name={isOpen ? 'chevron-up' : 'chevron-down'} size={14} color={colors.primary} />
+      </Pressable>
+      {isOpen ? (
+        // The shadow sits on its own wrapper: iOS drops the shadow of a view that clips.
+        <View style={[shadow.sm, { borderRadius: borderRadius.xl, backgroundColor: colors.surface }]}>
+          <View className="overflow-hidden rounded-xl bg-surface">
+            {items.map((category, index) => (
+              <Pressable
+                key={category.id}
+                onPress={() => onSelect(category.id)}
+                accessibilityRole="button"
+                accessibilityLabel={`Set a budget for ${category.name}`}
+                className="flex-row items-center gap-3 px-4 py-3.5"
+                style={index > 0 ? { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border } : undefined}
+              >
+                <CategoryIcon icon={category.icon} size={18} color={category.color} />
+                <Text className="flex-1 font-sansMed text-base text-textPrimary" numberOfLines={1}>
+                  {category.name}
+                </Text>
+                <Text className="font-sansMed text-sm text-primary">Set</Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      ) : null}
+    </View>
   )
 }
