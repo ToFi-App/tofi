@@ -28,7 +28,8 @@ module.exports = function withFinanceKitEntitlement(config) {
 
   // Upstream's withInfoPlist pushes a 'com.expo.financekit.sync' BGTaskScheduler identifier
   // unconditionally — even with enableBackgroundDelivery false, which is how we run it. We never
-  // register that task, and declaring background processing the app does not perform is the kind
+  // register that task (patches/expo-finance-kit+0.2.23.patch removes upstream's late register
+  // call, which crashed at launch once this identifier was gone), and declaring background processing the app does not perform is the kind
   // of thing App Review asks about. Dropped here; NSFinancialDataUsageDescription is kept.
   return withInfoPlist(withCorrectEntitlement, (config) => {
     const identifiers = config.modResults.BGTaskSchedulerPermittedIdentifiers

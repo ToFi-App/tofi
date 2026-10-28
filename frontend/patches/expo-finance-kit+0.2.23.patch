@@ -1,5 +1,5 @@
 diff --git a/node_modules/expo-finance-kit/ios/ExpoFinanceKitModule.swift b/node_modules/expo-finance-kit/ios/ExpoFinanceKitModule.swift
-index 2d4611a..a9e8515 100644
+index 2d4611a..733d156 100644
 --- a/node_modules/expo-finance-kit/ios/ExpoFinanceKitModule.swift
 +++ b/node_modules/expo-finance-kit/ios/ExpoFinanceKitModule.swift
 @@ -61,10 +61,12 @@ public class ExpoFinanceKitModule: Module {
@@ -7,7 +7,7 @@ index 2d4611a..a9e8515 100644
          if let balance = balances.first(where: { $0["accountId"] as? String == accountId }) {
            var amount = balance["amount"] as? Double ?? 0.0
 +          var creditLimitValue: Double? = nil
- 
+           
            if let liabilityAccount = account.liabilityAccount,
               let creditLimit = liabilityAccount.creditInformation.creditLimit {
 -              amount = NSDecimalNumber(decimal: creditLimit.amount).doubleValue - amount
@@ -101,7 +101,7 @@ index 2d4611a..a9e8515 100644
 +        var available: Decimal? = nil
 +        var booked: Decimal? = nil
 +        var balanceType = "unknown"
- 
+         
          switch balance.currentBalance {
          case .available(let availableBalance):
 -          amount = availableBalance.amount.amount
@@ -118,7 +118,7 @@ index 2d4611a..a9e8515 100644
 +          booked = bookedBalance.amount.amount
 +          balanceType = "availableAndBooked"
          }
- 
+         
 +        // `amount` preserved unchanged so getAccounts' credit-limit subtraction still works.
 +        let amount = available ?? booked ?? 0.0
 +
@@ -131,7 +131,7 @@ index 2d4611a..a9e8515 100644
            "currencyCode": balance.currencyCode,
            "accountId": balance.accountID.uuidString,
          ]
-@@ -495,8 +512,8 @@ class TransactionMonitor {
+@@ -495,14 +512,18 @@ class TransactionMonitor {
    private var appGroupIdentifier: String?
    
    private struct TransactionChangePayload {
@@ -142,7 +142,18 @@ index 2d4611a..a9e8515 100644
      var deleted: [UUID] = []
    }
    
-@@ -798,7 +815,7 @@ class TransactionMonitor {
+   private init() {
+     setupBackgroundNotificationObserver()
+-    registerBackgroundTask()
++    // Not registering the BGTask: `shared` is first touched from a main-queue block dispatched in
++    // OnCreate, which runs after launch has finished, and BGTaskScheduler throws
++    // NSInternalInconsistencyException for late registration (and for identifiers absent from
++    // BGTaskSchedulerPermittedIdentifiers, which plugins/withFinanceKitEntitlement.js strips).
++    // Background delivery is disabled in app.json, so nothing ever submits this task anyway.
+   }
+   
+   deinit {
+@@ -798,7 +819,7 @@ class TransactionMonitor {
      return result
    }
    
