@@ -1,5 +1,6 @@
 import { AUTO_MATCH_WINDOW_DAYS } from '@/lib/transfers/autoMatch'
 import type { FeedItem } from './resolveFeed'
+import type { InvestmentActivity } from '@/types/domain'
 
 /**
  * Deliberately tighter than autoMatch's 7 days. A sweep is automatic and settles same-day or
@@ -130,4 +131,40 @@ export function applySweepExclusion(feed: FeedItem[]): FeedItem[] {
     consumed.add(match.id)
     return { ...item, isSweptOutflow: true }
   })
+}
+
+/**
+ * Marks a Plaid cash debit as an investment purchase only when Plaid also reports a stock buy
+ * for that exact brokerage account and amount, with dates no more than two days apart. Require a one-to-one match on both
+ * sides: the activity endpoint's `amount` is trade cash movement (positive for a buy), while the
+ * cash transaction feed also uses positive for money out.
+ */
+export function applyInvestmentPurchaseLabels(
+  feed: FeedItem[],
+  activity: Array<InvestmentActivity & { accountId: string }>,
+): FeedItem[] {
+  const eligibleActivity = activity.filter(
+    (row) => row.subtype.toLowerCase() === 'buy' && row.securityId !== null && row.amount > 0,
+  )
+  const candidates = feed.filter(
+    (item) => item.source === 'plaid' && item.isBrokerageCashAccount && item.amount > 0 && !item.pending,
+  )
+  const day = (date: string) => Date.parse(`${date}T00:00:00Z`)
+  const cents = (amount: number) => Math.round(amount * 100)
+  // Plaid's transaction date can be the settlement date while investment activity uses trade
+  // date. Allow up to two days, but only accept mutual one-to-one matches to avoid collisions.
+  const related = (item: FeedItem, row: InvestmentActivity & { accountId: string }) =>
+    item.accountId === row.accountId &&
+    cents(item.amount) === cents(row.amount) &&
+    Math.abs(day(item.postedDate) - day(row.date)) <= 2 * 86_400_000
+  const matchesByCash = candidates.map((item) => eligibleActivity.filter((row) => related(item, row)))
+  const matchesByActivity = eligibleActivity.map((row) => candidates.filter((item) => related(item, row)))
+  const confirmed = new Set<string>()
+  candidates.forEach((item, i) => {
+    const matches = matchesByCash[i]
+    if (matches.length !== 1) return
+    const activityIndex = eligibleActivity.indexOf(matches[0])
+    if (matchesByActivity[activityIndex]?.length === 1) confirmed.add(item.id)
+  })
+  return feed.map((item) => (confirmed.has(item.id) ? { ...item, isInvestmentPurchase: true } : item))
 }

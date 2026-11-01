@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applySweepExclusion } from './sweepExclusion'
+import { applyInvestmentPurchaseLabels, applySweepExclusion } from './sweepExclusion'
 import { countsTowardTotals } from './totals'
 import type { FeedItem } from './resolveFeed'
 
@@ -36,10 +36,48 @@ function base() {
     transferSource: null,
     isBrokerageCashAccount: true,
     isSweptOutflow: false,
+    isInvestmentPurchase: false,
     hasCrossAccountCounterpart: false,
     links: [],
   }
 }
+
+describe('applyInvestmentPurchaseLabels', () => {
+  const buy = (overrides: Partial<import('@/types/domain').InvestmentActivity> = {}) => ({
+    investmentTransactionId: 'buy-1',
+    date: '2026-07-31',
+    accountId: 'cma',
+    securityId: 'sec-nvda',
+    type: 'buy',
+    subtype: 'buy',
+    quantity: 10,
+    amount: 2022.8,
+    price: 202.28,
+    isCashTransfer: false,
+    ...overrides,
+  })
+
+  it('labels an exact same-account stock purchase as investment and excludes it from spending', () => {
+    const result = applyInvestmentPurchaseLabels([
+      item({ id: 'nvidia', amount: 2022.8, date: '2026-08-01', merchantName: 'Nvidia', pfcDetailed: 'GENERAL_MERCHANDISE_ELECTRONICS' }),
+    ], [buy()])
+
+    expect(find(result, 'nvidia').isInvestmentPurchase).toBe(true)
+    expect(countsTowardTotals(find(result, 'nvidia'))).toBe(false)
+  })
+
+  it('leaves ordinary spending and ambiguous amount collisions counted', () => {
+    const ordinary = item({ id: 'ordinary', amount: 2022.8, date: '2026-08-01', accountId: 'other', isBrokerageCashAccount: false })
+    const collision = item({ id: 'collision', amount: 2022.8, date: '2026-08-01' })
+    const collision2 = item({ id: 'collision-2', amount: 2022.8, date: '2026-08-01' })
+    const result = applyInvestmentPurchaseLabels([ordinary, collision, collision2], [buy()])
+
+    expect(find(result, 'ordinary').isInvestmentPurchase).toBe(false)
+    expect(find(result, 'collision').isInvestmentPurchase).toBe(false)
+    expect(find(result, 'collision-2').isInvestmentPurchase).toBe(false)
+    expect(countsTowardTotals(find(result, 'collision'))).toBe(true)
+  })
+})
 
 function find(feed: FeedItem[], id: string) {
   return feed.find((i) => i.id === id)!

@@ -8,6 +8,7 @@ import { useCategories } from '@/hooks/useCategories'
 import { useTransfers } from '@/hooks/useTransfers'
 import { useTransferDismissals } from '@/hooks/useTransferDismissals'
 import { useInvestmentTransactions } from '@/hooks/useInvestmentTransactions'
+import { api } from '@/lib/api/client'
 import {
   getCachedTransactions,
   getPendingRemovedTransactionIds,
@@ -17,7 +18,8 @@ import {
 import { applyTransfers, mergeFeed, type FeedItem } from '@/lib/transactions/resolveFeed'
 import { planCachePrune } from '@/lib/transactions/pruneOrphaned'
 import { plaidItemIdsFrom } from '@/lib/financekit/mergeAccounts'
-import { applySweepExclusion } from '@/lib/transactions/sweepExclusion'
+import { applyInvestmentPurchaseLabels, applySweepExclusion } from '@/lib/transactions/sweepExclusion'
+import { isBrokerageCashAccount } from '@/lib/accounts/accountType'
 import { aggregateMonth } from '@/lib/transactions/aggregateMonth'
 import { syncDriver } from '@/lib/transactions/syncDriver'
 import { reportError } from '@/lib/observability/log'
@@ -83,6 +85,35 @@ export function TransactionFeedProvider({ children }: { children: ReactNode }) {
   const itemIds = useMemo(() => plaidItemIdsFrom(accounts.data ?? []), [accounts.data])
 
   const investmentTransactions = useInvestmentTransactions(itemIds)
+  const activityAccounts = useMemo(
+    () => (accounts.data ?? []).filter(isBrokerageCashAccount),
+    [accounts.data],
+  )
+  const activityWindow = useMemo(() => {
+    const today = new Date()
+    const start = new Date(today)
+    start.setUTCDate(start.getUTCDate() - 730)
+    return { startDate: start.toISOString().slice(0, 10), endDate: today.toISOString().slice(0, 10) }
+  }, [])
+  const investmentActivityQueries = api.useQueries((t) =>
+    activityAccounts.map((account) =>
+      t.investments.activity(
+        { itemId: account.itemId, accountId: account.account_id, ...activityWindow },
+        { staleTime: 5 * 60 * 1000, retry: 1 },
+      ),
+    ),
+  )
+  const investmentActivity = useMemo(
+    () => investmentActivityQueries.flatMap((query, index) =>
+      (query.data?.transactions ?? []).map((transaction) => ({
+        ...transaction,
+        accountId: activityAccounts[index].account_id,
+      })),
+    ),
+    // useQueries returns a fresh result array each render; dataUpdatedAt is the stable change signal.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activityAccounts, investmentActivityQueries.map((query) => query.dataUpdatedAt).join(',')],
+  )
 
   const accountIdToItemId = useMemo(() => {
     const map = new Map<string, string>()
@@ -163,9 +194,10 @@ export function TransactionFeedProvider({ children }: { children: ReactNode }) {
       investmentTransactions.transactions,
     )
     const withTransfers = applyTransfers(merged, transfers.data ?? [])
-    // Last in the chain, deliberately: it only touches brokerage-cash outflows that applyTransfers
-    // left unpaired, so it can never override a transfer that auto-applied or the user confirmed.
-    const result = applySweepExclusion(withTransfers)
+    // Investment activity confirms stock-buy cash debits without adding the trade itself to totals.
+    // Sweep exclusion runs last and only touches still-unpaired brokerage-cash outflows.
+    const withPurchaseLabels = applyInvestmentPurchaseLabels(withTransfers, investmentActivity)
+    const result = applySweepExclusion(withPurchaseLabels)
     return result
   }, [
     rawTransactions,
@@ -177,6 +209,7 @@ export function TransactionFeedProvider({ children }: { children: ReactNode }) {
     plaidCategoryMappings.data,
     accounts.data,
     investmentTransactions.transactions,
+    investmentActivity,
     transfers.data,
   ])
 
