@@ -822,6 +822,54 @@ describe('investment rows as transfer legs', () => {
   })
 })
 
+// Some brokerages report their investment accounts through /transactions/sync as well, so the
+// brokerage leg can arrive as an ordinary 'plaid' row carrying Plaid's own transfer code. The
+// INTERNAL_MOVEMENT_PFC eligibility gate exists for a cash management account's core-fund
+// redemptions; applied to an investment account it removed the only counterpart either leg had,
+// so the transfer stayed an expense on one side and income on the other — not even a suggestion.
+describe('transfer codes on an investment account\'s own transactions', () => {
+  const accounts = [
+    { account_id: 'acc-checking', type: 'depository', subtype: 'checking' },
+    { account_id: 'acc-brokerage', type: 'investment', subtype: 'brokerage' },
+  ] as unknown as Account[]
+
+  const brokerageRow = (over: Partial<FeedItem> & Pick<FeedItem, 'id' | 'amount' | 'date'>) =>
+    item({ source: 'plaid', accountId: 'acc-brokerage', isBrokerageCashAccount: true, ...over })
+
+  it.each([
+    'TRANSFER_IN_INVESTMENT_AND_RETIREMENT_FUNDS',
+    'TRANSFER_IN_ACCOUNT_TRANSFER',
+  ])('auto-applies a deposit whose brokerage leg is tagged %s', (code) => {
+    const outflow = item({
+      id: 'txn-out', accountId: 'acc-checking', amount: 1000, date: '2026-02-03',
+      pfcDetailed: 'TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS',
+    })
+    const deposit = brokerageRow({ id: 'brk-in', amount: -1000, date: '2026-02-04', pfcDetailed: code })
+
+    const result = detectTransfers({ feed: [outflow, deposit], accounts })
+
+    expect(result.autoApply).toHaveLength(1)
+    expect(result.autoApply[0]).toMatchObject({ kind: 'account_transfer', expense: { id: 'txn-out' }, income: { id: 'brk-in' } })
+    expect(result.suggestions).toEqual([])
+  })
+
+  it('auto-applies a withdrawal whose brokerage leg is tagged TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS', () => {
+    const withdrawal = brokerageRow({
+      id: 'brk-out', amount: 1000, date: '2026-02-03',
+      pfcDetailed: 'TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS',
+    })
+    const inflow = item({
+      id: 'txn-in', accountId: 'acc-checking', amount: -1000, date: '2026-02-04',
+      pfcDetailed: 'TRANSFER_IN_INVESTMENT_AND_RETIREMENT_FUNDS',
+    })
+
+    const result = detectTransfers({ feed: [withdrawal, inflow], accounts })
+
+    expect(result.autoApply).toHaveLength(1)
+    expect(result.autoApply[0]).toMatchObject({ expense: { id: 'brk-out' }, income: { id: 'txn-in' } })
+  })
+})
+
 // ---------------------------------------------------------------------------------------------
 
 import { detectPendingPreviews } from './autoMatch'
