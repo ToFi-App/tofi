@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applySweepExclusion } from './sweepExclusion'
+import { applyInvestmentTradeLabels, applySweepExclusion } from './sweepExclusion'
 import { countsTowardTotals } from './totals'
 import type { FeedItem } from './resolveFeed'
 
@@ -36,10 +36,67 @@ function base() {
     transferSource: null,
     isBrokerageCashAccount: true,
     isSweptOutflow: false,
+    isInvestmentTrade: false,
     hasCrossAccountCounterpart: false,
     links: [],
   }
 }
+
+describe('applyInvestmentTradeLabels', () => {
+  // Plaid rewrites a brokerage trade's cash leg as a merchant purchase: merchant_name becomes the
+  // company, the PFC becomes shopping, payment_channel becomes "online". Only the raw name keeps
+  // the brokerage's own wording.
+  it('labels buys and sales by the brokerage\'s own trade wording, at any amount', () => {
+    const result = applyInvestmentTradeLabels([
+      item({
+        id: 'buy',
+        amount: 500,
+        merchantName: 'Example Corp',
+        plaidName: 'YOU BOUGHT EXAMPLE CORP COM (EXMP) (Cash)',
+        pfcDetailed: 'GENERAL_MERCHANDISE_ELECTRONICS',
+      }),
+      item({
+        id: 'sale',
+        amount: -620,
+        merchantName: 'Example Corp',
+        plaidName: 'YOU SOLD EXAMPLE CORP COM (EXMP) (Cash)',
+        pfcDetailed: 'INCOME_OTHER_INCOME',
+      }),
+    ])
+
+    expect(find(result, 'buy').isInvestmentTrade).toBe(true)
+    expect(find(result, 'sale').isInvestmentTrade).toBe(true)
+    expect(countsTowardTotals(find(result, 'buy'))).toBe(false)
+    expect(countsTowardTotals(find(result, 'sale'))).toBe(false)
+  })
+
+  // The case name matching got wrong: a card purchase at a company the user also holds stock in.
+  it('leaves a card purchase from the same company counted', () => {
+    const result = applyInvestmentTradeLabels([
+      item({
+        id: 'card',
+        amount: 500,
+        merchantName: 'Example Corp',
+        plaidName: 'DEBIT CARD PURCHASE EXAMPLE.COM',
+        pfcDetailed: 'GENERAL_MERCHANDISE_ELECTRONICS',
+      }),
+    ])
+
+    expect(find(result, 'card').isInvestmentTrade).toBe(false)
+    expect(countsTowardTotals(find(result, 'card'))).toBe(true)
+  })
+
+  it('only applies to settled rows on a brokerage cash account', () => {
+    const plaidName = 'YOU BOUGHT EXAMPLE CORP COM (EXMP) (Cash)'
+    const result = applyInvestmentTradeLabels([
+      item({ id: 'checking', amount: 500, plaidName, isBrokerageCashAccount: false }),
+      item({ id: 'pending', amount: 500, plaidName, pending: true }),
+    ])
+
+    expect(find(result, 'checking').isInvestmentTrade).toBe(false)
+    expect(find(result, 'pending').isInvestmentTrade).toBe(false)
+  })
+})
 
 function find(feed: FeedItem[], id: string) {
   return feed.find((i) => i.id === id)!

@@ -17,7 +17,7 @@ import {
 import { applyTransfers, mergeFeed, type FeedItem } from '@/lib/transactions/resolveFeed'
 import { planCachePrune } from '@/lib/transactions/pruneOrphaned'
 import { plaidItemIdsFrom } from '@/lib/financekit/mergeAccounts'
-import { applySweepExclusion } from '@/lib/transactions/sweepExclusion'
+import { applyInvestmentTradeLabels, applySweepExclusion } from '@/lib/transactions/sweepExclusion'
 import { aggregateMonth } from '@/lib/transactions/aggregateMonth'
 import { syncDriver } from '@/lib/transactions/syncDriver'
 import { reportError } from '@/lib/observability/log'
@@ -163,9 +163,12 @@ export function TransactionFeedProvider({ children }: { children: ReactNode }) {
       investmentTransactions.transactions,
     )
     const withTransfers = applyTransfers(merged, transfers.data ?? [])
-    // Last in the chain, deliberately: it only touches brokerage-cash outflows that applyTransfers
-    // left unpaired, so it can never override a transfer that auto-applied or the user confirmed.
-    const result = applySweepExclusion(withTransfers)
+    // Brokerage trade rows ("YOU BOUGHT …") are labeled by their own description. The sweep
+    // exclusion stays last in the chain, deliberately: it only touches brokerage-cash outflows that
+    // applyTransfers left unpaired, so it can never override a transfer that auto-applied or the
+    // user confirmed.
+    const withInvestmentLabels = applyInvestmentTradeLabels(withTransfers)
+    const result = applySweepExclusion(withInvestmentLabels)
     return result
   }, [
     rawTransactions,

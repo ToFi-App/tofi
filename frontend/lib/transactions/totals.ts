@@ -68,6 +68,7 @@ const INTERNAL_MOVEMENT_PFC = new Set([
  */
 export function isInternalMovement(item: FeedItem): boolean {
   if (isTransfer(item)) return true
+  if (item.isInvestmentTrade) return true
   if (!item.isBrokerageCashAccount) return false
   return item.pfcDetailed !== null && INTERNAL_MOVEMENT_PFC.has(item.pfcDetailed)
 }
@@ -80,6 +81,7 @@ export function isInternalMovement(item: FeedItem): boolean {
  */
 export function isInvestmentSweep(item: FeedItem): boolean {
   if (isTransfer(item) || item.isReimbursementIncome) return false
+  if (item.isInvestmentTrade) return true
   // An equal counterpart on another account means the money crossed an account boundary, which a
   // sweep into holdings never does. The row is still excluded — it IS internal movement — but a
   // brokerage's own TRANSFER_OUT_INVESTMENT code on an ACH to the user's bank does not make it an

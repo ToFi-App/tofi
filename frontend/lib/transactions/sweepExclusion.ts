@@ -131,3 +131,28 @@ export function applySweepExclusion(feed: FeedItem[]): FeedItem[] {
     return { ...item, isSweptOutflow: true }
   })
 }
+
+/**
+ * The brokerage's own wording on a trade's cash leg, e.g. "YOU BOUGHT NVIDIA CORPORATION COM (NVDA)
+ * (Cash)" or "YOU SOLD META PLATFORMS INC ... (META) (Cash)". Fidelity writes this; Plaid then
+ * enriches the same row into a fake merchant ("Nvidia") with a shopping PFC and payment_channel
+ * "online", so neither of those fields can tell a trade from a card purchase. Only the raw name can.
+ *
+ * Why not pair the row with Plaid's investment activity instead: a cash management account is a
+ * depository account to Plaid, and /investments/transactions returns nothing for it. Its trades
+ * exist only as these cash rows.
+ */
+const TRADE_DESCRIPTION = /^YOU (BOUGHT|SOLD) /i
+
+/**
+ * Marks a brokerage-cash row as investment activity when its raw description is the brokerage's
+ * own trade wording. Covers buys and sales alike, at any amount. Card purchases never carry this
+ * text, so a debit-card charge at a company the user also holds stock in stays counted.
+ */
+export function applyInvestmentTradeLabels(feed: FeedItem[]): FeedItem[] {
+  return feed.map((item) => {
+    if (item.source !== 'plaid' || !item.isBrokerageCashAccount || item.pending) return item
+    if (!TRADE_DESCRIPTION.test(item.plaidName ?? '')) return item
+    return { ...item, isInvestmentTrade: true }
+  })
+}

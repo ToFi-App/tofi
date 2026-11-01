@@ -135,6 +135,8 @@ export interface FeedItem {
    */
   postedDate: string
   merchantName: string
+  /** Plaid's raw `name`: the institution's own description, before merchant enrichment. */
+  plaidName?: string
   categoryId: string | null
   subcategoryId: string | null
   categorySource: CategorySource
@@ -163,6 +165,8 @@ export interface FeedItem {
   // Set by applySweepExclusion (runs last): this outflow only mirrors an equal inflow on the same
   // brokerage cash account, i.e. a sweep into holdings rather than spending.
   isSweptOutflow: boolean
+  /** Set by applyInvestmentTradeLabels: a brokerage trade's cash leg ("YOU BOUGHT …"/"YOU SOLD …"). */
+  isInvestmentTrade?: boolean
   // Also set by applySweepExclusion: an equal, opposite-signed row exists on a DIFFERENT account
   // inside autoMatch's window. Money that crossed an account boundary, whatever Plaid's code on it
   // says — which is what separates a transfer from a sweep into holdings. Only the label reads
@@ -210,6 +214,7 @@ export function mergeFeed(
       date: txn.authorized_date ?? txn.date,
       postedDate: txn.date,
       merchantName: txn.merchant_name ?? txn.name,
+      plaidName: txn.name,
       categoryId: resolved.categoryId,
       subcategoryId: resolved.subcategoryId,
       categorySource: resolved.categorySource,
@@ -230,6 +235,7 @@ export function mergeFeed(
       transferSource: null,
       isBrokerageCashAccount: brokerageCashAccountIds.has(txn.account_id),
       isSweptOutflow: false,
+      isInvestmentTrade: false,
       hasCrossAccountCounterpart: false,
       links: [],
     }
@@ -260,6 +266,7 @@ export function mergeFeed(
     transferSource: null,
     isBrokerageCashAccount: false,
     isSweptOutflow: false,
+    isInvestmentTrade: false,
     hasCrossAccountCounterpart: false,
     links: [],
   }))
@@ -308,6 +315,7 @@ export function mergeFeed(
       transferSource: null,
       isBrokerageCashAccount: brokerageCashAccountIds.has(txn.accountId),
       isSweptOutflow: false,
+      isInvestmentTrade: false,
       hasCrossAccountCounterpart: false,
       links: [],
     }
