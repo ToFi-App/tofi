@@ -46,7 +46,7 @@ describe('investmentRepository.getAccountActivity', () => {
     const { client, investmentsTransactionsGet } = plaidReturning([
       {
         investment_transactions: [buy, deposit],
-        securities: [{ security_id: 'sec-vti', ticker_symbol: 'VTI', type: 'etf', option_contract: null }],
+        securities: [{ security_id: 'sec-vti', name: 'Vanguard Total Stock Market ETF', ticker_symbol: 'VTI', type: 'etf', option_contract: null }],
         total: 2,
       },
     ])
@@ -85,21 +85,27 @@ describe('investmentRepository.getAccountActivity', () => {
         isCashTransfer: true,
       },
     ])
-    expect(activity.securities).toEqual([{ securityId: 'sec-vti', ticker: 'VTI', type: 'etf', isOption: false }])
+    expect(activity.securities).toEqual([{
+      securityId: 'sec-vti',
+      name: 'Vanguard Total Stock Market ETF',
+      ticker: 'VTI',
+      type: 'etf',
+      isOption: false,
+    }])
   })
 
   it('collects securities from every page, once each', async () => {
     const { client } = plaidReturning([
       {
         investment_transactions: [buy],
-        securities: [{ security_id: 'sec-vti', ticker_symbol: 'VTI', type: 'etf' }],
+        securities: [{ security_id: 'sec-vti', name: 'Vanguard Total Stock Market ETF', ticker_symbol: 'VTI', type: 'etf' }],
         total: 2,
       },
       {
         investment_transactions: [{ ...buy, investment_transaction_id: 'it-2', security_id: 'sec-aapl' }],
         securities: [
-          { security_id: 'sec-vti', ticker_symbol: 'VTI', type: 'etf' },
-          { security_id: 'sec-aapl', ticker_symbol: 'AAPL', type: 'equity' },
+          { security_id: 'sec-vti', name: 'Vanguard Total Stock Market ETF', ticker_symbol: 'VTI', type: 'etf' },
+          { security_id: 'sec-aapl', name: 'Apple Inc.', ticker_symbol: 'AAPL', type: 'equity' },
         ],
         total: 2,
       },

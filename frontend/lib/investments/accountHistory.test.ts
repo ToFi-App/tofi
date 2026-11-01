@@ -105,7 +105,7 @@ describe('buildAccountHistory', () => {
   it('prices a position sold out before today, which today’s holdings no longer show', () => {
     const result = buildAccountHistory({
       ...base,
-      securities: [{ securityId: 'sec-bbb', ticker: 'BBB', type: 'equity', isOption: false }],
+      securities: [{ securityId: 'sec-bbb', name: 'BBB Inc.', ticker: 'BBB', type: 'equity', isOption: false }],
       holdings: [],
       activity: [
         activity({ date: '2025-01-03', securityId: 'sec-bbb', type: 'sell', subtype: 'sell', quantity: -2, amount: -100, price: 50 }),

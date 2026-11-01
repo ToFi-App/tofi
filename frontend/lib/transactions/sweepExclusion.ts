@@ -1,6 +1,6 @@
 import { AUTO_MATCH_WINDOW_DAYS } from '@/lib/transfers/autoMatch'
 import type { FeedItem } from './resolveFeed'
-import type { InvestmentActivity } from '@/types/domain'
+import type { ActivitySecurity } from '@/types/domain'
 
 /**
  * Deliberately tighter than autoMatch's 7 days. A sweep is automatic and settles same-day or
@@ -134,39 +134,50 @@ export function applySweepExclusion(feed: FeedItem[]): FeedItem[] {
 }
 
 /**
- * Marks a Plaid cash movement as an investment trade only when Plaid also reports a stock buy or
- * sale for that brokerage account, amount, and a date within two days. Trades are classified
- * independently: a buy is an outflow and a sale is an inflow, regardless of when the shares were
- * originally bought. Require a one-to-one match on both sides to avoid amount collisions.
+ * Marks a brokerage-cash transaction as investment activity when its own description identifies
+ * a security Plaid reports for an investment account on the same Item. No amount or date pairing:
+ * the bank row is the cash movement, and the investment activity only supplies the security's
+ * name and ticker. A stock sale is recognized the same way as a buy.
  */
 export function applyInvestmentTradeLabels(
   feed: FeedItem[],
-  activity: Array<InvestmentActivity & { accountId: string }>,
+  securitiesByItem: ReadonlyMap<string, ActivitySecurity[]>,
+  accountIdToItemId: ReadonlyMap<string, string>,
 ): FeedItem[] {
-  const eligibleActivity = activity.filter((row) => {
-    const subtype = row.subtype.toLowerCase()
-    return (subtype === 'buy' || subtype === 'sell') && row.securityId !== null && row.amount !== 0
+  const tokens = (value: string) =>
+    value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toUpperCase().match(/[A-Z0-9]+/g) ?? []
+  const companySuffixes = new Set(['INC', 'INCORPORATED', 'CORP', 'CORPORATION', 'LTD', 'LIMITED', 'PLC', 'LLC', 'CO', 'COMPANY'])
+  const securityTokens = (value: string) => {
+    const result = tokens(value)
+    while (result.length && companySuffixes.has(result[result.length - 1])) result.pop()
+    return result
+  }
+  const containsSequence = (haystack: string[], needle: string[]) =>
+    needle.length > 0 && haystack.some((_, index) => needle.every((token, offset) => haystack[index + offset] === token))
+  const tradeWords = new Set(['BUY', 'BOUGHT', 'SELL', 'SOLD', 'SALE', 'PURCHASE', 'PURCHASED', 'TRADE', 'SHARES', 'STOCK'])
+
+  function mentionsSecurity(item: FeedItem, securities: ActivitySecurity[]): boolean {
+    const descriptionTokens = [...tokens(item.plaidName ?? ''), ...tokens(item.merchantName)]
+    const normalizedMerchant = securityTokens(item.merchantName).join(' ')
+    return securities.some((security) => {
+      if (security.type?.toLowerCase() === 'cash') return false
+      const ticker = tokens(security.ticker ?? '')
+      // One-letter tickers are too common in prose to be a safe identifier.
+      const tickerMatch = ticker.join('').length >= 2 && containsSequence(descriptionTokens, ticker)
+      const name = securityTokens(security.name ?? '')
+      const hasTradeContext = descriptionTokens.some((token) => tradeWords.has(token))
+      const nameMatch = name.length > 0 && (
+        normalizedMerchant === name.join(' ') ||
+        ((name[0]?.length ?? 0) >= 4 && hasTradeContext && containsSequence(descriptionTokens, name))
+      )
+      return tickerMatch || nameMatch
+    })
+  }
+
+  return feed.map((item) => {
+    if (item.source !== 'plaid' || !item.isBrokerageCashAccount || item.pending || !item.accountId) return item
+    const itemId = accountIdToItemId.get(item.accountId)
+    if (!itemId || !mentionsSecurity(item, securitiesByItem.get(itemId) ?? [])) return item
+    return { ...item, isInvestmentTrade: true }
   })
-  const candidates = feed.filter(
-    (item) => item.source === 'plaid' && item.isBrokerageCashAccount && item.amount !== 0 && !item.pending,
-  )
-  const day = (date: string) => Date.parse(`${date}T00:00:00Z`)
-  const cents = (amount: number) => Math.round(amount * 100)
-  // Plaid's transaction date can be the settlement date while investment activity uses trade
-  // date. Allow up to two days, but only accept mutual one-to-one matches to avoid collisions.
-  const related = (item: FeedItem, row: InvestmentActivity & { accountId: string }) =>
-    item.accountId === row.accountId &&
-    Math.sign(item.amount) === Math.sign(row.amount) &&
-    cents(item.amount) === cents(row.amount) &&
-    Math.abs(day(item.postedDate) - day(row.date)) <= 2 * 86_400_000
-  const matchesByCash = candidates.map((item) => eligibleActivity.filter((row) => related(item, row)))
-  const matchesByActivity = eligibleActivity.map((row) => candidates.filter((item) => related(item, row)))
-  const confirmed = new Set<string>()
-  candidates.forEach((item, i) => {
-    const matches = matchesByCash[i]
-    if (matches.length !== 1) return
-    const activityIndex = eligibleActivity.indexOf(matches[0])
-    if (matchesByActivity[activityIndex]?.length === 1) confirmed.add(item.id)
-  })
-  return feed.map((item) => (confirmed.has(item.id) ? { ...item, isInvestmentTrade: true } : item))
 }

@@ -135,6 +135,8 @@ export interface FeedItem {
    */
   postedDate: string
   merchantName: string
+  /** Institution-provided transaction description, retained for security name/ticker matching. */
+  plaidName?: string
   categoryId: string | null
   subcategoryId: string | null
   categorySource: CategorySource
@@ -212,6 +214,7 @@ export function mergeFeed(
       date: txn.authorized_date ?? txn.date,
       postedDate: txn.date,
       merchantName: txn.merchant_name ?? txn.name,
+      plaidName: txn.name,
       categoryId: resolved.categoryId,
       subcategoryId: resolved.subcategoryId,
       categorySource: resolved.categorySource,

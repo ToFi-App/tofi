@@ -43,46 +43,41 @@ function base() {
 }
 
 describe('applyInvestmentTradeLabels', () => {
-  const trade = (overrides: Partial<import('@/types/domain').InvestmentActivity> & { accountId?: string } = {}) => ({
-    investmentTransactionId: 'buy-1',
-    date: '2026-07-31',
-    accountId: 'cma',
-    securityId: 'sec-nvda',
-    type: 'buy',
-    subtype: 'buy',
-    quantity: 10,
-    amount: 2022.8,
-    price: 202.28,
-    isCashTransfer: false,
-    ...overrides,
-  })
+  const securities = [{ securityId: 'sec-nvda', name: 'NVIDIA Corporation', ticker: 'NVDA', type: 'equity', isOption: false }]
+  const accounts = new Map([['cma', 'item-1']])
 
-  it('classifies a buy outflow and a sale inflow independently as investment activity', () => {
+  it('classifies buy and sale cash rows from their security description, independent of amount or date', () => {
     const result = applyInvestmentTradeLabels([
-      item({ id: 'nvidia', amount: 2022.8, date: '2026-08-01', merchantName: 'Nvidia', pfcDetailed: 'GENERAL_MERCHANDISE_ELECTRONICS' }),
-      item({ id: 'sale', amount: -2400, date: '2026-10-02', merchantName: 'Nvidia', pfcDetailed: 'INCOME_OTHER_INCOME' }),
-    ], [
-      trade(),
-      // The sale is classified on its own; it does not need to be near the original buy.
-      trade({ investmentTransactionId: 'sell-1', date: '2026-10-01', subtype: 'sell', amount: -2400 }),
-    ])
+      item({ id: 'buy', amount: 2022.8, date: '2026-08-01', merchantName: 'Nvidia', pfcDetailed: 'GENERAL_MERCHANDISE_ELECTRONICS' }),
+      item({ id: 'sale', amount: -2400, date: '2026-10-02', merchantName: 'NVIDIA CORP sale proceeds', pfcDetailed: 'INCOME_OTHER_INCOME' }),
+    ], new Map([['item-1', securities]]), accounts)
 
-    expect(find(result, 'nvidia').isInvestmentTrade).toBe(true)
+    expect(find(result, 'buy').isInvestmentTrade).toBe(true)
     expect(find(result, 'sale').isInvestmentTrade).toBe(true)
-    expect(countsTowardTotals(find(result, 'nvidia'))).toBe(false)
+    expect(countsTowardTotals(find(result, 'buy'))).toBe(false)
     expect(countsTowardTotals(find(result, 'sale'))).toBe(false)
   })
 
-  it('leaves ordinary spending and ambiguous amount collisions counted', () => {
-    const ordinary = item({ id: 'ordinary', amount: 2022.8, date: '2026-08-01', accountId: 'other', isBrokerageCashAccount: false })
-    const collision = item({ id: 'collision', amount: 2022.8, date: '2026-08-01' })
-    const collision2 = item({ id: 'collision-2', amount: 2022.8, date: '2026-08-01' })
-    const result = applyInvestmentTradeLabels([ordinary, collision, collision2], [trade()])
+  it('uses the security name or ticker only within the same Plaid Item', () => {
+    const ticker = item({ id: 'ticker', amount: 10, plaidName: 'Order for NVDA shares', merchantName: 'Brokerage order' })
+    const wrongItem = item({ id: 'wrong-item', amount: 10, accountId: 'cma-2', merchantName: 'Nvidia' })
+    const result = applyInvestmentTradeLabels(
+      [ticker, wrongItem],
+      new Map([['item-1', securities]]),
+      new Map([['cma', 'item-1'], ['cma-2', 'item-2']]),
+    )
+
+    expect(find(result, 'ticker').isInvestmentTrade).toBe(true)
+    expect(find(result, 'wrong-item').isInvestmentTrade).toBe(false)
+    expect(countsTowardTotals(find(result, 'wrong-item'))).toBe(true)
+  })
+
+  it('leaves unrelated descriptions counted', () => {
+    const ordinary = item({ id: 'ordinary', amount: 2022.8, merchantName: 'Nvidia Shield TV' })
+    const result = applyInvestmentTradeLabels([ordinary], new Map([['item-1', securities]]), accounts)
 
     expect(find(result, 'ordinary').isInvestmentTrade).toBe(false)
-    expect(find(result, 'collision').isInvestmentTrade).toBe(false)
-    expect(find(result, 'collision-2').isInvestmentTrade).toBe(false)
-    expect(countsTowardTotals(find(result, 'collision'))).toBe(true)
+    expect(countsTowardTotals(find(result, 'ordinary'))).toBe(true)
   })
 })
 

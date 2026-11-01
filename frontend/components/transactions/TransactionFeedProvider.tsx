@@ -19,14 +19,14 @@ import { applyTransfers, mergeFeed, type FeedItem } from '@/lib/transactions/res
 import { planCachePrune } from '@/lib/transactions/pruneOrphaned'
 import { plaidItemIdsFrom } from '@/lib/financekit/mergeAccounts'
 import { applyInvestmentTradeLabels, applySweepExclusion } from '@/lib/transactions/sweepExclusion'
-import { isBrokerageCashAccount } from '@/lib/accounts/accountType'
+import { isInvestmentAccount } from '@/lib/accounts/accountType'
 import { aggregateMonth } from '@/lib/transactions/aggregateMonth'
 import { syncDriver } from '@/lib/transactions/syncDriver'
 import { reportError } from '@/lib/observability/log'
 import { detectPendingPreviews, detectTransfers } from '@/lib/transfers/autoMatch'
 import { findOrphanedTransfers } from '@/lib/transfers/orphanCleanup'
 import type { AutoMatchResult, TransferDraft } from '@/lib/transfers/autoMatch'
-import type { Category } from '@/types/domain'
+import type { ActivitySecurity, Category } from '@/types/domain'
 
 export interface TransferSuggestion extends TransferDraft {
   /**
@@ -85,8 +85,8 @@ export function TransactionFeedProvider({ children }: { children: ReactNode }) {
   const itemIds = useMemo(() => plaidItemIdsFrom(accounts.data ?? []), [accounts.data])
 
   const investmentTransactions = useInvestmentTransactions(itemIds)
-  const activityAccounts = useMemo(
-    () => (accounts.data ?? []).filter(isBrokerageCashAccount),
+  const investmentAccounts = useMemo(
+    () => (accounts.data ?? []).filter(isInvestmentAccount),
     [accounts.data],
   )
   const activityWindow = useMemo(() => {
@@ -96,23 +96,27 @@ export function TransactionFeedProvider({ children }: { children: ReactNode }) {
     return { startDate: start.toISOString().slice(0, 10), endDate: today.toISOString().slice(0, 10) }
   }, [])
   const investmentActivityQueries = api.useQueries((t) =>
-    activityAccounts.map((account) =>
+    investmentAccounts.map((account) =>
       t.investments.activity(
         { itemId: account.itemId, accountId: account.account_id, ...activityWindow },
         { staleTime: 5 * 60 * 1000, retry: 1 },
       ),
     ),
   )
-  const investmentActivity = useMemo(
-    () => investmentActivityQueries.flatMap((query, index) =>
-      (query.data?.transactions ?? []).map((transaction) => ({
-        ...transaction,
-        accountId: activityAccounts[index].account_id,
-      })),
-    ),
+  const securitiesByItem = useMemo(() => {
+    const byItem = new Map<string, Map<string, ActivitySecurity>>()
+    investmentActivityQueries.forEach((query, index) => {
+      const itemId = investmentAccounts[index]?.itemId
+      if (!itemId) return
+      const securities = byItem.get(itemId) ?? new Map()
+      for (const security of query.data?.securities ?? []) securities.set(security.securityId, security)
+      byItem.set(itemId, securities)
+    })
+    return new Map([...byItem].map(([itemId, securities]) => [itemId, [...securities.values()]]))
+  },
     // useQueries returns a fresh result array each render; dataUpdatedAt is the stable change signal.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [activityAccounts, investmentActivityQueries.map((query) => query.dataUpdatedAt).join(',')],
+    [investmentAccounts, investmentActivityQueries.map((query) => query.dataUpdatedAt).join(',')],
   )
 
   const accountIdToItemId = useMemo(() => {
@@ -194,9 +198,9 @@ export function TransactionFeedProvider({ children }: { children: ReactNode }) {
       investmentTransactions.transactions,
     )
     const withTransfers = applyTransfers(merged, transfers.data ?? [])
-    // Investment activity confirms stock-trade cash movements without adding trade rows to totals.
+    // Investment security names/tickers identify trade cash movements by their own descriptions.
     // Sweep exclusion runs last and only touches still-unpaired brokerage-cash outflows.
-    const withInvestmentLabels = applyInvestmentTradeLabels(withTransfers, investmentActivity)
+    const withInvestmentLabels = applyInvestmentTradeLabels(withTransfers, securitiesByItem, accountIdToItemId)
     const result = applySweepExclusion(withInvestmentLabels)
     return result
   }, [
@@ -209,7 +213,8 @@ export function TransactionFeedProvider({ children }: { children: ReactNode }) {
     plaidCategoryMappings.data,
     accounts.data,
     investmentTransactions.transactions,
-    investmentActivity,
+    securitiesByItem,
+    accountIdToItemId,
     transfers.data,
   ])
 
