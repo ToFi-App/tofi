@@ -1,20 +1,11 @@
-import { useCallback, useState } from 'react'
-import { useFocusEffect } from 'expo-router'
+import { useState } from 'react'
 import { currentMonth, type YearMonth } from '@/lib/transactions/filterByMonth'
 
 /**
- * The month a screen is viewing, snapping back to the real current month whenever the screen
- * regains focus. Browsing another month is a moment's detour, not a setting — tab screens stay
- * mounted, so without the snap a glance at last December would still be there days later.
+ * The month a screen is viewing, starting on the current month. It stays where it was put: leaving
+ * for another tab, or for a screen pushed over this one, and coming back finds the same month —
+ * the month is what the user chose to look at, and snapping it back undid that every time.
  */
 export function useSelectedMonth() {
-  const [month, setMonth] = useState<YearMonth>(currentMonth())
-
-  useFocusEffect(
-    useCallback(() => {
-      setMonth(currentMonth())
-    }, []),
-  )
-
-  return [month, setMonth] as const
+  return useState<YearMonth>(currentMonth)
 }

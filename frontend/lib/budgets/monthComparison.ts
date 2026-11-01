@@ -80,3 +80,52 @@ export function compareWithPreviousMonth(feed: FeedItem[], month: YearMonth, tod
     dailySpend(filterByMonth(feed, previousMonth), previousMonth, today),
   )
 }
+
+/** A running total point at `day`: the last point on or before it, 0 before the first. */
+export function totalThrough(points: CumulativePoint[], day: number): number {
+  let total = 0
+  for (const point of points) {
+    if (point.day > day) break
+    total = point.total
+  }
+  return total
+}
+
+export interface ComparisonStats {
+  /** Spent per day so far this month, and per day over all of last month. */
+  dailyAverage: number
+  previousDailyAverage: number
+  /** The month's biggest single day of spending; null before anything was spent. */
+  biggestDay: { day: number; amount: number } | null
+  /** Days anything was spent. */
+  spendingDays: number
+  /** Where this month ends at its pace so far; null once the month is over. */
+  projected: number | null
+  previousTotal: number
+}
+
+/**
+ * The figures under the comparison chart, read off the running totals so they agree with the lines
+ * drawn above them. The projection is the month's pace so far carried to its last day — crude, but
+ * it's the question the chart's two lines leave open while the month is under way.
+ */
+export function comparisonStats(comparison: MonthComparison, daysInMonth: number, isCurrentMonth: boolean): ComparisonStats {
+  const { current, previous, currentTotal } = comparison
+  const throughDay = current.at(-1)?.day ?? 0
+  const previousTotal = previous.at(-1)?.total ?? 0
+  let biggestDay: ComparisonStats['biggestDay'] = null
+  let spendingDays = 0
+  current.forEach((point, i) => {
+    const amount = point.total - (i > 0 ? current[i - 1].total : 0)
+    if (amount > 0) spendingDays += 1
+    if (amount > 0 && (biggestDay == null || amount > biggestDay.amount)) biggestDay = { day: point.day, amount }
+  })
+  return {
+    dailyAverage: throughDay > 0 ? currentTotal / throughDay : 0,
+    previousDailyAverage: previous.length > 0 ? previousTotal / (previous.at(-1)?.day ?? 1) : 0,
+    biggestDay,
+    spendingDays,
+    projected: isCurrentMonth && throughDay > 0 && throughDay < daysInMonth ? (currentTotal / throughDay) * daysInMonth : null,
+    previousTotal,
+  }
+}

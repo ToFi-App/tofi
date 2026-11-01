@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Pressable, ScrollView, Text, View } from 'react-native'
+import { Pressable, ScrollView, Text, View, useWindowDimensions } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
@@ -9,30 +9,40 @@ import { usePullToRefresh } from '@/hooks/usePullToRefresh'
 import { useAccounts } from '@/hooks/useAccounts'
 import { useBudgets } from '@/hooks/useBudgets'
 import { useCategories } from '@/hooks/useCategories'
-import { CategoryCard } from '@/components/categories/CategoryCard'
 import { MonthNavigator } from '@/components/transactions/MonthNavigator'
 import { AccountsFilterDropdown } from '@/components/ui/AccountsFilterDropdown'
 import { ErrorBanner } from '@/components/ui/ErrorBanner'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { LoadingScreen } from '@/components/ui/LoadingScreen'
-import { ViewTogglePill } from '@/components/visualizations/ViewTogglePill'
+import { Pill } from '@/components/ui/RangePills'
 import { VisualizationPager } from '@/components/visualizations/VisualizationPager'
 import { CategoryDetailSheet } from '@/components/visualizations/CategoryDetailSheet'
-import { formatAmount } from '@/lib/format/money'
 import { filterByMonth, shiftMonth } from '@/lib/transactions/filterByMonth'
 import { useSelectedMonth } from '@/hooks/useSelectedMonth'
 import { aggregateMonth } from '@/lib/transactions/aggregateMonth'
 import { hasReimbursementSurplus } from '@/lib/transactions/totals'
 import { UNCATEGORIZED_ID, computeDonutSegments } from '@/lib/transactions/visualizationData'
 import type { DonutSegment } from '@/lib/transactions/visualizationData'
-import { resolveBudgetsForMonth } from '@/lib/budgets/budgetMath'
+import { budgetStatus, monthElapsedFraction, resolveBudgetsForMonth } from '@/lib/budgets/budgetMath'
+import { compareWithPreviousMonth } from '@/lib/budgets/monthComparison'
+import { reviewPrompt } from '@/lib/cashflow/reviewPrompt'
+import { arrangeTiles, tileState } from '@/lib/home/categoryTiles'
+import { MonthOverviewCard } from '@/components/home/MonthOverviewCard'
+import { TileRows, type GridTile } from '@/components/home/TileRows'
+import { useTransactionEditorActions } from '@/components/transactions/TransactionEditorProvider'
+import type { YearMonth } from '@/lib/transactions/filterByMonth'
+
+/** The screen's side padding (px-5) and the grid's gutter. */
+const SCREEN_PADDING = 20
+const TILE_GAP = 10
+const TILE_HEIGHT = 116
 
 export default function DashboardScreen() {
   const [month, setMonth] = useSelectedMonth()
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null)
   const [expensesOpen, setExpensesOpen] = useState(true)
   const [incomeOpen, setIncomeOpen] = useState(true)
-  const [vizMode, setVizMode] = useState(false)
+  const [view, setView] = useState<'grid' | 'chart'>('grid')
   const [detailState, setDetailState] = useState<{ segment: DonutSegment; mode: 'expense' | 'income' } | null>(null)
 
   const { feed, isLoading, error, refresh } = useTransactionFeed()
@@ -40,6 +50,7 @@ export default function DashboardScreen() {
   const accounts = useAccounts()
   const budgets = useBudgets()
   const categories = useCategories()
+  const { openNewManual } = useTransactionEditorActions()
 
   const accountFilteredFeed = useMemo(
     () => (selectedAccountId ? feed.filter((item) => item.accountId === selectedAccountId) : feed),
@@ -47,14 +58,35 @@ export default function DashboardScreen() {
   )
   const monthFeed = useMemo(() => filterByMonth(accountFilteredFeed, month), [accountFilteredFeed, month])
 
-  const { spendByCategory, incomeByCategory, totalExpense, totalIncome } = useMemo(
+  const { spendByCategory, incomeByCategory, spendByDay, spendByDayCategory, totalExpense, totalIncome } = useMemo(
     () => aggregateMonth(monthFeed),
     [monthFeed],
   )
 
+  const { width: windowWidth } = useWindowDimensions()
+  const tileWidth = (windowWidth - SCREEN_PADDING * 2 - TILE_GAP * 2) / 3
+
   // Budgets are effective-dated: the ring on each card must reflect the amount in force for the
   // viewed month (and vanish for months where the budget didn't exist or was stopped).
   const resolvedBudgets = useMemo(() => resolveBudgetsForMonth(budgets.data ?? [], month), [budgets.data, month])
+
+  const elapsed = monthElapsedFraction(month)
+  const isCurrentMonth = elapsed > 0 && elapsed < 1
+  const daysInMonth = new Date(month.year, month.month, 0).getDate()
+
+  // The tiles' rings summed, for the overview card's budget bar.
+  const monthBudget = useMemo(() => {
+    if (resolvedBudgets.size === 0) return null
+    let budget = 0
+    let spent = 0
+    for (const resolved of resolvedBudgets.values()) {
+      budget += resolved.amount
+      spent += spendByCategory.get(resolved.categoryId) ?? 0
+    }
+    return { budget, spent, status: budgetStatus(spent, budget, elapsed), elapsed }
+  }, [resolvedBudgets, spendByCategory, elapsed])
+  // This month against last as running totals — every category, budgeted or not — for the chart view.
+  const comparison = useMemo(() => compareWithPreviousMonth(accountFilteredFeed, month), [accountFilteredFeed, month])
 
   // The category cards open the same detail sheet the donut chart does, so their segments are
   // built the same way — otherwise a card and its chart slice could disagree on percentage or
@@ -150,23 +182,80 @@ export default function DashboardScreen() {
     setDetailState({ segment, mode })
   }
 
+  const monthParams = (target: YearMonth) => ({ year: String(target.year), month: String(target.month) })
+  const openCalendar = () =>
+    router.push({
+      pathname: '/(tabs)/(home)/calendar',
+      params: { ...monthParams(month), accountId: selectedAccountId ?? '' },
+    })
+
+  // The same header row as Net Worth and Investments — which view on the left, the page's controls
+  // on the right — with the month, Home's subject, as the title under it.
   const topBar = (
-    <View className="flex-row items-center">
-      <View className="flex-1 flex-row">
-        <AccountsFilterDropdown accounts={accounts.data ?? []} selectedAccountId={selectedAccountId} onSelect={setSelectedAccountId} />
+    <View className="gap-3">
+      <View className="flex-row items-center justify-between">
+        <View className="flex-row gap-2">
+          <Pill label="Summary" isSelected={view === 'grid'} onPress={() => setView('grid')} />
+          <Pill label="Charts" isSelected={view === 'chart'} onPress={() => setView('chart')} />
+        </View>
+        <View className="flex-row items-center gap-4">
+          <AccountsFilterDropdown variant="icon" accounts={accounts.data ?? []} selectedAccountId={selectedAccountId} onSelect={setSelectedAccountId} />
+          <Pressable onPress={openNewManual} hitSlop={8} accessibilityLabel="Write a transaction">
+            <Ionicons name="create-outline" size={24} color={colors.textPrimary} />
+          </Pressable>
+          <Pressable onPress={openCalendar} hitSlop={8} accessibilityLabel="Calendar">
+            <Ionicons name="calendar-outline" size={23} color={colors.textPrimary} />
+          </Pressable>
+        </View>
       </View>
-      <MonthNavigator month={month} onPrevious={() => setMonth(shiftMonth(month, -1))} onNext={() => setMonth(shiftMonth(month, 1))} onSelect={setMonth} />
-      <View className="flex-1 items-end">
-        <Pressable
-          onPress={() => router.push({ pathname: '/(tabs)/(home)/cash-flow', params: { year: String(month.year), month: String(month.month) } })}
-          hitSlop={10}
-          accessibilityLabel="Cash flow"
-        >
-          <Ionicons name="git-network-outline" size={22} color={colors.primary} />
-        </Pressable>
-      </View>
+      <MonthNavigator
+        variant="title"
+        month={month}
+        onPrevious={() => setMonth(shiftMonth(month, -1))}
+        onNext={() => setMonth(shiftMonth(month, 1))}
+        onSelect={setMonth}
+      />
     </View>
   )
+
+
+  // One day per bar, through today: what a wide tile draws under its figures.
+  const barDays = elapsed >= 1 ? daysInMonth : isCurrentMonth ? new Date().getDate() : 0
+  const dailySpendOf = (categoryId: string) =>
+    Array.from({ length: barDays }, (_, i) => {
+      const key = `${month.year}-${String(month.month).padStart(2, '0')}-${String(i + 1).padStart(2, '0')}`
+      return Math.max(0, spendByDayCategory.get(key)?.get(categoryId === UNCATEGORIZED_ID ? null : categoryId) ?? 0)
+    })
+
+  function tileFor(
+    category: { id: string; name: string; icon: string | null; color: string },
+    spent: number,
+    mode: 'expense' | 'income',
+  ): Omit<GridTile, 'wide'> {
+    const budget = mode === 'expense' ? (resolvedBudgets.get(category.id)?.amount ?? null) : null
+    const state = tileState(spent, budget, elapsed)
+    return {
+      ...category,
+      spent,
+      budget,
+      state,
+      onPress: () => openCategoryDetail(category.id, mode),
+    }
+  }
+
+  const expenseTiles: GridTile[] = arrangeTiles(
+    [
+      ...expenseCategories.map((c) => tileFor(c, spendByCategory.get(c.id) ?? 0, 'expense')),
+      ...(uncategorizedExpense
+        ? [tileFor({ ...uncategorizedExpense, id: UNCATEGORIZED_ID }, uncategorizedExpense.amount, 'expense')]
+        : []),
+    ],
+    totalExpense,
+  ).map((tile) => (tile.wide ? { ...tile, dailySpend: dailySpendOf(tile.id) } : tile))
+  const incomeTiles: GridTile[] = [
+    ...incomeCategories.map((c) => tileFor(c, incomeByCategory.get(c.id) ?? 0, 'income')),
+    ...(uncategorizedIncome ? [tileFor({ ...uncategorizedIncome, id: UNCATEGORIZED_ID }, uncategorizedIncome.amount, 'income')] : []),
+  ].map((tile) => ({ ...tile, wide: false }))
 
   // Save errors are reported by the edit sheets themselves (CategoryDetailSheet owns the editor),
   // so this screen only surfaces its own data-loading failure.
@@ -174,7 +263,7 @@ export default function DashboardScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
-      {vizMode ? (
+      {view === 'chart' ? (
         <>
           <View className="px-5 pt-4 pb-2" style={{ gap: 12 }}>
             {topBar}
@@ -188,83 +277,49 @@ export default function DashboardScreen() {
             totalExpense={totalExpense}
             totalIncome={totalIncome}
             month={month}
+            comparison={comparison}
+            isCurrentMonth={isCurrentMonth}
             onSegmentPress={(segment, mode) => setDetailState({ segment, mode })}
           />
         </>
       ) : (
-        <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerClassName="gap-5 px-5 py-4" refreshControl={refreshControl}>
+        <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerClassName="gap-5 px-5 pb-8 pt-4" refreshControl={refreshControl}>
           {topBar}
           {errorBanner}
 
-          <Pressable onPress={() => setExpensesOpen((v) => !v)} className="flex-row items-center justify-center gap-2">
-            <Text className="font-sansSemi text-base text-textPrimary">Expenses {formatAmount(totalExpense)}</Text>
-            <Ionicons name={expensesOpen ? 'chevron-up' : 'chevron-down'} size={14} color={colors.textMuted} />
-          </Pressable>
-          {expensesOpen ? (
-            <View className="flex-row flex-wrap" style={{ gap: 10 }}>
-              {expenseCategories.map((category) => (
-                <View key={category.id} style={{ width: '31%' }}>
-                  <CategoryCard
-                    name={category.name}
-                    icon={category.icon}
-                    color={category.color}
-                    spent={spendByCategory.get(category.id) ?? 0}
-                    budget={resolvedBudgets.get(category.id)?.amount ?? null}
-                    onPress={() => openCategoryDetail(category.id, 'expense')}
-                  />
-                </View>
-              ))}
-              {uncategorizedExpense ? (
-                <View style={{ width: '31%' }}>
-                  <CategoryCard
-                    name={uncategorizedExpense.name}
-                    icon={uncategorizedExpense.icon}
-                    color={uncategorizedExpense.color}
-                    spent={uncategorizedExpense.amount}
-                    budget={null}
-                    onPress={() => openCategoryDetail(UNCATEGORIZED_ID, 'expense')}
-                  />
-                </View>
-              ) : null}
+          {/* Pulled closer to the month title: the overview reads as that month's, not a section of its own. */}
+          <View style={{ marginTop: -8 }}>
+            <MonthOverviewCard
+              month={month}
+              totalExpense={totalExpense}
+              totalIncome={totalIncome}
+              spendByDay={spendByDay}
+              budget={monthBudget}
+              review={reviewPrompt(month, new Date())}
+              onReviewPress={(target) => router.push({ pathname: '/(tabs)/(home)/cash-flow', params: monthParams(target) })}
+              onBudgetPress={() => router.push({ pathname: '/(tabs)/(home)/budgets', params: monthParams(month) })}
+              onCalendarPress={openCalendar}
+            />
+          </View>
+
+          {/* Each group of tiles under its own heading that folds it away — no totals, the card above
+              has them. The heading also marks where the overview ends and the categories begin. */}
+          {expenseTiles.length > 0 ? (
+            <View className="gap-3">
+              <SectionToggle title="Expenses" isOpen={expensesOpen} onToggle={() => setExpensesOpen((v) => !v)} />
+              {expensesOpen ? <TileRows tiles={expenseTiles} tileWidth={tileWidth} tileHeight={TILE_HEIGHT} gap={TILE_GAP} /> : null}
             </View>
           ) : null}
 
-          <Pressable onPress={() => setIncomeOpen((v) => !v)} className="flex-row items-center justify-center gap-2">
-            <Text className="font-sansSemi text-base text-textPrimary">Income {formatAmount(totalIncome)}</Text>
-            <Ionicons name={incomeOpen ? 'chevron-up' : 'chevron-down'} size={14} color={colors.textMuted} />
-          </Pressable>
-          {incomeOpen ? (
-            <View className="flex-row flex-wrap" style={{ gap: 10 }}>
-              {incomeCategories.map((category) => (
-                <View key={category.id} style={{ width: '31%' }}>
-                  <CategoryCard
-                    name={category.name}
-                    icon={category.icon}
-                    color={category.color}
-                    spent={incomeByCategory.get(category.id) ?? 0}
-                    budget={null}
-                    onPress={() => openCategoryDetail(category.id, 'income')}
-                  />
-                </View>
-              ))}
-              {uncategorizedIncome ? (
-                <View style={{ width: '31%' }}>
-                  <CategoryCard
-                    name={uncategorizedIncome.name}
-                    icon={uncategorizedIncome.icon}
-                    color={uncategorizedIncome.color}
-                    spent={uncategorizedIncome.amount}
-                    budget={null}
-                    onPress={() => openCategoryDetail(UNCATEGORIZED_ID, 'income')}
-                  />
-                </View>
-              ) : null}
+          {incomeTiles.length > 0 ? (
+            <View className="gap-3">
+              <SectionToggle title="Income" isOpen={incomeOpen} onToggle={() => setIncomeOpen((v) => !v)} />
+              {incomeOpen ? <TileRows tiles={incomeTiles} tileWidth={tileWidth} tileHeight={TILE_HEIGHT} gap={TILE_GAP} /> : null}
             </View>
           ) : null}
         </ScrollView>
       )}
 
-      <ViewTogglePill vizMode={vizMode} onToggle={() => setVizMode((v) => !v)} />
 
       <CategoryDetailSheet
         visible={detailState != null}
@@ -275,5 +330,20 @@ export default function DashboardScreen() {
         onClose={() => setDetailState(null)}
       />
     </SafeAreaView>
+  )
+}
+
+/** A group's heading, left-aligned like a section title, that folds the group away. */
+function SectionToggle({ title, isOpen, onToggle }: { title: string; isOpen: boolean; onToggle: () => void }) {
+  return (
+    <Pressable
+      onPress={onToggle}
+      accessibilityRole="button"
+      accessibilityState={{ expanded: isOpen }}
+      className="flex-row items-center gap-1.5 self-start pt-2"
+    >
+      <Text className="font-sansSemi text-md text-textPrimary">{title}</Text>
+      <Ionicons name={isOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textSecondary} />
+    </Pressable>
   )
 }

@@ -4,7 +4,6 @@ import { Linking, Pressable, ScrollView, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { colors } from '@/constants/theme'
-import { useAccounts } from '@/hooks/useAccounts'
 import { useAccountOrder } from '@/hooks/useAccountOrder'
 import { useAmountsMasked } from '@/hooks/useAmountsMasked'
 import { useTransactionFeed } from '@/hooks/useTransactionFeed'
@@ -17,9 +16,8 @@ import { AccountConsole, AccountSection } from '@/components/accounts/AccountSec
 import { ReorderableList } from '@/components/accounts/ReorderableList'
 import { AddAccountSheet } from '@/components/accounts/AddAccountSheet'
 import { AccountDetailSheet } from '@/components/accounts/AccountDetailSheet'
-import { InvestmentDetailSheet } from '@/components/accounts/InvestmentDetailSheet'
-import { useLiveInvestments } from '@/hooks/useLiveInvestments'
-import { useInvestmentHistories } from '@/hooks/useInvestmentHistory'
+import { useInvestmentPortfolio } from '@/hooks/useInvestmentPortfolio'
+import { setInvestmentAccountFilter } from '@/hooks/useInvestmentAccountFilter'
 import { ErrorBanner } from '@/components/ui/ErrorBanner'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { computeNetWorthTotals, isInvestmentAccount, isLiabilityAccount } from '@/lib/accounts/netWorth'
@@ -34,12 +32,9 @@ export default function AccountsTab() {
   const [creditOpen, setCreditOpen] = useState(true)
   // 'cash' is the built-in cash row, which has no Plaid account behind it.
   const [detailTarget, setDetailTarget] = useState<Account | 'cash' | null>(null)
-  const [investmentDetail, setInvestmentDetail] = useState<Account | null>(null)
-  const accounts = useAccounts()
-  // Investment balances at the market's latest prices. Everything on this screen reads these, so
-  // the list, net worth and the account sheet all show the same figure for an account.
-  const live = useLiveInvestments(accounts.data)
-  const liveAccounts = live.accounts
+  // Investment balances at the market's latest prices, shared with the Investments tab, so the
+  // list, net worth and that tab all show the same figure for an account.
+  const { accounts, liveAccounts, investmentAccounts, histories: investmentHistories } = useInvestmentPortfolio()
   const accountOrder = useAccountOrder()
   // A lifted row and a scrolling page are the same downward drag, so the page stops while
   // a row is in the air.
@@ -59,21 +54,7 @@ export default function AccountsTab() {
     () => (liveAccounts ?? []).filter((a) => !isLiabilityAccount(a) && !isInvestmentAccount(a)),
     [liveAccounts],
   )
-  const investmentAccounts = useMemo(() => (liveAccounts ?? []).filter(isInvestmentAccount), [liveAccounts])
-  // Every investment account's history, rebuilt once here: net worth's investment bands and each
-  // account's sheet read the same rebuild, from one price request for the whole screen.
-  const historyInputs = useMemo(
-    () =>
-      investmentAccounts.map((a) => ({
-        itemId: a.itemId,
-        accountId: a.account_id,
-        anchorValue: a.balances?.current ?? 0,
-        holdings: live.holdingsByAccount.get(a.account_id),
-        holdingsFailed: live.failedHoldings.has(a.account_id),
-      })),
-    [investmentAccounts, live.holdingsByAccount, live.failedHoldings],
-  )
-  const investmentHistories = useInvestmentHistories(historyInputs)
+  // Net worth's investment bands read the same rebuild the Investments tab draws its line from.
   const rebuiltSeries = useMemo(() => {
     const series = new Map<string, Array<{ date: string; value: number }>>()
     for (const [accountId, state] of investmentHistories) if (state.history) series.set(accountId, state.history.points)
@@ -91,16 +72,6 @@ export default function AccountsTab() {
     () => computeNetWorthTotals(liveAccounts ?? [], feed),
     [liveAccounts, feed],
   )
-
-  // Sliced off the same feed the other sheets read, rather than from the MMKV cache this sheet
-  // used to read directly: only a resolved FeedItem carries transferKind and links, which is what
-  // lets a matched transfer grey out and name its counterpart.
-  const investmentDetailItems = useMemo(
-    () => (investmentDetail ? feed.filter((item) => item.accountId === investmentDetail.account_id) : []),
-    [investmentDetail, feed],
-  )
-
-
 
   const detail = useMemo(() => {
     if (detailTarget == null) return null
@@ -295,7 +266,11 @@ export default function AccountsTab() {
                     logo={account.institutionLogo}
                     itemId={account.itemId}
                     isMasked={isMasked}
-                    onPress={() => setInvestmentDetail(account)}
+                    // Straight to the account's performance: no summary in between to tap through.
+                    onPress={() => {
+                      setInvestmentAccountFilter(account.account_id)
+                      router.navigate('/(tabs)/investments')
+                    }}
                     {...handlers}
                   />
                 )}
@@ -357,18 +332,6 @@ export default function AccountsTab() {
           },
         }}
         onConnectNewBank={addAccount.connectNewBank}
-      />
-
-      <InvestmentDetailSheet
-        // The tapped account, read back from the live list so its balance keeps up with quotes.
-        account={investmentDetail ? (liveAccounts?.find((a) => a.account_id === investmentDetail.account_id) ?? investmentDetail) : null}
-        liveHoldings={investmentDetail ? live.holdingsByAccount.get(investmentDetail.account_id) : undefined}
-        investmentHistory={investmentDetail ? investmentHistories.get(investmentDetail.account_id) : undefined}
-        items={investmentDetailItems}
-        feed={feed}
-        categoryById={categoryById}
-        isMasked={isMasked}
-        onClose={() => setInvestmentDetail(null)}
       />
 
       <AccountDetailSheet

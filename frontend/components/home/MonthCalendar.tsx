@@ -1,8 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Pressable, ScrollView, Text, View } from 'react-native'
-import { useLocalSearchParams } from 'expo-router'
-import { Ionicons } from '@expo/vector-icons'
-import { SafeAreaView } from 'react-native-safe-area-context'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { ScrollView, Text, View } from 'react-native'
 import { colors } from '@/constants/theme'
 import { useTransactionFeed } from '@/hooks/useTransactionFeed'
 import { usePullToRefresh } from '@/hooks/usePullToRefresh'
@@ -10,9 +7,7 @@ import type { FeedItem } from '@/lib/transactions/resolveFeed'
 import { useAccounts } from '@/hooks/useAccounts'
 import { useTransfers } from '@/hooks/useTransfers'
 import { DayGroupedTransactions } from '@/components/transactions/DayGroupedTransactions'
-import { MonthNavigator } from '@/components/transactions/MonthNavigator'
 import { CalendarCell } from '@/components/transactions/CalendarCell'
-import { AccountsFilterDropdown } from '@/components/ui/AccountsFilterDropdown'
 import {
   TransactionEditorErrorBanner,
   useTransactionEditorActions,
@@ -20,10 +15,8 @@ import {
 import { TransferSuggestionsBanner, TransferSuggestionsSheet } from '@/components/transfers/TransferSuggestionsSheet'
 import { useTransferDismissals } from '@/hooks/useTransferDismissals'
 import { ErrorBanner } from '@/components/ui/ErrorBanner'
-import { LoadingScreen } from '@/components/ui/LoadingScreen'
 import { formatAmount } from '@/lib/format/money'
-import { filterByMonth, shiftMonth } from '@/lib/transactions/filterByMonth'
-import { useSelectedMonth } from '@/hooks/useSelectedMonth'
+import { filterByMonth, type YearMonth } from '@/lib/transactions/filterByMonth'
 import { aggregateMonth } from '@/lib/transactions/aggregateMonth'
 import { toDateKey } from '@/lib/dates/dateKey'
 import type { TransferSuggestion } from '@/hooks/useTransactionFeed'
@@ -35,11 +28,19 @@ const NO_HEAT: DayHeat = { tone: 'expense', intensity: 0 }
 
 type TransactionFeedState = ReturnType<typeof useTransactionFeed>
 
-function TransactionsScreenContent({ feedState }: { feedState: TransactionFeedState }) {
-  const { categoryId: categoryIdParam } = useLocalSearchParams<{ categoryId?: string }>()
-  const [month, setMonth] = useSelectedMonth()
-  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null)
-  const [categoryFilter, setCategoryFilter] = useState<string | null>(categoryIdParam ?? null)
+interface MonthCalendarProps {
+  month: YearMonth
+  selectedAccountId: string | null
+  /** The screen's top bar, scrolled with the calendar so the screen reads as one page. */
+  header: ReactNode
+}
+
+function MonthCalendarContent({
+  feedState,
+  month,
+  selectedAccountId,
+  header,
+}: MonthCalendarProps & { feedState: TransactionFeedState }) {
   const [suggestionsSheetOpen, setSuggestionsSheetOpen] = useState(false)
   // Only for the suggestion actions below. Everything the edit sheets can fail at reports through
   // the editor's own saveError.
@@ -53,7 +54,7 @@ function TransactionsScreenContent({ feedState }: { feedState: TransactionFeedSt
   const refreshControl = usePullToRefresh(refresh)
   // Only the two callbacks a list needs, and both are stable — so none of the edit sheets' state
   // reaches this component, and opening one no longer re-renders the month behind it.
-  const { openTransaction, openNewManual } = useTransactionEditorActions()
+  const { openTransaction } = useTransactionEditorActions()
   const transferDismissals = useTransferDismissals()
   const accounts = useAccounts()
   const transfers = useTransfers()
@@ -64,14 +65,7 @@ function TransactionsScreenContent({ feedState }: { feedState: TransactionFeedSt
   )
   const monthFeed = useMemo(() => filterByMonth(accountFilteredFeed, month), [accountFilteredFeed, month])
 
-  const filteredFeed = useMemo(
-    () => (categoryFilter ? monthFeed.filter((item) => item.categoryId === categoryFilter) : monthFeed),
-    [monthFeed, categoryFilter],
-  )
-
-  useEffect(() => {
-    setCategoryFilter(categoryIdParam ?? null)
-  }, [categoryIdParam])
+  const filteredFeed = monthFeed
 
   useEffect(() => {
     const liveDates = new Set(filteredFeed.map((item) => item.date))
@@ -111,12 +105,10 @@ function TransactionsScreenContent({ feedState }: { feedState: TransactionFeedSt
   )
 
   // Per-day category mix and heat shade. Built once per month, so each memoized cell gets the
-  // same objects back until the data changes. Hidden under a category filter, where every day's
-  // mix would only repeat the filter. The heat follows each day's net — the amount printed on it —
+  // same objects back until the data changes. The heat follows each day's net — the amount printed on it —
   // so an income day shades green and a spending day blends its categories.
   const dayActivity = useMemo(() => {
     const activity = new Map<string, { squares: DaySquare[]; heat: DayHeat }>()
-    if (categoryFilter) return activity
     let biggestSpend = 0
     let biggestIncome = 0
     for (const { net } of spendByDay.values()) {
@@ -130,7 +122,7 @@ function TransactionsScreenContent({ feedState }: { feedState: TransactionFeedSt
       activity.set(date, { squares, heat: dayHeat(net, extremes) })
     }
     return activity
-  }, [spendByDay, spendByDayCategory, categoryById, categoryFilter])
+  }, [spendByDay, spendByDayCategory, categoryById])
 
   // Hoisted out of the JSX so DayGroupedTransactions' memo actually holds. Inline arrows here gave
   // it three fresh props on every render of this screen — including the ten a single sheet round
@@ -183,47 +175,23 @@ function TransactionsScreenContent({ feedState }: { feedState: TransactionFeedSt
     }
   }
 
-  if (isLoading) return <LoadingScreen />
+  if (isLoading) return null
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
-      <View className="flex-row items-center px-5 py-3">
-        <View className="flex-1 flex-row">
-          <AccountsFilterDropdown accounts={accounts.data ?? []} selectedAccountId={selectedAccountId} onSelect={setSelectedAccountId} />
-        </View>
-        <MonthNavigator month={month} onPrevious={() => setMonth(shiftMonth(month, -1))} onNext={() => setMonth(shiftMonth(month, 1))} onSelect={setMonth} />
-        <View className="flex-1 items-end">
-          <Pressable onPress={openNewManual} accessibilityLabel="Add Transaction">
-            <Ionicons name="add-circle-outline" size={24} color={colors.textPrimary} />
-          </Pressable>
-        </View>
-      </View>
-
-      {categoryFilter ? (
-        <View className="flex-row px-5 pb-2">
-          <Pressable
-            onPress={() => setCategoryFilter(null)}
-            accessibilityLabel="Clear category filter"
-            className="flex-row items-center gap-2 self-start rounded-full bg-surface px-3 py-1.5"
-          >
-            <Text className="font-sansMed text-sm text-textPrimary">
-              {categoryById.get(categoryFilter)?.name ?? 'Category'}
-            </Text>
-            <Text className="font-sansMed text-sm text-textMuted">×</Text>
-          </Pressable>
-        </View>
-      ) : null}
-
-      {error ? <ErrorBanner message="Something went wrong loading your transactions." /> : null}
-      <TransactionEditorErrorBanner />
-      {suggestionError ? <ErrorBanner message={suggestionError} onDismiss={() => setSuggestionError(null)} /> : null}
-
+    <>
       <ScrollView
         ref={scrollRef}
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={{ paddingBottom: 40 }}
         refreshControl={refreshControl}
       >
+        <View className="gap-5 px-5 pb-4 pt-4">
+          {header}
+          {error ? <ErrorBanner message="Something went wrong loading your transactions." /> : null}
+          <TransactionEditorErrorBanner />
+          {suggestionError ? <ErrorBanner message={suggestionError} onDismiss={() => setSuggestionError(null)} /> : null}
+        </View>
+
         {/* Calendar */}
         <View className="mx-5 mb-4 rounded-xl bg-surface p-3">
           <View className="mb-1 flex-row">
@@ -303,18 +271,21 @@ function TransactionsScreenContent({ feedState }: { feedState: TransactionFeedSt
         onConfirm={handleConfirmSuggestion}
         onDismiss={handleDismissSuggestion}
       />
-    </SafeAreaView>
+    </>
   )
 }
 
 /**
+ * Home's calendar view: the month as days, each shaded by what it spent, over the day-by-day list a
+ * tapped day scrolls to.
+ *
  * Thin on purpose. It owns the feed query and nothing else, so the provider's state changes stop
  * here: the content element below is created by this render and is unchanged by reference when the
- * provider re-renders for a sheet, which is what lets React skip the whole screen.
+ * provider re-renders for a sheet, which is what lets React skip the whole calendar.
  */
-export default function TransactionsScreen() {
+export function MonthCalendar(props: MonthCalendarProps) {
   const feedState = useTransactionFeed()
   // The editor is mounted once in the tabs layout; see AuthedShell there for why it cannot live
   // inside a sheet or a screen.
-  return <TransactionsScreenContent feedState={feedState} />
+  return <MonthCalendarContent feedState={feedState} {...props} />
 }

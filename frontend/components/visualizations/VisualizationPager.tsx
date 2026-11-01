@@ -12,6 +12,8 @@ import { SpendingTrend } from './SpendingTrend'
 import { ExpenseIncomeSummary } from './ExpenseIncomeSummary'
 import { CategoryBreakdownRow } from './CategoryBreakdownRow'
 import { TopMerchants } from './TopMerchants'
+import { SpendingComparison } from './SpendingComparison'
+import type { MonthComparison } from '@/lib/budgets/monthComparison'
 
 interface VisualizationPagerProps {
   monthFeed: FeedItem[]
@@ -21,6 +23,9 @@ interface VisualizationPagerProps {
   totalExpense: number
   totalIncome: number
   month: YearMonth
+  /** This month's spending against last month's, for the comparison page. */
+  comparison: MonthComparison
+  isCurrentMonth: boolean
   onSegmentPress: (segment: DonutSegment, mode: 'expense' | 'income') => void
 }
 
@@ -32,6 +37,8 @@ export function VisualizationPager({
   totalExpense,
   totalIncome,
   month,
+  comparison,
+  isCurrentMonth,
   onSegmentPress,
 }: VisualizationPagerProps) {
   const { width } = useWindowDimensions()
@@ -106,17 +113,23 @@ export function VisualizationPager({
           )}
         </ScrollView>
 
-        {/* Page 2: Trend */}
+        {/* Page 2: The month over time — against last month, then day by day and by merchant. The
+            comparison is spending only, whichever mode the rest of the pager is in. */}
         <ScrollView style={{ width }} contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 80 }} nestedScrollEnabled>
-          {isEmpty ? (
-            <View style={{ paddingVertical: 80, alignItems: 'center' }}>
-              <Text className="font-sans text-base text-textMuted">{emptyLabel}</Text>
-            </View>
-          ) : (
+          <View
+            className="rounded-lg bg-surface"
+            style={{ padding: 16, marginTop: 8, shadowColor: '#0F766E', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 16, elevation: 3 }}
+          >
+            <SpendingComparison month={month} comparison={comparison} isCurrentMonth={isCurrentMonth} />
+          </View>
+
+          {/* The month's days and where the money went, under the comparison: one page for the
+              month over time, the donut page for the month by category. */}
+          {isEmpty ? null : (
             <>
               <View
                 className="rounded-lg bg-surface"
-                style={{ padding: 12, marginTop: 8, shadowColor: '#0F766E', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 16, elevation: 3 }}
+                style={{ padding: 12, marginTop: 16, shadowColor: '#0F766E', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 16, elevation: 3 }}
               >
                 <SpendingTrend points={dailyPoints} lineColor={lineColor} month={month} />
               </View>
@@ -136,8 +149,8 @@ export function VisualizationPager({
         </ScrollView>
       </ScrollView>
 
-      {/* Dot indicators — the bottom inset clears the floating tab bar, the 52 the toggle pill above it */}
-      <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 6, paddingBottom: insets.bottom + 52 }}>
+      {/* Dot indicators — the bottom inset clears the floating tab bar. */}
+      <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 6, paddingBottom: insets.bottom + 8 }}>
         {[0, 1].map((i) => (
           <View
             key={i}

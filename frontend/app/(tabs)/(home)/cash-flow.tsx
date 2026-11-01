@@ -21,18 +21,11 @@ import { buildFlowGraph } from '@/lib/cashflow/buildFlowGraph'
 import { buildHouseholdFlow, type AccountCard, type Lane, type Ribbon, type SideNode } from '@/lib/cashflow/householdFlow'
 import { formatMaskableAmount } from '@/lib/format/money'
 import { round2 } from '@/lib/accounts/netWorth'
-import { currentMonth, monthLabel, shiftMonth, type YearMonth } from '@/lib/transactions/filterByMonth'
+import { monthFromParams, monthLabel, shiftMonth, type YearMonth } from '@/lib/transactions/filterByMonth'
 import type { FeedItem } from '@/lib/transactions/resolveFeed'
 
 const MAX_INCOME_ROWS = 4
 const MAX_SPEND_ROWS = 6
-
-function monthFromParams(params: { year?: string; month?: string }): YearMonth {
-  const year = Number(params.year)
-  const month = Number(params.month)
-  if (Number.isInteger(year) && Number.isInteger(month) && month >= 1 && month <= 12) return { year, month }
-  return currentMonth()
-}
 
 function byDateDesc(a: FeedItem, b: FeedItem): number {
   return b.date.localeCompare(a.date)
@@ -61,8 +54,8 @@ const RIBBON_SUBTITLES: Record<Ribbon['kind'], string> = {
 export default function CashFlowScreen() {
   const params = useLocalSearchParams<{ year?: string; month?: string }>()
   const [month, setMonth] = useState<YearMonth>(() => monthFromParams(params))
-  // A hidden tab stays mounted, so each open re-reads the month Home passed rather than keeping
-  // whichever month was being browsed last time.
+  // Each open re-reads the month Home passed rather than keeping whichever month was being browsed
+  // last time.
   useFocusEffect(
     useCallback(() => {
       setMonth(monthFromParams({ year: params.year, month: params.month }))

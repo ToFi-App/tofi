@@ -15,9 +15,14 @@ interface MonthNavigatorProps {
   onNext: () => void
   /** Jump straight to a month/year picked from the label's popover. */
   onSelect: (month: YearMonth) => void
+  /** 'title' draws the month as the page's large title, left-aligned, with the step arrows at the
+   *  right — for a screen whose whole subject is the month. The title still opens the picker, but
+   *  carries no chevron of its own: beside the arrows it was one mark too many. Defaults to the
+   *  compact centred control. */
+  variant?: 'inline' | 'title'
 }
 
-export function MonthNavigator({ month, onPrevious, onNext, onSelect }: MonthNavigatorProps) {
+export function MonthNavigator({ month, onPrevious, onNext, onSelect, variant = 'inline' }: MonthNavigatorProps) {
   const labelRef = useRef<View>(null)
   // Popover position in window coordinates, null while closed. A small anchored card keeps a
   // quick month hop lightweight — a bottom sheet reads as a whole task, this reads as a menu.
@@ -41,26 +46,55 @@ export function MonthNavigator({ month, onPrevious, onNext, onSelect }: MonthNav
     setAnchor(null)
   }
 
+  const isTitle = variant === 'title'
+  const previous = (
+    <Pressable onPress={onPrevious} accessibilityLabel="Previous month" hitSlop={8}>
+      <Ionicons name="chevron-back" size={20} color={colors.textSecondary} />
+    </Pressable>
+  )
+  const next = (
+    <Pressable onPress={onNext} accessibilityLabel="Next month" hitSlop={8}>
+      <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+    </Pressable>
+  )
+
   return (
     <>
-      <View className="flex-row items-center justify-center gap-4">
-        <Pressable onPress={onPrevious} accessibilityLabel="Previous month" hitSlop={8}>
-          <Ionicons name="chevron-back" size={20} color={colors.textSecondary} />
-        </Pressable>
-        <Pressable
-          ref={labelRef}
-          onPress={openPicker}
-          accessibilityLabel="Select month and year"
-          hitSlop={8}
-          className="flex-row items-center gap-1"
-        >
-          <Text className="font-sansSemi text-base text-textPrimary">{monthLabel(month)}</Text>
-          <Ionicons name="chevron-down" size={13} color={colors.textSecondary} />
-        </Pressable>
-        <Pressable onPress={onNext} accessibilityLabel="Next month" hitSlop={8}>
-          <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-        </Pressable>
-      </View>
+      {isTitle ? (
+        <View className="flex-row items-center justify-between">
+          <Pressable
+            ref={labelRef}
+            onPress={openPicker}
+            accessibilityRole="header"
+            accessibilityLabel={`${monthLabel(month)}. Select month and year`}
+            hitSlop={8}
+            className="shrink flex-row items-center gap-1.5"
+          >
+            <Text className="shrink font-display text-xl text-textPrimary" numberOfLines={1}>
+              {monthLabel(month)}
+            </Text>
+          </Pressable>
+          <View className="flex-row items-center gap-5">
+            {previous}
+            {next}
+          </View>
+        </View>
+      ) : (
+        <View className="flex-row items-center justify-center gap-4">
+          {previous}
+          <Pressable
+            ref={labelRef}
+            onPress={openPicker}
+            accessibilityLabel="Select month and year"
+            hitSlop={8}
+            className="flex-row items-center gap-1"
+          >
+            <Text className="font-sansSemi text-base text-textPrimary">{monthLabel(month)}</Text>
+            <Ionicons name="chevron-down" size={13} color={colors.textSecondary} />
+          </Pressable>
+          {next}
+        </View>
+      )}
 
       <Modal transparent visible={anchor != null} animationType="fade" onRequestClose={close}>
         {/* Full-screen backdrop: any tap outside the card dismisses. Kept transparent — the

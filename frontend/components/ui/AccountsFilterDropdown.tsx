@@ -9,9 +9,13 @@ interface AccountsFilterDropdownProps {
   accounts: Account[]
   selectedAccountId: string | null
   onSelect: (accountId: string | null) => void
+  /** 'icon' is a filter glyph for a crowded header: outlined while every account is shown, filled in
+   *  the brand colour while one is picked, so a narrowed view never goes unnoticed. Defaults to the
+   *  account's name with a chevron. */
+  variant?: 'inline' | 'icon'
 }
 
-export function AccountsFilterDropdown({ accounts, selectedAccountId, onSelect }: AccountsFilterDropdownProps) {
+export function AccountsFilterDropdown({ accounts, selectedAccountId, onSelect, variant = 'inline' }: AccountsFilterDropdownProps) {
   const [isOpen, setIsOpen] = useState(false)
   const selectedName = selectedAccountId
     ? accounts.find((a) => a.account_id === selectedAccountId)?.name ?? 'All'
@@ -19,10 +23,25 @@ export function AccountsFilterDropdown({ accounts, selectedAccountId, onSelect }
 
   return (
     <>
-      <Pressable onPress={() => setIsOpen(true)} className="flex-row items-center gap-1">
-        <Text className="font-sansSemi text-base text-primary">{selectedName.length > 8 ? selectedName.slice(0, 8) + '…' : selectedName}</Text>
-        <Ionicons name="chevron-down" size={14} color={colors.primary} />
-      </Pressable>
+      {variant === 'icon' ? (
+        <Pressable
+          onPress={() => setIsOpen(true)}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={selectedAccountId ? `Showing ${selectedName}. Choose account` : 'Showing all accounts. Choose account'}
+        >
+          <Ionicons
+            name={selectedAccountId ? 'funnel' : 'funnel-outline'}
+            size={21}
+            color={selectedAccountId ? colors.primary : colors.textPrimary}
+          />
+        </Pressable>
+      ) : (
+        <Pressable onPress={() => setIsOpen(true)} className="flex-row items-center gap-1">
+          <Text className="font-sansSemi text-base text-primary">{selectedName.length > 8 ? selectedName.slice(0, 8) + '…' : selectedName}</Text>
+          <Ionicons name="chevron-down" size={14} color={colors.primary} />
+        </Pressable>
+      )}
 
       <BottomSheet visible={isOpen} onClose={() => setIsOpen(false)}>
         <View className="flex-row items-center justify-between px-5 py-3">

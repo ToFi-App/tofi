@@ -112,13 +112,6 @@ export function InvestmentHistoryChart({
             Past trades aren’t available from this brokerage, so this is today’s holdings priced at each day’s close.
           </Text>
         ) : null}
-        {history.incomplete ? (
-          // Unwinding the activity ran a position below zero: the brokerage's history is missing
-          // rows, so earlier days undercount what was held.
-          <Text className="font-sans text-xs leading-5 text-textMuted">
-            Some older activity is missing from your brokerage&apos;s data, so earlier values may read low.
-          </Text>
-        ) : null}
         {history.flat.count > 0 ? (
           // Disclosed so a flat-looking line isn't read as flat performance: these holdings have no
           // daily prices (funds, bonds, crypto, options) or haven't loaded yet.

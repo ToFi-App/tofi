@@ -91,8 +91,8 @@ export default function TabsLayout() {
 
           disableTransparentOnScrollEdge is for iOS 17/18. There the bar goes fully transparent —
           no background, no divider — whenever it believes its screen's list is scrolled to the
-          bottom, and it only tracks a ScrollView that is first in the screen. Details puts a header
-          first, so the bar never found its list and stayed transparent with rows showing through
+          bottom, and it only tracks a ScrollView that is first in the screen. A screen that puts a
+          header first leaves the bar unable to find its list, transparent with rows showing through
           it. This keeps the same bar at the edge too; iOS 26's glass bar has no transparent edge
           state, so it is unaffected. */}
       <NativeTabs
@@ -101,21 +101,19 @@ export default function TabsLayout() {
         disableTransparentOnScrollEdge
         {...PRE_GLASS_BAR}
       >
+        {/* Home is where the money goes (with budgets and the calendar inside it), Net Worth what
+            there is, Investments how the invested part is doing. */}
         <Trigger name="(home)">
           <Trigger.Label>Home</Trigger.Label>
-          {tabIcon('wallet')}
+          {tabIcon('home')}
         </Trigger>
         <Trigger name="accounts">
-          <Trigger.Label>Accounts</Trigger.Label>
-          {tabIcon('card')}
+          <Trigger.Label>Net Worth</Trigger.Label>
+          {tabIcon('wallet')}
         </Trigger>
-        <Trigger name="transactions">
-          <Trigger.Label>Details</Trigger.Label>
-          {tabIcon('calendar')}
-        </Trigger>
-        <Trigger name="budgets">
-          <Trigger.Label>Budgets</Trigger.Label>
-          {tabIcon('pie-chart')}
+        <Trigger name="investments">
+          <Trigger.Label>Investments</Trigger.Label>
+          {tabIcon('trending-up')}
         </Trigger>
         <Trigger name="settings">
           <Trigger.Label>Settings</Trigger.Label>
