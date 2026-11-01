@@ -9,7 +9,7 @@
 // hiding it* (dangerous). Every gate below exists for that asymmetry.
 
 import { daysBetween } from './registry'
-import { isBrokerageCashAccount, isLiabilityAccount } from '@/lib/accounts/accountType'
+import { isBrokerageCashAccount, isInvestmentAccount, isLiabilityAccount } from '@/lib/accounts/accountType'
 import { isInternalMovement } from '@/lib/transactions/totals'
 import type { FeedItem } from '@/lib/transactions/resolveFeed'
 import type { Account, TransferKind } from '@/types/domain'
@@ -145,7 +145,12 @@ export function detectTransfers(input: AutoMatchInput): AutoMatchResult {
     // side of a sweep or a core-account redemption, and its counterpart is the holdings, not
     // another account. Pairing it can only mislabel it — and worse, because a redemption is sized
     // to the transfer it funds, it collides on amount with that transfer and competes for its leg.
-    if (isInternalMovement(item)) return false
+    //
+    // Cash management accounts only. An investment account's /transactions/sync rows carry the
+    // same codes on its genuine external transfers (a deposit from the user's bank arrives as
+    // TRANSFER_IN_*), and there the row IS the counterpart — skipping it left both legs of a
+    // checking <-> brokerage transfer counted, with nothing for either side to pair against.
+    if (!isInvestmentAccount(account) && isInternalMovement(item)) return false
     return true
   }
 
