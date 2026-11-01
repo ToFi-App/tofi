@@ -18,7 +18,7 @@ import {
 import { applyTransfers, mergeFeed, type FeedItem } from '@/lib/transactions/resolveFeed'
 import { planCachePrune } from '@/lib/transactions/pruneOrphaned'
 import { plaidItemIdsFrom } from '@/lib/financekit/mergeAccounts'
-import { applyInvestmentPurchaseLabels, applySweepExclusion } from '@/lib/transactions/sweepExclusion'
+import { applyInvestmentTradeLabels, applySweepExclusion } from '@/lib/transactions/sweepExclusion'
 import { isBrokerageCashAccount } from '@/lib/accounts/accountType'
 import { aggregateMonth } from '@/lib/transactions/aggregateMonth'
 import { syncDriver } from '@/lib/transactions/syncDriver'
@@ -194,10 +194,10 @@ export function TransactionFeedProvider({ children }: { children: ReactNode }) {
       investmentTransactions.transactions,
     )
     const withTransfers = applyTransfers(merged, transfers.data ?? [])
-    // Investment activity confirms stock-buy cash debits without adding the trade itself to totals.
+    // Investment activity confirms stock-trade cash movements without adding trade rows to totals.
     // Sweep exclusion runs last and only touches still-unpaired brokerage-cash outflows.
-    const withPurchaseLabels = applyInvestmentPurchaseLabels(withTransfers, investmentActivity)
-    const result = applySweepExclusion(withPurchaseLabels)
+    const withInvestmentLabels = applyInvestmentTradeLabels(withTransfers, investmentActivity)
+    const result = applySweepExclusion(withInvestmentLabels)
     return result
   }, [
     rawTransactions,

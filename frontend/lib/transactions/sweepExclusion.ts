@@ -134,20 +134,21 @@ export function applySweepExclusion(feed: FeedItem[]): FeedItem[] {
 }
 
 /**
- * Marks a Plaid cash debit as an investment purchase only when Plaid also reports a stock buy
- * for that exact brokerage account and amount, with dates no more than two days apart. Require a one-to-one match on both
- * sides: the activity endpoint's `amount` is trade cash movement (positive for a buy), while the
- * cash transaction feed also uses positive for money out.
+ * Marks a Plaid cash movement as an investment trade only when Plaid also reports a stock buy or
+ * sale for that brokerage account, amount, and a date within two days. Trades are classified
+ * independently: a buy is an outflow and a sale is an inflow, regardless of when the shares were
+ * originally bought. Require a one-to-one match on both sides to avoid amount collisions.
  */
-export function applyInvestmentPurchaseLabels(
+export function applyInvestmentTradeLabels(
   feed: FeedItem[],
   activity: Array<InvestmentActivity & { accountId: string }>,
 ): FeedItem[] {
-  const eligibleActivity = activity.filter(
-    (row) => row.subtype.toLowerCase() === 'buy' && row.securityId !== null && row.amount > 0,
-  )
+  const eligibleActivity = activity.filter((row) => {
+    const subtype = row.subtype.toLowerCase()
+    return (subtype === 'buy' || subtype === 'sell') && row.securityId !== null && row.amount !== 0
+  })
   const candidates = feed.filter(
-    (item) => item.source === 'plaid' && item.isBrokerageCashAccount && item.amount > 0 && !item.pending,
+    (item) => item.source === 'plaid' && item.isBrokerageCashAccount && item.amount !== 0 && !item.pending,
   )
   const day = (date: string) => Date.parse(`${date}T00:00:00Z`)
   const cents = (amount: number) => Math.round(amount * 100)
@@ -155,6 +156,7 @@ export function applyInvestmentPurchaseLabels(
   // date. Allow up to two days, but only accept mutual one-to-one matches to avoid collisions.
   const related = (item: FeedItem, row: InvestmentActivity & { accountId: string }) =>
     item.accountId === row.accountId &&
+    Math.sign(item.amount) === Math.sign(row.amount) &&
     cents(item.amount) === cents(row.amount) &&
     Math.abs(day(item.postedDate) - day(row.date)) <= 2 * 86_400_000
   const matchesByCash = candidates.map((item) => eligibleActivity.filter((row) => related(item, row)))
@@ -166,5 +168,5 @@ export function applyInvestmentPurchaseLabels(
     const activityIndex = eligibleActivity.indexOf(matches[0])
     if (matchesByActivity[activityIndex]?.length === 1) confirmed.add(item.id)
   })
-  return feed.map((item) => (confirmed.has(item.id) ? { ...item, isInvestmentPurchase: true } : item))
+  return feed.map((item) => (confirmed.has(item.id) ? { ...item, isInvestmentTrade: true } : item))
 }

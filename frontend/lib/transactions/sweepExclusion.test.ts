@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyInvestmentPurchaseLabels, applySweepExclusion } from './sweepExclusion'
+import { applyInvestmentTradeLabels, applySweepExclusion } from './sweepExclusion'
 import { countsTowardTotals } from './totals'
 import type { FeedItem } from './resolveFeed'
 
@@ -36,14 +36,14 @@ function base() {
     transferSource: null,
     isBrokerageCashAccount: true,
     isSweptOutflow: false,
-    isInvestmentPurchase: false,
+    isInvestmentTrade: false,
     hasCrossAccountCounterpart: false,
     links: [],
   }
 }
 
-describe('applyInvestmentPurchaseLabels', () => {
-  const buy = (overrides: Partial<import('@/types/domain').InvestmentActivity> = {}) => ({
+describe('applyInvestmentTradeLabels', () => {
+  const trade = (overrides: Partial<import('@/types/domain').InvestmentActivity> & { accountId?: string } = {}) => ({
     investmentTransactionId: 'buy-1',
     date: '2026-07-31',
     accountId: 'cma',
@@ -57,24 +57,31 @@ describe('applyInvestmentPurchaseLabels', () => {
     ...overrides,
   })
 
-  it('labels an exact same-account stock purchase as investment and excludes it from spending', () => {
-    const result = applyInvestmentPurchaseLabels([
+  it('classifies a buy outflow and a sale inflow independently as investment activity', () => {
+    const result = applyInvestmentTradeLabels([
       item({ id: 'nvidia', amount: 2022.8, date: '2026-08-01', merchantName: 'Nvidia', pfcDetailed: 'GENERAL_MERCHANDISE_ELECTRONICS' }),
-    ], [buy()])
+      item({ id: 'sale', amount: -2400, date: '2026-10-02', merchantName: 'Nvidia', pfcDetailed: 'INCOME_OTHER_INCOME' }),
+    ], [
+      trade(),
+      // The sale is classified on its own; it does not need to be near the original buy.
+      trade({ investmentTransactionId: 'sell-1', date: '2026-10-01', subtype: 'sell', amount: -2400 }),
+    ])
 
-    expect(find(result, 'nvidia').isInvestmentPurchase).toBe(true)
+    expect(find(result, 'nvidia').isInvestmentTrade).toBe(true)
+    expect(find(result, 'sale').isInvestmentTrade).toBe(true)
     expect(countsTowardTotals(find(result, 'nvidia'))).toBe(false)
+    expect(countsTowardTotals(find(result, 'sale'))).toBe(false)
   })
 
   it('leaves ordinary spending and ambiguous amount collisions counted', () => {
     const ordinary = item({ id: 'ordinary', amount: 2022.8, date: '2026-08-01', accountId: 'other', isBrokerageCashAccount: false })
     const collision = item({ id: 'collision', amount: 2022.8, date: '2026-08-01' })
     const collision2 = item({ id: 'collision-2', amount: 2022.8, date: '2026-08-01' })
-    const result = applyInvestmentPurchaseLabels([ordinary, collision, collision2], [buy()])
+    const result = applyInvestmentTradeLabels([ordinary, collision, collision2], [trade()])
 
-    expect(find(result, 'ordinary').isInvestmentPurchase).toBe(false)
-    expect(find(result, 'collision').isInvestmentPurchase).toBe(false)
-    expect(find(result, 'collision-2').isInvestmentPurchase).toBe(false)
+    expect(find(result, 'ordinary').isInvestmentTrade).toBe(false)
+    expect(find(result, 'collision').isInvestmentTrade).toBe(false)
+    expect(find(result, 'collision-2').isInvestmentTrade).toBe(false)
     expect(countsTowardTotals(find(result, 'collision'))).toBe(true)
   })
 })
