@@ -135,7 +135,7 @@ export interface FeedItem {
    */
   postedDate: string
   merchantName: string
-  /** Institution-provided transaction description, retained for security name/ticker matching. */
+  /** Plaid's raw `name`: the institution's own description, before merchant enrichment. */
   plaidName?: string
   categoryId: string | null
   subcategoryId: string | null
@@ -165,7 +165,7 @@ export interface FeedItem {
   // Set by applySweepExclusion (runs last): this outflow only mirrors an equal inflow on the same
   // brokerage cash account, i.e. a sweep into holdings rather than spending.
   isSweptOutflow: boolean
-  /** Cash movement confirmed by a matching stock buy or sale in Plaid investment activity. */
+  /** Set by applyInvestmentTradeLabels: a brokerage trade's cash leg ("YOU BOUGHT …"/"YOU SOLD …"). */
   isInvestmentTrade?: boolean
   // Also set by applySweepExclusion: an equal, opposite-signed row exists on a DIFFERENT account
   // inside autoMatch's window. Money that crossed an account boundary, whatever Plaid's code on it

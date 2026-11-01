@@ -84,7 +84,6 @@ export interface InvestmentActivity {
 /** The securities an account's activity names, including ones no longer held. */
 export interface ActivitySecurity {
   securityId: string
-  name: string | null
   ticker: string | null
   type: string | null
   isOption: boolean
@@ -232,7 +231,6 @@ export const investmentRepository = {
         if (securities.has(security.security_id)) continue
         securities.set(security.security_id, {
           securityId: security.security_id,
-          name: security.name ?? null,
           ticker: security.ticker_symbol ?? null,
           type: security.type ?? null,
           isOption: security.option_contract != null,

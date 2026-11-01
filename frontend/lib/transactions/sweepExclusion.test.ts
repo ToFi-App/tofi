@@ -43,14 +43,26 @@ function base() {
 }
 
 describe('applyInvestmentTradeLabels', () => {
-  const securities = [{ securityId: 'sec-nvda', name: 'NVIDIA Corporation', ticker: 'NVDA', type: 'equity', isOption: false }]
-  const accounts = new Map([['cma', 'item-1']])
-
-  it('classifies buy and sale cash rows from their security description, independent of amount or date', () => {
+  // Plaid rewrites a brokerage trade's cash leg as a merchant purchase: merchant_name becomes the
+  // company, the PFC becomes shopping, payment_channel becomes "online". Only the raw name keeps
+  // the brokerage's own wording.
+  it('labels buys and sales by the brokerage\'s own trade wording, at any amount', () => {
     const result = applyInvestmentTradeLabels([
-      item({ id: 'buy', amount: 2022.8, date: '2026-08-01', merchantName: 'Nvidia', pfcDetailed: 'GENERAL_MERCHANDISE_ELECTRONICS' }),
-      item({ id: 'sale', amount: -2400, date: '2026-10-02', merchantName: 'NVIDIA CORP sale proceeds', pfcDetailed: 'INCOME_OTHER_INCOME' }),
-    ], new Map([['item-1', securities]]), accounts)
+      item({
+        id: 'buy',
+        amount: 500,
+        merchantName: 'Example Corp',
+        plaidName: 'YOU BOUGHT EXAMPLE CORP COM (EXMP) (Cash)',
+        pfcDetailed: 'GENERAL_MERCHANDISE_ELECTRONICS',
+      }),
+      item({
+        id: 'sale',
+        amount: -620,
+        merchantName: 'Example Corp',
+        plaidName: 'YOU SOLD EXAMPLE CORP COM (EXMP) (Cash)',
+        pfcDetailed: 'INCOME_OTHER_INCOME',
+      }),
+    ])
 
     expect(find(result, 'buy').isInvestmentTrade).toBe(true)
     expect(find(result, 'sale').isInvestmentTrade).toBe(true)
@@ -58,26 +70,31 @@ describe('applyInvestmentTradeLabels', () => {
     expect(countsTowardTotals(find(result, 'sale'))).toBe(false)
   })
 
-  it('uses the security name or ticker only within the same Plaid Item', () => {
-    const ticker = item({ id: 'ticker', amount: 10, plaidName: 'Order for NVDA shares', merchantName: 'Brokerage order' })
-    const wrongItem = item({ id: 'wrong-item', amount: 10, accountId: 'cma-2', merchantName: 'Nvidia' })
-    const result = applyInvestmentTradeLabels(
-      [ticker, wrongItem],
-      new Map([['item-1', securities]]),
-      new Map([['cma', 'item-1'], ['cma-2', 'item-2']]),
-    )
+  // The case name matching got wrong: a card purchase at a company the user also holds stock in.
+  it('leaves a card purchase from the same company counted', () => {
+    const result = applyInvestmentTradeLabels([
+      item({
+        id: 'card',
+        amount: 500,
+        merchantName: 'Example Corp',
+        plaidName: 'DEBIT CARD PURCHASE EXAMPLE.COM',
+        pfcDetailed: 'GENERAL_MERCHANDISE_ELECTRONICS',
+      }),
+    ])
 
-    expect(find(result, 'ticker').isInvestmentTrade).toBe(true)
-    expect(find(result, 'wrong-item').isInvestmentTrade).toBe(false)
-    expect(countsTowardTotals(find(result, 'wrong-item'))).toBe(true)
+    expect(find(result, 'card').isInvestmentTrade).toBe(false)
+    expect(countsTowardTotals(find(result, 'card'))).toBe(true)
   })
 
-  it('leaves unrelated descriptions counted', () => {
-    const ordinary = item({ id: 'ordinary', amount: 2022.8, merchantName: 'Nvidia Shield TV' })
-    const result = applyInvestmentTradeLabels([ordinary], new Map([['item-1', securities]]), accounts)
+  it('only applies to settled rows on a brokerage cash account', () => {
+    const plaidName = 'YOU BOUGHT EXAMPLE CORP COM (EXMP) (Cash)'
+    const result = applyInvestmentTradeLabels([
+      item({ id: 'checking', amount: 500, plaidName, isBrokerageCashAccount: false }),
+      item({ id: 'pending', amount: 500, plaidName, pending: true }),
+    ])
 
-    expect(find(result, 'ordinary').isInvestmentTrade).toBe(false)
-    expect(countsTowardTotals(find(result, 'ordinary'))).toBe(true)
+    expect(find(result, 'checking').isInvestmentTrade).toBe(false)
+    expect(find(result, 'pending').isInvestmentTrade).toBe(false)
   })
 })
 

@@ -1,6 +1,5 @@
 import { AUTO_MATCH_WINDOW_DAYS } from '@/lib/transfers/autoMatch'
 import type { FeedItem } from './resolveFeed'
-import type { ActivitySecurity } from '@/types/domain'
 
 /**
  * Deliberately tighter than autoMatch's 7 days. A sweep is automatic and settles same-day or
@@ -134,50 +133,26 @@ export function applySweepExclusion(feed: FeedItem[]): FeedItem[] {
 }
 
 /**
- * Marks a brokerage-cash transaction as investment activity when its own description identifies
- * a security Plaid reports for an investment account on the same Item. No amount or date pairing:
- * the bank row is the cash movement, and the investment activity only supplies the security's
- * name and ticker. A stock sale is recognized the same way as a buy.
+ * The brokerage's own wording on a trade's cash leg, e.g. "YOU BOUGHT NVIDIA CORPORATION COM (NVDA)
+ * (Cash)" or "YOU SOLD META PLATFORMS INC ... (META) (Cash)". Fidelity writes this; Plaid then
+ * enriches the same row into a fake merchant ("Nvidia") with a shopping PFC and payment_channel
+ * "online", so neither of those fields can tell a trade from a card purchase. Only the raw name can.
+ *
+ * Why not pair the row with Plaid's investment activity instead: a cash management account is a
+ * depository account to Plaid, and /investments/transactions returns nothing for it. Its trades
+ * exist only as these cash rows.
  */
-export function applyInvestmentTradeLabels(
-  feed: FeedItem[],
-  securitiesByItem: ReadonlyMap<string, ActivitySecurity[]>,
-  accountIdToItemId: ReadonlyMap<string, string>,
-): FeedItem[] {
-  const tokens = (value: string) =>
-    value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toUpperCase().match(/[A-Z0-9]+/g) ?? []
-  const companySuffixes = new Set(['INC', 'INCORPORATED', 'CORP', 'CORPORATION', 'LTD', 'LIMITED', 'PLC', 'LLC', 'CO', 'COMPANY'])
-  const securityTokens = (value: string) => {
-    const result = tokens(value)
-    while (result.length && companySuffixes.has(result[result.length - 1])) result.pop()
-    return result
-  }
-  const containsSequence = (haystack: string[], needle: string[]) =>
-    needle.length > 0 && haystack.some((_, index) => needle.every((token, offset) => haystack[index + offset] === token))
-  const tradeWords = new Set(['BUY', 'BOUGHT', 'SELL', 'SOLD', 'SALE', 'PURCHASE', 'PURCHASED', 'TRADE', 'SHARES', 'STOCK'])
+const TRADE_DESCRIPTION = /^YOU (BOUGHT|SOLD) /i
 
-  function mentionsSecurity(item: FeedItem, securities: ActivitySecurity[]): boolean {
-    const descriptionTokens = [...tokens(item.plaidName ?? ''), ...tokens(item.merchantName)]
-    const normalizedMerchant = securityTokens(item.merchantName).join(' ')
-    return securities.some((security) => {
-      if (security.type?.toLowerCase() === 'cash') return false
-      const ticker = tokens(security.ticker ?? '')
-      // One-letter tickers are too common in prose to be a safe identifier.
-      const tickerMatch = ticker.join('').length >= 2 && containsSequence(descriptionTokens, ticker)
-      const name = securityTokens(security.name ?? '')
-      const hasTradeContext = descriptionTokens.some((token) => tradeWords.has(token))
-      const nameMatch = name.length > 0 && (
-        normalizedMerchant === name.join(' ') ||
-        ((name[0]?.length ?? 0) >= 4 && hasTradeContext && containsSequence(descriptionTokens, name))
-      )
-      return tickerMatch || nameMatch
-    })
-  }
-
+/**
+ * Marks a brokerage-cash row as investment activity when its raw description is the brokerage's
+ * own trade wording. Covers buys and sales alike, at any amount. Card purchases never carry this
+ * text, so a debit-card charge at a company the user also holds stock in stays counted.
+ */
+export function applyInvestmentTradeLabels(feed: FeedItem[]): FeedItem[] {
   return feed.map((item) => {
-    if (item.source !== 'plaid' || !item.isBrokerageCashAccount || item.pending || !item.accountId) return item
-    const itemId = accountIdToItemId.get(item.accountId)
-    if (!itemId || !mentionsSecurity(item, securitiesByItem.get(itemId) ?? [])) return item
+    if (item.source !== 'plaid' || !item.isBrokerageCashAccount || item.pending) return item
+    if (!TRADE_DESCRIPTION.test(item.plaidName ?? '')) return item
     return { ...item, isInvestmentTrade: true }
   })
 }
