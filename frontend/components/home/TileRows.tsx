@@ -11,7 +11,6 @@ export interface GridTile {
   budget: number | null
   state: TileState
   wide: boolean
-  dailySpend?: number[]
   onPress: () => void
 }
 
@@ -39,7 +38,6 @@ export function TileRows({ tiles, tileWidth, tileHeight, gap }: TileRowsProps) {
               budget={tile.budget}
               state={tile.state}
               wide={tile.wide}
-              dailySpend={tile.dailySpend}
               width={tile.wide ? tileWidth * 2 + gap : tileWidth}
               height={tileHeight}
               onPress={tile.onPress}

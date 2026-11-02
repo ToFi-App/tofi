@@ -9,9 +9,9 @@ function subscribe(listener: () => void) {
 }
 
 /**
- * Which investment account the Investments tab shows, or null for all of them. Module state rather
- * than a route param because Net Worth sets it right before switching tabs, and a tab screen stays
- * mounted: a param would only be read on its first render.
+ * Which investment account the Investments view shows, or null for all of them. Module state rather
+ * than a route param because Net Worth sets it right before switching to that view (useNetWorthScope),
+ * from a screen that isn't a route of its own.
  */
 export function setInvestmentAccountFilter(accountId: string | null) {
   if (accountId === selected) return

@@ -2,13 +2,13 @@ import { Pressable, Text, View } from 'react-native'
 import { blendOver, colors, hexToRgba, shadow } from '@/constants/theme'
 import { BudgetRing } from './BudgetRing'
 import { CategoryIcon } from './CategoryIcon'
-import { formatAmount } from '@/lib/format/money'
+import { formatMaskableAmount } from '@/lib/format/money'
+import { useAmountsMasked } from '@/hooks/useAmountsMasked'
 import type { TileState } from '@/lib/home/categoryTiles'
 
 const ICON_WELL = 36
 const RING_SIZE = 46
 const RING_STROKE = 3.5
-const BAR_GAP = 1.5
 
 interface CategoryCardProps {
   name: string
@@ -18,10 +18,8 @@ interface CategoryCardProps {
   budget: number | null
   /** Drives the ring's colour and the over-budget edge; 'unbudgeted' draws no ring. */
   state: TileState
-  /** A wide tile spans two grid columns, laid out sideways with the month's daily spending. */
+  /** A wide tile spans two grid columns, laid out sideways: badge beside the name and amount. */
   wide?: boolean
-  /** One entry per day of the month so far, for a wide tile's bars. */
-  dailySpend?: number[]
   width?: number
   height?: number
   onPress?: () => void
@@ -41,11 +39,11 @@ export function CategoryCard({
   budget,
   state,
   wide = false,
-  dailySpend,
   width,
   height,
   onPress,
 }: CategoryCardProps) {
+  const { isMasked } = useAmountsMasked()
   const isOver = state === 'over'
   const arcColor = isOver ? colors.expense : state === 'at-risk' ? colors.warning : color
   // The tile keeps its category's colour whatever its state, so the grid still reads by category;
@@ -67,14 +65,13 @@ export function CategoryCard({
 
   const amount = (
     <Text className="font-display text-md" style={{ color: isOver ? colors.expense : colors.textPrimary }} numberOfLines={1} adjustsFontSizeToFit>
-      {formatAmount(spent)}
+      {formatMaskableAmount(spent, isMasked)}
     </Text>
   )
 
   const frame = { width, height, backgroundColor: surface, ...shadow.sm }
 
   if (wide) {
-    const peak = Math.max(0, ...(dailySpend ?? []))
     return (
       <Pressable onPress={onPress} accessibilityRole={onPress ? 'button' : undefined} className="flex-row items-center gap-3 rounded-xl px-3 py-2" style={frame}>
         {badge}
@@ -83,22 +80,6 @@ export function CategoryCard({
             {name}
           </Text>
           {amount}
-          {/* The month by day, so a big category shows whether it was one purchase or a habit. */}
-          {dailySpend && peak > 0 ? (
-            <View className="mt-1.5 flex-row items-end" style={{ height: 24, gap: BAR_GAP }}>
-              {dailySpend.map((value, day) => (
-                <View
-                  key={day}
-                  style={{
-                    flex: 1,
-                    height: value > 0 ? Math.max(2, (value / peak) * 24) : 1,
-                    borderRadius: 1,
-                    backgroundColor: value > 0 ? color : hexToRgba(color, 0.25),
-                  }}
-                />
-              ))}
-            </View>
-          ) : null}
         </View>
       </Pressable>
     )

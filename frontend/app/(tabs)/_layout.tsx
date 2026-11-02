@@ -101,19 +101,19 @@ export default function TabsLayout() {
         disableTransparentOnScrollEdge
         {...PRE_GLASS_BAR}
       >
-        {/* Home is where the money goes (with budgets and the calendar inside it), Net Worth what
-            there is, Investments how the invested part is doing. */}
+        {/* Home is where the money goes (with budgets inside it), Calendar the same month day by day,
+            Net Worth what there is — the overview, and the invested part of it, behind one switch. */}
         <Trigger name="(home)">
           <Trigger.Label>Home</Trigger.Label>
           {tabIcon('home')}
         </Trigger>
-        <Trigger name="accounts">
+        <Trigger name="calendar">
+          <Trigger.Label>Calendar</Trigger.Label>
+          {tabIcon('calendar')}
+        </Trigger>
+        <Trigger name="net-worth">
           <Trigger.Label>Net Worth</Trigger.Label>
           {tabIcon('wallet')}
-        </Trigger>
-        <Trigger name="investments">
-          <Trigger.Label>Investments</Trigger.Label>
-          {tabIcon('trending-up')}
         </Trigger>
         <Trigger name="settings">
           <Trigger.Label>Settings</Trigger.Label>

@@ -75,3 +75,32 @@ export function blendStops(squares: DaySquare[]): { offset: number; color: strin
   stops.push({ offset: 1, color: last })
   return stops
 }
+
+export interface DayActivity {
+  squares: DaySquare[]
+  heat: DayHeat
+}
+
+/**
+ * Every day's category mix and heat shade for a month, as the calendar draws them. The heat
+ * follows each day's net, so an income day shades green and a spending day blends its categories.
+ */
+export function monthDayActivity(
+  spendByDay: Map<string, { net: number }>,
+  spendByDayCategory: Map<string, Map<string | null, number>>,
+  colorOf: (categoryId: string | null) => string,
+): Map<string, DayActivity> {
+  let biggestSpend = 0
+  let biggestIncome = 0
+  for (const { net } of spendByDay.values()) {
+    if (net > 0) biggestSpend = Math.max(biggestSpend, net)
+    else biggestIncome = Math.max(biggestIncome, -net)
+  }
+  const extremes = { biggestSpend, biggestIncome }
+  const activity = new Map<string, DayActivity>()
+  for (const [date, { net }] of spendByDay) {
+    const { squares } = daySquares(spendByDayCategory.get(date), colorOf)
+    activity.set(date, { squares, heat: dayHeat(net, extremes) })
+  }
+  return activity
+}

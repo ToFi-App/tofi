@@ -91,7 +91,7 @@ export default function RootLayout() {
   // The providers mount unconditionally so the cache restore runs in parallel with font
   // loading and the fresh-install purge, rather than starting only after they finish.
   return (
-    // The one root-level gesture handler: individual screens (e.g. SpendingTrend's scrub
+    // The one root-level gesture handler: individual screens (e.g. TrendChart's scrub
     // gesture) need a GestureHandlerRootView ancestor to work at all. BottomSheet carries its
     // own separate one because Modal content mounts in a detached native hierarchy that this
     // root never reaches — the two are solving different problems, not duplicating each other.

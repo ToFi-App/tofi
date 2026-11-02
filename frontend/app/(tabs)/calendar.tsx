@@ -1,40 +1,31 @@
-import { useCallback, useState } from 'react'
 import { Pressable, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { router, useFocusEffect, useLocalSearchParams } from 'expo-router'
 import { colors } from '@/constants/theme'
 import { useAccounts } from '@/hooks/useAccounts'
 import { MonthCalendar } from '@/components/home/MonthCalendar'
 import { MonthNavigator } from '@/components/transactions/MonthNavigator'
 import { AccountsFilterDropdown } from '@/components/ui/AccountsFilterDropdown'
 import { useTransactionEditorActions } from '@/components/transactions/TransactionEditorProvider'
-import { monthFromParams, shiftMonth, type YearMonth } from '@/lib/transactions/filterByMonth'
+import { shiftMonth } from '@/lib/transactions/filterByMonth'
+import { useSelectedMonth } from '@/hooks/useSelectedMonth'
+import { useSelectedAccountFilter } from '@/hooks/useSelectedAccountFilter'
 
 /**
- * The month day by day, opened from the daily chart on Home's overview card: every day shaded by
- * what it spent, over the list of what happened on each. Starts on the month and account Home was
- * showing.
+ * The Calendar tab: the month day by day, every day shaded by what it spent, over the list of what
+ * happened on each. Its month and account filter are Home's (useSelectedMonth,
+ * useSelectedAccountFilter), so the two tabs always show the same month — and Home's calendar
+ * preview opens this tab on it.
  */
-export default function CalendarScreen() {
-  const params = useLocalSearchParams<{ year?: string; month?: string; accountId?: string }>()
-  const [month, setMonth] = useState<YearMonth>(() => monthFromParams(params))
-  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(params.accountId || null)
-  useFocusEffect(
-    useCallback(() => {
-      setMonth(monthFromParams({ year: params.year, month: params.month }))
-      setSelectedAccountId(params.accountId || null)
-    }, [params.year, params.month, params.accountId]),
-  )
+export default function CalendarTab() {
+  const [month, setMonth] = useSelectedMonth()
+  const [selectedAccountId, setSelectedAccountId] = useSelectedAccountFilter()
   const accounts = useAccounts()
   const { openNewManual } = useTransactionEditorActions()
 
   const header = (
     <View className="flex-row items-center">
       <View className="flex-1 flex-row items-center gap-3">
-        <Pressable onPress={() => router.back()} hitSlop={10} accessibilityLabel="Back">
-          <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-        </Pressable>
         <AccountsFilterDropdown accounts={accounts.data ?? []} selectedAccountId={selectedAccountId} onSelect={setSelectedAccountId} />
       </View>
       <MonthNavigator month={month} onPrevious={() => setMonth(shiftMonth(month, -1))} onNext={() => setMonth(shiftMonth(month, 1))} onSelect={setMonth} />

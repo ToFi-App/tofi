@@ -18,6 +18,7 @@ import { AddAccountSheet } from '@/components/accounts/AddAccountSheet'
 import { AccountDetailSheet } from '@/components/accounts/AccountDetailSheet'
 import { useInvestmentPortfolio } from '@/hooks/useInvestmentPortfolio'
 import { setInvestmentAccountFilter } from '@/hooks/useInvestmentAccountFilter'
+import { setNetWorthScope } from '@/hooks/useNetWorthScope'
 import { ErrorBanner } from '@/components/ui/ErrorBanner'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { computeNetWorthTotals, isInvestmentAccount, isLiabilityAccount } from '@/lib/accounts/netWorth'
@@ -26,20 +27,20 @@ import type { Account } from '@/types/domain'
 
 const EMPTY_ACCOUNTS: Account[] = []
 
-export default function AccountsTab() {
+export function NetWorthScreen() {
   const [cashOpen, setCashOpen] = useState(true)
   const [investOpen, setInvestOpen] = useState(true)
   const [creditOpen, setCreditOpen] = useState(true)
   // 'cash' is the built-in cash row, which has no Plaid account behind it.
   const [detailTarget, setDetailTarget] = useState<Account | 'cash' | null>(null)
-  // Investment balances at the market's latest prices, shared with the Investments tab, so the
-  // list, net worth and that tab all show the same figure for an account.
+  // Investment balances at the market's latest prices, shared with the Investments view, so the
+  // list, net worth and that view all show the same figure for an account.
   const { accounts, liveAccounts, investmentAccounts, histories: investmentHistories } = useInvestmentPortfolio()
   const accountOrder = useAccountOrder()
   // A lifted row and a scrolling page are the same downward drag, so the page stops while
   // a row is in the air.
   const [isDragging, setIsDragging] = useState(false)
-  const { isMasked, toggleMask } = useAmountsMasked()
+  const { isMasked } = useAmountsMasked()
   const { feed, categoryById, isLoading: feedIsLoading, refresh } = useTransactionFeed()
   // Also refetches accounts.list inside, which is where every balance on this screen lives.
   const refreshControl = usePullToRefresh(refresh)
@@ -54,7 +55,7 @@ export default function AccountsTab() {
     () => (liveAccounts ?? []).filter((a) => !isLiabilityAccount(a) && !isInvestmentAccount(a)),
     [liveAccounts],
   )
-  // Net worth's investment bands read the same rebuild the Investments tab draws its line from.
+  // Net worth's investment bands read the same rebuild the Investments view draws its line from.
   const rebuiltSeries = useMemo(() => {
     const series = new Map<string, Array<{ date: string; value: number }>>()
     for (const [accountId, state] of investmentHistories) if (state.history) series.set(accountId, state.history.points)
@@ -194,7 +195,6 @@ export default function AccountsTab() {
           isLoading={accounts.isLoading}
           isHistoryLoading={accounts.isLoading || feedIsLoading}
           isMasked={isMasked}
-          onToggleMask={toggleMask}
           investmentHistories={rebuiltSeries}
           actions={
             <Pressable onPress={addAccount.beginAddAccount} hitSlop={8} accessibilityLabel="Add account" disabled={isConnecting}>
@@ -266,10 +266,10 @@ export default function AccountsTab() {
                     logo={account.institutionLogo}
                     itemId={account.itemId}
                     isMasked={isMasked}
-                    // Straight to the account's performance: no summary in between to tap through.
+                    // Straight to the account's performance: the Investments view, filtered to it.
                     onPress={() => {
                       setInvestmentAccountFilter(account.account_id)
-                      router.navigate('/(tabs)/investments')
+                      setNetWorthScope('investments')
                     }}
                     {...handlers}
                   />

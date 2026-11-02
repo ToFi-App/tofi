@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { ActivityIndicator, ScrollView, Text, View } from 'react-native'
+import { useEffect, useMemo, useState, type ComponentProps } from 'react'
+import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
@@ -7,6 +7,7 @@ import { colors, spacing } from '@/constants/theme'
 import { useTransactionFeed } from '@/hooks/useTransactionFeed'
 import { usePullToRefresh } from '@/hooks/usePullToRefresh'
 import { useAmountsMasked } from '@/hooks/useAmountsMasked'
+import { MaskToggle } from '@/components/ui/MaskToggle'
 import { useHoldings } from '@/hooks/useHoldings'
 import { useInvestmentScope } from '@/hooks/useInvestmentScope'
 import { useInvestmentAccountFilter } from '@/hooks/useInvestmentAccountFilter'
@@ -19,7 +20,7 @@ import { FreshnessInfo } from '@/components/investments/FreshnessInfo'
 import { InvestmentHistoryChart } from '@/components/accounts/InvestmentHistoryChart'
 import { AccountsFilterDropdown } from '@/components/ui/AccountsFilterDropdown'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { Pill } from '@/components/ui/RangePills'
+import { NetWorthScopePills } from '@/components/networth/NetWorthScopePills'
 import { DayGroupHeader } from '@/components/transactions/DayGroupHeader'
 import { TransactionRow } from '@/components/transactions/TransactionRow'
 import {
@@ -54,7 +55,7 @@ type InvestmentView = 'trend' | 'breakdown'
  * was last picked; Net Worth's investment rows set the picker to their account before switching
  * here, so tapping an account lands straight on its performance with nothing in between.
  */
-export default function InvestmentsScreen() {
+export function InvestmentsScreen() {
   const [filterId, setFilterId] = useInvestmentAccountFilter()
   const { portfolio, selectedAccount, shownAccounts, holdings, holdingsLoading, holdingsFailed, investmentHistory } =
     useInvestmentScope(filterId)
@@ -86,7 +87,7 @@ export default function InvestmentsScreen() {
   }, [filterId])
   // A holding's own page, pushed on this tab's stack: it slides in, and swipes back.
   const openHolding = (securityId: string) =>
-    router.push({ pathname: '/(tabs)/investments/holding', params: { securityId, accountId: selectedAccount?.account_id ?? '' } })
+    router.push({ pathname: '/(tabs)/net-worth/holding', params: { securityId, accountId: selectedAccount?.account_id ?? '' } })
 
   const history = investmentHistory.history
   const trendPoints = useMemo(
@@ -192,6 +193,10 @@ export default function InvestmentsScreen() {
   if (!portfolio.accounts.isLoading && investmentAccounts.length === 0) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
+        {/* The switch stays reachable with nothing to show, or the tab would strand you here. */}
+        <View className="px-5 pt-3">
+          <NetWorthScopePills />
+        </View>
         <EmptyState message="Link a brokerage or retirement account to see your investments here." />
       </SafeAreaView>
     )
@@ -202,10 +207,7 @@ export default function InvestmentsScreen() {
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerClassName="px-5 pb-10 pt-3" refreshControl={refreshControl}>
         <View className="flex-row items-center justify-between pb-3">
-          <View className="flex-row gap-1">
-            <Pill label="Trend" isSelected={isTrend} onPress={() => setView('trend')} />
-            <Pill label="Breakdown" isSelected={!isTrend} onPress={() => setView('breakdown')} />
-          </View>
+          <NetWorthScopePills />
           <View className="rounded-full px-3 py-1.5" style={{ backgroundColor: colors.primaryMuted }}>
             <AccountsFilterDropdown accounts={investmentAccounts} selectedAccountId={selectedAccount?.account_id ?? null} onSelect={setFilterId} />
           </View>
@@ -213,10 +215,17 @@ export default function InvestmentsScreen() {
 
         <TransactionEditorErrorBanner />
 
-        <View className="items-start pb-2">
-          <Text className="font-display text-2xl text-textPrimary">
-            {formatMaskableAmount(isTrend && reading ? reading.value : balance, isMasked)}
-          </Text>
+        <View className="pb-2">
+          {/* Trend or Breakdown, as a small icon switch beside the figure: secondary to the
+              Net Worth | Investments pills above, so the screen doesn't stack two rows of pills. */}
+          <View className="flex-row items-center justify-between gap-3">
+            <MaskToggle>
+              <Text className="font-display text-2xl text-textPrimary">
+                {formatMaskableAmount(isTrend && reading ? reading.value : balance, isMasked)}
+              </Text>
+            </MaskToggle>
+            <ViewSwitch view={view} onChange={setView} />
+          </View>
           {shown || hasHoldings ? (
             <View className="mt-1 flex-row items-center gap-1.5">
               {shown ? (
@@ -370,5 +379,34 @@ function InvestmentTransferDays({
         </View>
       ))}
     </>
+  )
+}
+
+const VIEW_OPTIONS: Array<{ value: InvestmentView; icon: ComponentProps<typeof Ionicons>['name']; label: string }> = [
+  { value: 'trend', icon: 'analytics-outline', label: 'Trend' },
+  { value: 'breakdown', icon: 'grid-outline', label: 'Breakdown' },
+]
+
+function ViewSwitch({ view, onChange }: { view: InvestmentView; onChange: (view: InvestmentView) => void }) {
+  return (
+    <View className="flex-row rounded-full" style={{ backgroundColor: colors.surfaceRaised, padding: 2 }}>
+      {VIEW_OPTIONS.map((option) => {
+        const selected = option.value === view
+        return (
+          <Pressable
+            key={option.value}
+            onPress={() => onChange(option.value)}
+            accessibilityRole="button"
+            accessibilityLabel={option.label}
+            accessibilityState={{ selected }}
+            hitSlop={4}
+            className="rounded-full px-2.5 py-1"
+            style={selected ? { backgroundColor: colors.surface } : undefined}
+          >
+            <Ionicons name={option.icon} size={16} color={selected ? colors.primary : colors.textMuted} />
+          </Pressable>
+        )
+      })}
+    </View>
   )
 }

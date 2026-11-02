@@ -15,10 +15,11 @@ import { ErrorBanner } from '@/components/ui/ErrorBanner'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { LoadingScreen } from '@/components/ui/LoadingScreen'
 import { Pill } from '@/components/ui/RangePills'
-import { VisualizationPager } from '@/components/visualizations/VisualizationPager'
+import { MonthCharts } from '@/components/visualizations/MonthCharts'
 import { CategoryDetailSheet } from '@/components/visualizations/CategoryDetailSheet'
 import { filterByMonth, shiftMonth } from '@/lib/transactions/filterByMonth'
 import { useSelectedMonth } from '@/hooks/useSelectedMonth'
+import { useSelectedAccountFilter } from '@/hooks/useSelectedAccountFilter'
 import { aggregateMonth } from '@/lib/transactions/aggregateMonth'
 import { hasReimbursementSurplus } from '@/lib/transactions/totals'
 import { UNCATEGORIZED_ID, computeDonutSegments } from '@/lib/transactions/visualizationData'
@@ -39,7 +40,7 @@ const TILE_HEIGHT = 116
 
 export default function DashboardScreen() {
   const [month, setMonth] = useSelectedMonth()
-  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null)
+  const [selectedAccountId, setSelectedAccountId] = useSelectedAccountFilter()
   const [expensesOpen, setExpensesOpen] = useState(true)
   const [incomeOpen, setIncomeOpen] = useState(true)
   const [view, setView] = useState<'grid' | 'chart'>('grid')
@@ -58,7 +59,7 @@ export default function DashboardScreen() {
   )
   const monthFeed = useMemo(() => filterByMonth(accountFilteredFeed, month), [accountFilteredFeed, month])
 
-  const { spendByCategory, incomeByCategory, spendByDay, spendByDayCategory, totalExpense, totalIncome } = useMemo(
+  const { spendByCategory, incomeByCategory, totalExpense, totalIncome } = useMemo(
     () => aggregateMonth(monthFeed),
     [monthFeed],
   )
@@ -72,7 +73,6 @@ export default function DashboardScreen() {
 
   const elapsed = monthElapsedFraction(month)
   const isCurrentMonth = elapsed > 0 && elapsed < 1
-  const daysInMonth = new Date(month.year, month.month, 0).getDate()
 
   // The tiles' rings summed, for the overview card's budget bar.
   const monthBudget = useMemo(() => {
@@ -183,11 +183,6 @@ export default function DashboardScreen() {
   }
 
   const monthParams = (target: YearMonth) => ({ year: String(target.year), month: String(target.month) })
-  const openCalendar = () =>
-    router.push({
-      pathname: '/(tabs)/(home)/calendar',
-      params: { ...monthParams(month), accountId: selectedAccountId ?? '' },
-    })
 
   // The same header row as Net Worth and Investments — which view on the left, the page's controls
   // on the right — with the month, Home's subject, as the title under it.
@@ -203,9 +198,6 @@ export default function DashboardScreen() {
           <Pressable onPress={openNewManual} hitSlop={8} accessibilityLabel="Write a transaction">
             <Ionicons name="create-outline" size={24} color={colors.textPrimary} />
           </Pressable>
-          <Pressable onPress={openCalendar} hitSlop={8} accessibilityLabel="Calendar">
-            <Ionicons name="calendar-outline" size={23} color={colors.textPrimary} />
-          </Pressable>
         </View>
       </View>
       <MonthNavigator
@@ -218,14 +210,6 @@ export default function DashboardScreen() {
     </View>
   )
 
-
-  // One day per bar, through today: what a wide tile draws under its figures.
-  const barDays = elapsed >= 1 ? daysInMonth : isCurrentMonth ? new Date().getDate() : 0
-  const dailySpendOf = (categoryId: string) =>
-    Array.from({ length: barDays }, (_, i) => {
-      const key = `${month.year}-${String(month.month).padStart(2, '0')}-${String(i + 1).padStart(2, '0')}`
-      return Math.max(0, spendByDayCategory.get(key)?.get(categoryId === UNCATEGORIZED_ID ? null : categoryId) ?? 0)
-    })
 
   function tileFor(
     category: { id: string; name: string; icon: string | null; color: string },
@@ -251,7 +235,7 @@ export default function DashboardScreen() {
         : []),
     ],
     totalExpense,
-  ).map((tile) => (tile.wide ? { ...tile, dailySpend: dailySpendOf(tile.id) } : tile))
+  )
   const incomeTiles: GridTile[] = [
     ...incomeCategories.map((c) => tileFor(c, incomeByCategory.get(c.id) ?? 0, 'income')),
     ...(uncategorizedIncome ? [tileFor({ ...uncategorizedIncome, id: UNCATEGORIZED_ID }, uncategorizedIncome.amount, 'income')] : []),
@@ -269,7 +253,7 @@ export default function DashboardScreen() {
             {topBar}
             {errorBanner}
           </View>
-          <VisualizationPager
+          <MonthCharts
             monthFeed={monthFeed}
             categories={categories.data ?? []}
             spendByCategory={spendByCategory}
@@ -277,8 +261,6 @@ export default function DashboardScreen() {
             totalExpense={totalExpense}
             totalIncome={totalIncome}
             month={month}
-            comparison={comparison}
-            isCurrentMonth={isCurrentMonth}
             onSegmentPress={(segment, mode) => setDetailState({ segment, mode })}
           />
         </>
@@ -293,12 +275,12 @@ export default function DashboardScreen() {
               month={month}
               totalExpense={totalExpense}
               totalIncome={totalIncome}
-              spendByDay={spendByDay}
+              comparison={comparison}
+              isCurrentMonth={isCurrentMonth}
               budget={monthBudget}
               review={reviewPrompt(month, new Date())}
               onReviewPress={(target) => router.push({ pathname: '/(tabs)/(home)/cash-flow', params: monthParams(target) })}
               onBudgetPress={() => router.push({ pathname: '/(tabs)/(home)/budgets', params: monthParams(month) })}
-              onCalendarPress={openCalendar}
             />
           </View>
 
