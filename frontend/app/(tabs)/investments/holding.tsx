@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { Pressable, ScrollView, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { SafeAreaView } from 'react-native-safe-area-context'
@@ -6,6 +7,7 @@ import { colors } from '@/constants/theme'
 import { useAmountsMasked } from '@/hooks/useAmountsMasked'
 import { useInvestmentScope } from '@/hooks/useInvestmentScope'
 import { HoldingDetail } from '@/components/accounts/HoldingDetail'
+import { FreshnessInfo } from '@/components/investments/FreshnessInfo'
 import { EmptyState } from '@/components/ui/EmptyState'
 
 /**
@@ -15,9 +17,16 @@ import { EmptyState } from '@/components/ui/EmptyState'
  */
 export default function HoldingScreen() {
   const { securityId, accountId } = useLocalSearchParams<{ securityId?: string; accountId?: string }>()
-  const { holdings, investmentHistory } = useInvestmentScope(accountId || null)
+  const { portfolio, shownAccounts, holdings, investmentHistory } = useInvestmentScope(accountId || null)
   const { isMasked } = useAmountsMasked()
   const holding = securityId ? (holdings.find((h) => h.securityId === securityId) ?? null) : null
+  // The institutions holding this position, for when they last synced it.
+  const itemIds = useMemo(() => {
+    const holders = shownAccounts.filter((a) =>
+      portfolio.holdingsByAccount.get(a.account_id)?.some((h) => h.securityId === securityId),
+    )
+    return [...new Set(holders.map((a) => a.itemId))]
+  }, [shownAccounts, portfolio.holdingsByAccount, securityId])
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
@@ -37,6 +46,13 @@ export default function HoldingScreen() {
             earliest={investmentHistory.priceEarliest}
             today={investmentHistory.today}
             isMasked={isMasked}
+            info={
+              <FreshnessInfo
+                itemIds={itemIds}
+                pricedAsOf={holding.type === 'cash' ? null : holding.priceAsOf}
+                priceLabel="Price"
+              />
+            }
           />
         </ScrollView>
       ) : (

@@ -16,6 +16,8 @@ import {
   sortHoldingsByValue,
 } from '@/lib/accounts/holdings'
 import { formatCompactMaskableAmount, formatMaskableAmount } from '@/lib/format/money'
+import { securityLogoUrl } from '@/lib/investments/securityLogo'
+import { SecurityMark } from './SecurityMark'
 import type { Holding } from '@/types/domain'
 
 /** Pinned height for the scrolling name line (text-sm). */
@@ -181,16 +183,8 @@ function HoldingRow({
       ]}
     >
       <View className="flex-row items-center gap-3">
-        {/* Plaid ships no security logos, so a stable monogram in the tile's own colour stands in. */}
         <Pressable {...press}>
-          <View
-            className="h-8 w-8 items-center justify-center rounded-full"
-            style={{ backgroundColor: hexToRgba(cls.color, 0.18) }}
-          >
-            <Text className="font-sansSemi text-xs" style={{ color: cls.color }}>
-              {monogramText(label)}
-            </Text>
-          </View>
+          <SecurityMark uri={securityLogoUrl(holding)} monogram={monogramText(label)} color={cls.color} size={32} />
         </Pressable>
         <View className="flex-1">
           <ScrollingText

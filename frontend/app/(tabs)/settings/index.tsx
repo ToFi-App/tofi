@@ -5,7 +5,7 @@ import { signOut } from '@/lib/supabase/auth'
 import { SettingsRow } from '@/components/ui/SettingsRow'
 import { ErrorBanner } from '@/components/ui/ErrorBanner'
 import { DeleteAccountSheet } from '@/components/settings/DeleteAccountSheet'
-import { PRIVACY_POLICY_URL, SUPPORT_URL, TERMS_URL } from '@/constants/links'
+import { LOGO_DEV_URL, PRIVACY_POLICY_URL, SUPPORT_URL, TERMS_URL } from '@/constants/links'
 
 export default function SettingsIndexScreen() {
   const [error, setError] = useState<string | null>(null)
@@ -69,6 +69,11 @@ export default function SettingsIndexScreen() {
             icon="help-circle"
             label="Support"
             onPress={() => Linking.openURL(SUPPORT_URL)}
+          />
+          <SettingsRow
+            icon="image"
+            label="Logos provided by Logo.dev"
+            onPress={() => Linking.openURL(LOGO_DEV_URL)}
           />
         </View>
       </View>

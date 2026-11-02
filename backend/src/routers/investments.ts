@@ -42,6 +42,15 @@ export const investmentsRouter = router({
       return investmentRepository.getHoldings(client, accessToken, input.accountId)
     }),
 
+  // When Plaid last synced the item's investments from the institution — how current the share
+  // counts are. Item-wide: Plaid refreshes every account at an institution together.
+  syncedAt: protectedProcedure
+    .input(z.object({ itemId: z.string().min(1) }))
+    .query(async ({ ctx, input }) => {
+      const { client, accessToken } = await resolveItem(ctx.userId, input.itemId)
+      return investmentRepository.getInvestmentsSyncedAt(client, accessToken)
+    }),
+
   // One account's FULL activity, trades included, for rebuilding its past positions. Fetched with
   // holdings when the detail sheet opens. Never merged into transactions above: those rows feed
   // transfer pairing and spend totals, where a trade would read as spending.

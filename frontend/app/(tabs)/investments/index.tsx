@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ActivityIndicator, Modal, Pressable, ScrollView, Text, View } from 'react-native'
+import { ActivityIndicator, ScrollView, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
@@ -15,6 +15,7 @@ import { HoldingsHeatMap } from '@/components/accounts/HoldingsHeatMap'
 import { HoldingRows, type HoldingChange } from '@/components/accounts/HoldingRows'
 import { accountFallbackIcon } from '@/components/accounts/AccountRow'
 import { AccountList, AssetAllocation, type AccountSummaryRow } from '@/components/investments/PortfolioSummary'
+import { FreshnessInfo } from '@/components/investments/FreshnessInfo'
 import { InvestmentHistoryChart } from '@/components/accounts/InvestmentHistoryChart'
 import { AccountsFilterDropdown } from '@/components/ui/AccountsFilterDropdown'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -32,14 +33,11 @@ import { dayOf, viewportBuckets, visiblePoints } from '@/lib/accounts/trendViewp
 import { cashFlowMarkers, fillCalendarDays, rangeGain, windowReading } from '@/lib/investments/accountHistory'
 import { holdingRangeChange } from '@/lib/investments/portfolio'
 import { markerRadius } from '@/lib/charts/markers'
-import { formatRelativeIsoTime } from '@/lib/format/date'
 import { formatAmount, formatMaskableAmount } from '@/lib/format/money'
 import { groupByDay } from '@/lib/transactions/groupByDay'
 import type { FeedItem } from '@/lib/transactions/resolveFeed'
 import type { Category, Holding } from '@/types/domain'
 
-/** How often the "last refreshed" label re-reads the clock. */
-const FRESHNESS_TICK_MS = 30 * 1000
 // Capped by day, not by row: a partially-shown day would print an IN/OUT total covering rows the
 // user can't see.
 const TRANSFER_DAY_LIMIT = 12
@@ -78,13 +76,7 @@ export default function InvestmentsScreen() {
   const principal = useMemo(() => netPrincipal(items), [items])
   const totalGain = useMemo(() => investmentHeadlineGain(balance, principal, holdings), [balance, principal, holdings])
 
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), FRESHNESS_TICK_MS)
-    return () => clearInterval(timer)
-  }, [])
-  const asOfLabel = formatRelativeIsoTime(holdingsPricedAsOf(holdings), now)
-  const [showRefreshInfo, setShowRefreshInfo] = useState(false)
+  const shownItemIds = useMemo(() => [...new Set(shownAccounts.map((a) => a.itemId))], [shownAccounts])
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [view, setView] = useState<InvestmentView>('trend')
@@ -225,40 +217,20 @@ export default function InvestmentsScreen() {
           <Text className="font-display text-2xl text-textPrimary">
             {formatMaskableAmount(isTrend && reading ? reading.value : balance, isMasked)}
           </Text>
-          {shown ? (
+          {shown || hasHoldings ? (
             <View className="mt-1 flex-row items-center gap-1.5">
-              {shown.gain !== 0 ? <Ionicons name={shown.gain > 0 ? 'caret-up' : 'caret-down'} size={14} color={shownColor} /> : null}
-              <Text className="font-sansSemi text-base" style={{ color: shownColor }}>
-                {formatMaskableAmount(Math.abs(shown.gain), isMasked)}
-                {shown.pct != null ? ` (${formatGainPct(shown.pct)})` : ''}
-              </Text>
+              {shown ? (
+                <>
+                  {shown.gain !== 0 ? <Ionicons name={shown.gain > 0 ? 'caret-up' : 'caret-down'} size={14} color={shownColor} /> : null}
+                  <Text className="font-sansSemi text-base" style={{ color: shownColor }}>
+                    {formatMaskableAmount(Math.abs(shown.gain), isMasked)}
+                    {shown.pct != null ? ` (${formatGainPct(shown.pct)})` : ''}
+                  </Text>
+                </>
+              ) : null}
+              <FreshnessInfo itemIds={shownItemIds} pricedAsOf={holdingsPricedAsOf(holdings)} />
             </View>
           ) : null}
-          {asOfLabel ? (
-            <Pressable onPress={() => setShowRefreshInfo((v) => !v)} hitSlop={8} className="mt-1 flex-row items-center gap-1">
-              <Text className="font-sansMed text-sm text-textSecondary">Updated {asOfLabel}</Text>
-              <Ionicons name="information-circle-outline" size={15} color={colors.textSecondary} />
-            </Pressable>
-          ) : null}
-          <Modal visible={showRefreshInfo} transparent animationType="fade" onRequestClose={() => setShowRefreshInfo(false)}>
-            <Pressable
-              className="flex-1 items-center justify-center px-10"
-              style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
-              onPress={() => setShowRefreshInfo(false)}
-            >
-              <View className="w-full rounded-2xl p-5" style={{ backgroundColor: colors.surface }}>
-                <Text className="font-sansSemi text-sm text-textPrimary">How often values update</Text>
-                <Text className="mt-2 font-sans text-xs leading-5 text-textMuted">
-                  Stocks and ETFs are priced at their latest trade, which can be up to 15 minutes old. Funds, bonds and
-                  cash use your brokerage&apos;s own price, which Plaid collects about once every market day, usually after
-                  close. Share counts also come from your brokerage, so a trade made today shows once it reports it.
-                </Text>
-                <Text className="mt-2 font-sans text-xs leading-5 text-textMuted">
-                  The time shown is the oldest price in view, so it never claims more than the whole portfolio has.
-                </Text>
-              </View>
-            </Pressable>
-          </Modal>
         </View>
 
         {holdingsLoading && !hasHoldings ? (

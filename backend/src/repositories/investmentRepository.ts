@@ -194,6 +194,16 @@ export const investmentRepository = {
     })
   },
 
+  /**
+   * When Plaid last reached the institution for investments data. It moves on every successful
+   * check, whether or not anything changed, so it is how current the positions are rather than when
+   * they last differed. /item/get is not billed per call.
+   */
+  async getInvestmentsSyncedAt(client: PlaidApi, accessToken: string): Promise<string | null> {
+    const response = await client.itemGet({ access_token: accessToken })
+    return response.data.status?.investments?.last_successful_update ?? null
+  },
+
   async getAccountActivity(
     client: PlaidApi,
     accessToken: string,

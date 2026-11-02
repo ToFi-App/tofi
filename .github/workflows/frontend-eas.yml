@@ -167,6 +167,8 @@ jobs:
           EXPO_PUBLIC_API_URL: ${{ secrets.EXPO_PUBLIC_API_URL }}
           EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID }}
           EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID }}
+          # Optional, so not in the check below: without it holdings keep their monograms.
+          EXPO_PUBLIC_LOGO_DEV_KEY: ${{ secrets.EXPO_PUBLIC_LOGO_DEV_KEY }}
         run: |
           # EXPO_PUBLIC_* vars are inlined into the bundle at build time. An unset secret
           # is not an error to eas-cli — it would ship an update where the value reads

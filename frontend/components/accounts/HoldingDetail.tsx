@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, type ReactNode } from 'react'
 import { Text, View, useWindowDimensions } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { colors, spacing } from '@/constants/theme'
@@ -35,6 +35,8 @@ interface HoldingDetailProps {
   earliest: string
   today: string
   isMasked: boolean
+  /** Shown at the end of the price-change line: the ⓘ for how current the figures are. */
+  info?: ReactNode
 }
 
 function gainColor(value: number): string {
@@ -52,7 +54,7 @@ function gainColor(value: number): string {
  * Prices are public, so the price figures ignore the hide toggle; everything about the position
  * honours it.
  */
-export function HoldingDetail({ holding, inputs, earliest, today, isMasked }: HoldingDetailProps) {
+export function HoldingDetail({ holding, inputs, earliest, today, isMasked, info }: HoldingDetailProps) {
   const { width: windowW } = useWindowDimensions()
   const symbol = priceableSymbol({ ticker: holding.ticker, type: holding.type, isOption: holding.optionContract != null })
   const activity = useMemo(
@@ -98,6 +100,7 @@ export function HoldingDetail({ holding, inputs, earliest, today, isMasked }: Ho
   const opening = visible[0]
   const priceChange = reading && opening ? reading.price - opening.price : 0
   const pricePct = opening && opening.price > 0 ? priceChange / opening.price : null
+  const hasChange = reading != null && opening != null && visible.length >= 2
   // Dot area grows with the shares traded, against the biggest trade in view (see markerRadius).
   const markers = useMemo(() => {
     const dayMarkers = tradeMarkers(series?.trades ?? [], visible.map((p) => p.date))
@@ -126,15 +129,20 @@ export function HoldingDetail({ holding, inputs, earliest, today, isMasked }: Ho
         <Text className="font-display text-2xl text-textPrimary">
           {formatAmount(reading?.price ?? holding.institutionPrice ?? 0)}
         </Text>
-        {reading && opening && visible.length >= 2 ? (
+        {hasChange || info ? (
           <View className="mt-1 flex-row items-center gap-1.5">
-            {priceChange !== 0 ? (
-              <Ionicons name={priceChange > 0 ? 'caret-up' : 'caret-down'} size={14} color={gainColor(priceChange)} />
+            {hasChange ? (
+              <>
+                {priceChange !== 0 ? (
+                  <Ionicons name={priceChange > 0 ? 'caret-up' : 'caret-down'} size={14} color={gainColor(priceChange)} />
+                ) : null}
+                <Text className="font-sansSemi text-base" style={{ color: gainColor(priceChange) }}>
+                  {formatAmount(Math.abs(priceChange))}
+                  {pricePct != null ? ` (${formatGainPct(pricePct)})` : ''}
+                </Text>
+              </>
             ) : null}
-            <Text className="font-sansSemi text-base" style={{ color: gainColor(priceChange) }}>
-              {formatAmount(Math.abs(priceChange))}
-              {pricePct != null ? ` (${formatGainPct(pricePct)})` : ''}
-            </Text>
+            {info}
           </View>
         ) : null}
       </View>
