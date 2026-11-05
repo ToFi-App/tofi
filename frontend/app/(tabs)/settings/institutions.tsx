@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Alert, Image, Pressable, ScrollView, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
-import { colors } from '@/constants/theme'
+import { borderRadius, colors, shadow } from '@/constants/theme'
 import { api } from '@/lib/api/client'
 import { useAccounts } from '@/hooks/useAccounts'
 import { useLinkSession } from '@/hooks/useLinkSession'
@@ -10,6 +10,7 @@ import { clearItemCache } from '@/lib/storage/mmkv'
 import { ErrorBanner } from '@/components/ui/ErrorBanner'
 import { LoadingScreen } from '@/components/ui/LoadingScreen'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { StatusPill } from '@/components/settings/SettingsBlocks'
 import type { Account } from '@/types/domain'
 
 // One card per institution — guaranteed by clean-slate linking: relinking an institution
@@ -103,7 +104,7 @@ export default function InstitutionsScreen() {
         const itemAccounts = accountsByItem.get(item.itemId) ?? []
         const logo = itemAccounts[0]?.institutionLogo ?? null
         return (
-          <View key={item.id} className="rounded-xl bg-surface px-4 py-2">
+          <View key={item.id} className="px-4 py-2" style={[shadow.sm, { borderRadius: borderRadius.xl, backgroundColor: colors.surface }]}>
             <View className="flex-row items-center justify-between py-2">
               <View className="flex-1 flex-row items-center gap-3">
                 {logo ? (
@@ -113,11 +114,12 @@ export default function InstitutionsScreen() {
                     <Ionicons name="business" size={20} color={colors.textSecondary} />
                   </View>
                 )}
-                <View className="flex-1">
-                  <Text className="font-sansMed text-base text-textPrimary">{item.institutionName}</Text>
-                  {item.disabled ? (
-                    <Text className="font-sans text-xs text-textMuted">Disconnected · not syncing</Text>
-                  ) : null}
+                <View className="flex-1 flex-row items-center gap-2">
+                  <Text className="shrink font-sansSemi text-base text-textPrimary" numberOfLines={1}>
+                    {item.institutionName}
+                  </Text>
+                  {/* Not syncing: a pill, so the state reads at a glance rather than as a grey aside. */}
+                  {item.disabled ? <StatusPill isOn={false} label="Disconnected" /> : null}
                 </View>
               </View>
               <Pressable
@@ -160,16 +162,20 @@ export default function InstitutionsScreen() {
             )}
 
             {itemAccounts.map((account) => (
+              // The account on the left, its balance on the right — two columns rather than one grey
+              // line of mask and balance joined by dots.
               <View
                 key={account.account_id}
-                className="border-t py-3"
+                className="flex-row items-center gap-3 border-t py-3"
                 style={{ borderColor: colors.border }}
               >
-                <Text className="font-sans text-sm text-textPrimary" numberOfLines={1}>
-                  {account.name}
-                </Text>
-                <Text className="font-sans text-xs text-textMuted">
-                  {account.mask ? `··${account.mask} · ` : ''}
+                <View className="flex-1">
+                  <Text className="font-sansMed text-sm text-textPrimary" numberOfLines={1}>
+                    {account.name}
+                  </Text>
+                  {account.mask ? <Text className="font-sans text-xs text-textPrimary">Ending {account.mask}</Text> : null}
+                </View>
+                <Text className="font-sansSemi text-sm text-textPrimary" style={{ fontVariant: ['tabular-nums'] }}>
                   {formatAmount(account.balances?.current ?? 0)}
                 </Text>
               </View>

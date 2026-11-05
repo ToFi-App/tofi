@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const credRepoMock = { getDecrypted: vi.fn() }
 const itemRepoMock = { listDecryptedTokens: vi.fn() }
-const investmentRepoMock = { getHoldings: vi.fn(), getAccountActivity: vi.fn() }
+const investmentRepoMock = { getHoldings: vi.fn(), getAccountActivity: vi.fn(), getInvestmentsSyncedAt: vi.fn() }
 vi.mock('../repositories/plaidCredentialRepository.js', () => ({ plaidCredentialRepository: credRepoMock }))
 vi.mock('../repositories/plaidItemRepository.js', () => ({ plaidItemRepository: itemRepoMock }))
 vi.mock('../repositories/investmentRepository.js', () => ({ investmentRepository: investmentRepoMock }))
@@ -35,6 +35,27 @@ describe('investments router', () => {
 
     await expect((await caller()).holdings({ itemId: 'item-x', accountId: 'acc-1' })).rejects.toThrow(/not linked/i)
     expect(investmentRepoMock.getHoldings).not.toHaveBeenCalled()
+  })
+
+  it('syncedAt reads the item-wide investments sync time with the item token', async () => {
+    credRepoMock.getDecrypted.mockResolvedValue({ clientId: 'c', secret: 's', environment: 'sandbox' })
+    itemRepoMock.listDecryptedTokens.mockResolvedValue([
+      { itemId: 'item-1', accessToken: 'token-1', institutionName: 'Chase', institutionId: 'ins_1', institutionLogo: null },
+    ])
+    investmentRepoMock.getInvestmentsSyncedAt.mockResolvedValue('2026-08-20T09:00:00Z')
+
+    const result = await (await caller()).syncedAt({ itemId: 'item-1' })
+
+    expect(investmentRepoMock.getInvestmentsSyncedAt).toHaveBeenCalledWith({ tag: 'client' }, 'token-1')
+    expect(result).toBe('2026-08-20T09:00:00Z')
+  })
+
+  it('syncedAt rejects an itemId that does not belong to the user', async () => {
+    credRepoMock.getDecrypted.mockResolvedValue({ clientId: 'c', secret: 's', environment: 'sandbox' })
+    itemRepoMock.listDecryptedTokens.mockResolvedValue([])
+
+    await expect((await caller()).syncedAt({ itemId: 'item-x' })).rejects.toThrow(/not linked/i)
+    expect(investmentRepoMock.getInvestmentsSyncedAt).not.toHaveBeenCalled()
   })
 
   it('holdings rejects when no Plaid credentials exist', async () => {

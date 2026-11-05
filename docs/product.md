@@ -203,9 +203,13 @@ Plaid returns a `confidence_level` (`VERY_HIGH`, `HIGH`, `MEDIUM`) on each trans
 
 ```
 Tab Bar
-├── Home (Dashboard)
-├── Transactions
-├── Budgets
+├── Home — where the month's money went
+│   ├── Summary: the month's figures, over a sheet of Budget, Spending vs last month and category tiles
+│   ├── Charts: by category, then Cash Flow (swipe between the two)
+│   └── Budget → Budgets (pushed)
+├── Net Worth — what there is, per account
+│   └── Investment account → Investments, filtered to it
+├── Investments — performance, movers, holdings
 └── Settings
     ├── Plaid Developer Account (BYOK credentials)
     ├── Accounts (linked Plaid items)

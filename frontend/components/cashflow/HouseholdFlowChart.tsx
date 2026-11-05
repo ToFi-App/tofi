@@ -252,7 +252,8 @@ export function HouseholdFlowChart({
   return (
     <View
       onLayout={(e) => setViewWidth(e.nativeEvent.layout.width)}
-      style={{ height: viewHeight, overflow: 'hidden', borderRadius: 8, backgroundColor: colors.surface }}
+      // No fill of its own: it sits straight on the page and blends into it.
+      style={{ height: viewHeight, overflow: 'hidden' }}
     >
       <GestureDetector gesture={gesture}>
       <View style={{ flex: 1 }}>
@@ -275,8 +276,9 @@ export function HouseholdFlowChart({
           const color = laneColor(lane)
           return (
             <G key={placed.id} onPress={() => onLanePress(lane)}>
-              {/* A halo under each lane: where a ribbon passes beneath, it reads as a bridge, not a tangle. */}
-              <Path d={placed.path} stroke={colors.surface} strokeWidth={placed.thickness + 4} fill="none" strokeLinecap="round" />
+              {/* A halo under each lane: where a ribbon passes beneath, it reads as a bridge, not a tangle.
+                  In the page's colour, which is what the chart now sits on. */}
+              <Path d={placed.path} stroke={colors.background} strokeWidth={placed.thickness + 4} fill="none" strokeLinecap="round" />
               <Path d={placed.path} stroke={color} strokeWidth={placed.thickness} fill="none" strokeLinecap="round" />
               <Path d={placed.arrow} fill={color} />
               {/* A generous invisible target: a 2px line is too thin to tap. */}

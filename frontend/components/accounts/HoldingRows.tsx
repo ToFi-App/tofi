@@ -16,14 +16,20 @@ import {
   sortHoldingsByValue,
 } from '@/lib/accounts/holdings'
 import { formatCompactMaskableAmount, formatMaskableAmount } from '@/lib/format/money'
+import { securityLogoUrl } from '@/lib/investments/securityLogo'
+import { SecurityMark } from './SecurityMark'
 import type { Holding } from '@/types/domain'
 
 /** Pinned height for the scrolling name line (text-sm). */
 const NAME_LINE_HEIGHT = 18
 // How strongly a selected row is tinted with the primary colour.
 const SELECTED_TINT = 0.1
+/** A row's top and bottom padding: tight enough that a long portfolio stays scannable. */
+const ROW_PADDING = 10
 /** The brief tint under a finger pressing a row that opens a page. */
 const PRESSED_TINT = 0.05
+/** A change in a holding's value: dollars, and the share of where it started. */
+export type HoldingChange = { gain: number; pct: number | null }
 
 interface HoldingRowsProps {
   holdings: Holding[]
@@ -33,6 +39,12 @@ interface HoldingRowsProps {
   onSelect: (securityId: string | null) => void
   /** Opens a holding's own page. When given, tapping a row opens it instead of highlighting it. */
   onOpen?: (securityId: string) => void
+  /** One list by value, without the asset-class headers — for rows already grouped under an
+   *  account, where a second level of headers would only stack up. The monograms keep the class. */
+  flat?: boolean
+  /** Each row's change over the window the chart above shows, in place of its total return — so
+   *  the rows read the same range the chart does. Null: no figure for that window. */
+  changeFor?: (holding: Holding) => HoldingChange | null
 }
 
 /**
@@ -44,7 +56,29 @@ interface HoldingRowsProps {
  * detail line with them, so nothing the old table showed is lost; it just stops competing with
  * the two figures most rows are read for.
  */
-export function HoldingRows({ holdings, isMasked, selectedId, onSelect, onOpen }: HoldingRowsProps) {
+export function HoldingRows({
+  holdings,
+  isMasked,
+  selectedId,
+  onSelect,
+  onOpen,
+  flat = false,
+  changeFor,
+}: HoldingRowsProps) {
+  const rowFor = (holding: Holding, isFirst: boolean) => (
+    <HoldingRow
+      key={holding.securityId}
+      holding={holding}
+      isMasked={isMasked}
+      isFirst={isFirst}
+      isSelected={holding.securityId === selectedId}
+      opensPage={onOpen != null}
+      change={changeFor ? changeFor(holding) : undefined}
+      onPress={() => (onOpen ? onOpen(holding.securityId) : onSelect(holding.securityId === selectedId ? null : holding.securityId))}
+    />
+  )
+  if (flat) return <View>{sortHoldingsByValue(holdings).map((holding, i) => rowFor(holding, i === 0))}</View>
+
   const groups = new Map<string, { cls: ReturnType<typeof assetClass>; rows: Holding[]; total: number }>()
   for (const holding of sortHoldingsByValue(holdings)) {
     const cls = assetClass(holding.type)
@@ -68,19 +102,7 @@ export function HoldingRows({ holdings, isMasked, selectedId, onSelect, onOpen }
               {formatMaskableAmount(total, isMasked)}
             </Text>
           </View>
-          {rows.map((holding, rowIndex) => (
-            <HoldingRow
-              key={holding.securityId}
-              holding={holding}
-              isMasked={isMasked}
-              isFirst={rowIndex === 0}
-              isSelected={holding.securityId === selectedId}
-              opensPage={onOpen != null}
-              onPress={() =>
-                onOpen ? onOpen(holding.securityId) : onSelect(holding.securityId === selectedId ? null : holding.securityId)
-              }
-            />
-          ))}
+          {rows.map((holding, rowIndex) => rowFor(holding, rowIndex === 0))}
         </View>
       ))}
     </View>
@@ -94,8 +116,11 @@ function HoldingRow({
   isSelected,
   opensPage,
   onPress,
+  change,
 }: {
   holding: Holding
+  /** Over the chart's window, replacing the total return; undefined keeps the total return. */
+  change?: HoldingChange | null
   isMasked: boolean
   isFirst: boolean
   isSelected: boolean
@@ -108,15 +133,17 @@ function HoldingRow({
   const [isPressed, setIsPressed] = useState(false)
   const label = holdingLabel(holding)
   const cls = assetClass(holding.type)
-  const gain = holdingGain(holding)
-  const gainPct = holdingGainPct(holding)
+  const gain = change !== undefined ? (change?.gain ?? null) : holdingGain(holding)
+  const gainPct = change !== undefined ? (change?.pct ?? null) : holdingGainPct(holding)
   const avg = averageCost(holding)
   // GAIN% is unmasked on purpose — a ratio discloses no balance, and privacy mode is most
   // useful when it still answers "how is this doing".
   const gainText =
     gain != null
       ? `${gain > 0 ? '+' : ''}${formatCompactMaskableAmount(gain, isMasked)} (${formatGainPct(gainPct)})`
-      : 'No cost basis'
+      : change !== undefined
+        ? '—'
+        : 'No cost basis'
   const details: Array<{ label: string; value: string }> = [
     { label: 'Shares', value: formatShares(holding.quantity) },
     ...(holding.institutionPrice != null
@@ -136,15 +163,15 @@ function HoldingRow({
     onPress,
     onPressIn: () => setIsPressed(true),
     onPressOut: () => setIsPressed(false),
-    hitSlop: { top: 16, bottom: 16 },
+    hitSlop: { top: ROW_PADDING, bottom: ROW_PADDING },
     accessibilityRole: 'button' as const,
     accessibilityState: { selected: isSelected },
   }
 
   return (
     <View
-      className="py-4"
       style={[
+        { paddingVertical: ROW_PADDING },
         !isFirst ? { borderTopWidth: 1, borderColor: colors.border } : null,
         // Widened by 12px each side with the same 12px padded back in, so the highlight gets a
         // margin around its content without moving it.
@@ -155,22 +182,14 @@ function HoldingRow({
             : null,
       ]}
     >
-      <View className="flex-row items-center gap-4">
-        {/* Plaid ships no security logos, so a stable monogram in the tile's own colour stands in. */}
+      <View className="flex-row items-center gap-3">
         <Pressable {...press}>
-          <View
-            className="h-8 w-8 items-center justify-center rounded-full"
-            style={{ backgroundColor: hexToRgba(cls.color, 0.18) }}
-          >
-            <Text className="font-sansSemi text-xs" style={{ color: cls.color }}>
-              {monogramText(label)}
-            </Text>
-          </View>
+          <SecurityMark uri={securityLogoUrl(holding)} monogram={monogramText(label)} color={cls.color} size={32} />
         </Pressable>
         <View className="flex-1">
           <ScrollingText
             className="font-sansSemi text-base text-textPrimary"
-            pressProps={{ ...press, hitSlop: { top: 16 } }}
+            pressProps={{ ...press, hitSlop: { top: ROW_PADDING } }}
             fadeColor={fadeColor}
           >
             {label}
@@ -185,7 +204,7 @@ function HoldingRow({
                 className="font-sans text-sm text-textSecondary"
                 textStyle={{ lineHeight: NAME_LINE_HEIGHT }}
                 style={{ height: NAME_LINE_HEIGHT }}
-                pressProps={{ ...press, hitSlop: { bottom: 16 } }}
+                pressProps={{ ...press, hitSlop: { bottom: ROW_PADDING } }}
                 fadeColor={fadeColor}
               >
                 {holding.name}
@@ -207,7 +226,7 @@ function HoldingRow({
         </Pressable>
         {opensPage ? (
           // Pulled in against the row's 16pt gap: the chevron belongs to the figures beside it.
-          <Pressable {...press} hitSlop={{ top: 16, bottom: 16, right: 8 }} style={{ marginLeft: -8 }}>
+          <Pressable {...press} hitSlop={{ top: ROW_PADDING, bottom: ROW_PADDING, right: 8 }} style={{ marginLeft: -4 }}>
             <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
           </Pressable>
         ) : null}
@@ -231,6 +250,15 @@ function HoldingRow({
           ))}
         </Pressable>
       ) : null}
+    </View>
+  )
+}
+
+/** A share of the whole portfolio, as a quiet pill beside the name it belongs to. */
+export function SharePill({ share }: { share: number }) {
+  return (
+    <View className="rounded-full px-2 py-0.5" style={{ backgroundColor: colors.surfaceRaised }}>
+      <Text className="font-sansSemi text-xs text-textPrimary">{share > 0 && share < 0.005 ? '<1%' : `${Math.round(share * 100)}%`}</Text>
     </View>
   )
 }

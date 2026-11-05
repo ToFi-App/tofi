@@ -21,8 +21,8 @@ describe('niceScale', () => {
     expect(new Set(ticks).size).toBe(ticks.length)
   })
 
-  // SpendingTrend relies on both of these: it reads ticks[1] as the step, and
-  // uses the tick value as a React key.
+  // A chart reading ticks[1] as the step, and using tick values as React keys,
+  // relies on both of these.
   it('always returns at least two strictly increasing ticks starting at zero', () => {
     for (const max of [0.07, 2.4, 18, 640, 0, -5, NaN]) {
       const ticks = niceScale(max)

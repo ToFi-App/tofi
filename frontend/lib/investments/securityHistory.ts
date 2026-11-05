@@ -1,4 +1,5 @@
 import { formatShares } from '@/lib/accounts/holdings'
+import { uniqueSplits } from '@/lib/investments/portfolio'
 import type { DailyClose, InvestmentActivity, Split } from '@/types/domain'
 
 function round2(value: number): number {
@@ -52,7 +53,8 @@ export function buildSecurityHistory(input: {
   const { closes, splits, activity, startDate, latestPrice, today } = input
   if (closes.length === 0) return null
 
-  const applicableSplits = splits.filter((s) => s.exDate <= today)
+  // Each split once, however many copies arrive: applied twice, it would scale the past twice over.
+  const applicableSplits = uniqueSplits(splits).filter((s) => s.exDate <= today)
   const adjusted = (close: DailyClose) =>
     round2(applicableSplits.reduce((p, s) => (s.exDate > close.date ? (p * s.oldRate) / s.newRate : p), close.close))
 

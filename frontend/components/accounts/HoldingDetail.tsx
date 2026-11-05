@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, type ReactNode } from 'react'
 import { Text, View, useWindowDimensions } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { colors, spacing } from '@/constants/theme'
@@ -35,6 +35,8 @@ interface HoldingDetailProps {
   earliest: string
   today: string
   isMasked: boolean
+  /** Shown at the end of the price-change line: the ⓘ for how current the figures are. */
+  info?: ReactNode
 }
 
 function gainColor(value: number): string {
@@ -52,7 +54,7 @@ function gainColor(value: number): string {
  * Prices are public, so the price figures ignore the hide toggle; everything about the position
  * honours it.
  */
-export function HoldingDetail({ holding, inputs, earliest, today, isMasked }: HoldingDetailProps) {
+export function HoldingDetail({ holding, inputs, earliest, today, isMasked, info }: HoldingDetailProps) {
   const { width: windowW } = useWindowDimensions()
   const symbol = priceableSymbol({ ticker: holding.ticker, type: holding.type, isOption: holding.optionContract != null })
   const activity = useMemo(
@@ -98,6 +100,7 @@ export function HoldingDetail({ holding, inputs, earliest, today, isMasked }: Ho
   const opening = visible[0]
   const priceChange = reading && opening ? reading.price - opening.price : 0
   const pricePct = opening && opening.price > 0 ? priceChange / opening.price : null
+  const hasChange = reading != null && opening != null && visible.length >= 2
   // Dot area grows with the shares traded, against the biggest trade in view (see markerRadius).
   const markers = useMemo(() => {
     const dayMarkers = tradeMarkers(series?.trades ?? [], visible.map((p) => p.date))
@@ -126,15 +129,20 @@ export function HoldingDetail({ holding, inputs, earliest, today, isMasked }: Ho
         <Text className="font-display text-2xl text-textPrimary">
           {formatAmount(reading?.price ?? holding.institutionPrice ?? 0)}
         </Text>
-        {reading && opening && visible.length >= 2 ? (
+        {hasChange || info ? (
           <View className="mt-1 flex-row items-center gap-1.5">
-            {priceChange !== 0 ? (
-              <Ionicons name={priceChange > 0 ? 'caret-up' : 'caret-down'} size={14} color={gainColor(priceChange)} />
+            {hasChange ? (
+              <>
+                {priceChange !== 0 ? (
+                  <Ionicons name={priceChange > 0 ? 'caret-up' : 'caret-down'} size={14} color={gainColor(priceChange)} />
+                ) : null}
+                <Text className="font-sansSemi text-base" style={{ color: gainColor(priceChange) }}>
+                  {formatAmount(Math.abs(priceChange))}
+                  {pricePct != null ? ` (${formatGainPct(pricePct)})` : ''}
+                </Text>
+              </>
             ) : null}
-            <Text className="font-sansSemi text-base" style={{ color: gainColor(priceChange) }}>
-              {formatAmount(Math.abs(priceChange))}
-              {pricePct != null ? ` (${formatGainPct(pricePct)})` : ''}
-            </Text>
+            {info}
           </View>
         ) : null}
       </View>
@@ -198,29 +206,29 @@ export function HoldingDetail({ holding, inputs, earliest, today, isMasked }: Ho
       {trades.length > 0 ? (
         <>
           <Text className="mt-8 font-sansSemi text-md text-textPrimary">Trades</Text>
-          {/* Uppercase mono headers and mono figures, like the account console, so the columns line
-              up digit for digit. */}
+          {/* Dark headers over Inter figures with even-width digits, so the columns line up digit for
+              digit without a monospace face. */}
           <View className="mt-2 flex-row pb-2">
-            <Text className="font-mono text-xs uppercase text-textSecondary" style={COLUMNS.kind}>Type</Text>
-            <Text className="font-mono text-xs uppercase text-textSecondary" style={COLUMNS.date}>Date</Text>
-            <Text className="font-mono text-xs uppercase text-textSecondary" style={COLUMNS.quantity}>Qty</Text>
-            <Text className="font-mono text-xs uppercase text-textSecondary" style={COLUMNS.price}>Avg cost</Text>
+            <Text className="font-sansSemi text-xs text-textPrimary" style={COLUMNS.kind}>Type</Text>
+            <Text className="font-sansSemi text-xs text-textPrimary" style={COLUMNS.date}>Date</Text>
+            <Text className="font-sansSemi text-xs text-textPrimary" style={COLUMNS.quantity}>Shares</Text>
+            <Text className="font-sansSemi text-xs text-textPrimary" style={COLUMNS.price}>Price</Text>
           </View>
           {trades.map((trade) => (
             <View key={trade.id} className="flex-row items-center border-t py-3" style={{ borderColor: colors.border }}>
               <Text
-                className="font-mono text-sm"
+                className="font-sansSemi text-sm"
                 style={[COLUMNS.kind, { color: trade.kind === 'buy' ? colors.income : colors.expense }]}
               >
-                {trade.kind === 'buy' ? 'BUY' : 'SELL'}
+                {trade.kind === 'buy' ? 'Buy' : 'Sell'}
               </Text>
-              <Text className="font-mono text-sm text-textPrimary" style={COLUMNS.date}>
+              <Text className="font-sans text-sm text-textPrimary" style={COLUMNS.date}>
                 {formatTrendLabel(trade.date, 'day', 'long')}
               </Text>
-              <Text className="font-mono text-sm text-textPrimary" style={COLUMNS.quantity}>
+              <Text className="font-sans text-sm text-textPrimary" style={[COLUMNS.quantity, { fontVariant: ['tabular-nums'] }]}>
                 {formatShares(trade.quantity)}
               </Text>
-              <Text className="font-mono text-sm text-textPrimary" style={COLUMNS.price}>
+              <Text className="font-sans text-sm text-textPrimary" style={[COLUMNS.price, { fontVariant: ['tabular-nums'] }]}>
                 {formatAmount(trade.price)}
               </Text>
             </View>

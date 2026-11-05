@@ -1,6 +1,7 @@
 import { Pressable, Text, View } from 'react-native'
 import { hexToRgba } from '@/constants/theme'
 import { AccountGlyph } from '@/components/accounts/AccountGlyph'
+import { SecurityLogo } from '@/components/accounts/SecurityMark'
 
 /**
  * One tile in a treemap, shared by the holdings map and the net-worth composition map.
@@ -64,6 +65,8 @@ interface TreemapTileProps {
   logo?: string | null
   /** Drawn when there is no logo — a built-in row, or an institution Plaid has none for. */
   fallbackIcon?: { name: string; color: string } | null
+  /** A security's logo from the CDN, for the holdings map; dropped quietly if it won't load. */
+  logoUri?: string | null
   /** Makes the tile tappable — the only way to identify a tile too small to carry a label. */
   onPress?: () => void
   isSelected?: boolean
@@ -81,6 +84,7 @@ export function TreemapTile({
   share,
   logo,
   fallbackIcon,
+  logoUri,
   onPress,
   isSelected = false,
 }: TreemapTileProps) {
@@ -100,7 +104,7 @@ export function TreemapTile({
   // it does not have, and the width is exactly what preferWide bought it.
   const compact = wideEnough && !showName && tileH >= COMPACT_HEIGHT
   const showShare = showName || compact
-  const showLogo = (!!logo || !!fallbackIcon) && tileW >= MIN_LOGO_SIZE && tileH >= MIN_LOGO_SIZE
+  const showLogo = (!!logo || !!fallbackIcon || !!logoUri) && tileW >= MIN_LOGO_SIZE && tileH >= MIN_LOGO_SIZE
   const hasContent = showLogo || showName || showShare
   /**
    * Padding must never exceed the tile. Yoga will not shrink a node below its own padding, so
@@ -110,6 +114,12 @@ export function TreemapTile({
    */
   const pad = hasContent ? Math.min(type.pad, Math.floor(Math.min(tileW, tileH) / 4)) : 0
   const logoSize = compact ? Math.min(14, Math.max(10, tileH - 8)) : Math.min(16, Math.max(12, Math.floor(tileH / 4)))
+
+  const glyph = logoUri && !logo ? (
+    <SecurityLogo uri={logoUri} size={logoSize} />
+  ) : (
+    <AccountGlyph logo={logo} icon={fallbackIcon} size={logoSize} />
+  )
 
   const Container = onPress ? Pressable : View
   return (
@@ -134,8 +144,8 @@ export function TreemapTile({
     >
       {compact ? (
         <View className="flex-row items-center gap-1.5">
-          {showLogo ? <AccountGlyph logo={logo} icon={fallbackIcon} size={logoSize} /> : null}
-          <Text className="font-mono" style={{ color: textColor, opacity: 0.85, fontSize: type.share }} numberOfLines={1}>
+          {showLogo ? glyph : null}
+          <Text className="font-sansMed" style={{ color: textColor, opacity: 0.85, fontSize: type.share, fontVariant: ['tabular-nums'] }} numberOfLines={1}>
             {share}
           </Text>
         </View>
@@ -145,7 +155,7 @@ export function TreemapTile({
               — the name has to ellipsize at this width either way, so it may as well sit
               beside the logo and let the tile be shorter. */}
           <View className="flex-row items-center gap-1.5">
-            {showLogo ? <AccountGlyph logo={logo} icon={fallbackIcon} size={logoSize} /> : null}
+            {showLogo ? glyph : null}
             {showName ? (
               <Text
                 className="shrink font-sansSemi"
@@ -158,7 +168,7 @@ export function TreemapTile({
           </View>
           {showShare ? (
             <Text
-              className="font-mono"
+              className="font-sansMed"
               style={{ color: textColor, opacity: 0.7, fontSize: type.share, marginTop: 2 }}
               numberOfLines={1}
             >

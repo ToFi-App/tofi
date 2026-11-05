@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { router, useLocalSearchParams } from 'expo-router'
 import { Alert, View } from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
 import { colors } from '@/constants/theme'
 import { useCategories } from '@/hooks/useCategories'
 import { usePlaidCategoryMappings } from '@/hooks/usePlaidCategoryMappings'
@@ -92,23 +91,22 @@ export default function CategoryFormScreen() {
   // and Delete the server would reject anyway.
   if (category?.isDefault) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
         <CategoryDetails category={category} mappings={mappings.data ?? []} />
-      </SafeAreaView>
+      </View>
     )
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
       <View className="px-5 pt-2">{error ? <ErrorBanner message={error} onDismiss={() => setError(null)} /> : null}</View>
       <CategoryForm
         category={category}
         mappings={mappings.data ?? []}
-        categories={categories.data ?? []}
         isSaving={false}
         onSave={handleSave}
         onDelete={category ? handleDelete : undefined}
       />
-    </SafeAreaView>
+    </View>
   )
 }

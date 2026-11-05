@@ -1,5 +1,5 @@
 import { ScrollView, Text, View } from 'react-native'
-import { hexToRgba } from '@/constants/theme'
+import { hexToRgba, shadow } from '@/constants/theme'
 import { pfcLabel } from '@/constants/plaid'
 import { CategoryIcon } from './CategoryIcon'
 import type { Category, PlaidCategoryMapping } from '@/types/domain'
@@ -22,7 +22,7 @@ export function CategoryDetails({ category, mappings }: CategoryDetailsProps) {
 
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" className="flex-1 bg-background" contentContainerClassName="gap-6 px-5 py-6">
-      <View className="items-center gap-3 rounded-xl bg-surface p-6">
+      <View className="items-center gap-3 rounded-xl bg-surface p-6" style={shadow.sm}>
         <View
           className="h-16 w-16 items-center justify-center rounded-full"
           style={{ backgroundColor: hexToRgba(category.color, 0.18) }}
@@ -30,15 +30,15 @@ export function CategoryDetails({ category, mappings }: CategoryDetailsProps) {
           <CategoryIcon icon={category.icon} size={32} color={category.color} />
         </View>
         <Text className="font-sansSemi text-lg text-textPrimary">{category.name}</Text>
-        <Text className="text-center font-sans text-sm text-textMuted">
+        <Text className="text-center font-sans text-sm text-textPrimary">
           This is a built-in category, so it can&apos;t be edited or deleted. Create your own category to
           organise spending differently.
         </Text>
       </View>
 
       <View className="gap-2">
-        <Text className="font-sansMed text-sm text-textSecondary">Plaid categories routed here</Text>
-        <View className="gap-1 rounded-md bg-surface px-4 py-3">
+        <Text className="font-sansSemi text-sm text-textPrimary">Plaid categories routed here</Text>
+        <View className="gap-1 rounded-xl bg-surface px-4 py-3" style={shadow.sm}>
           {codes.length > 0 ? (
             codes.map((code) => (
               <Text key={code.id} className="font-sans text-base text-textPrimary">

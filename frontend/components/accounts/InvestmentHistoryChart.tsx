@@ -5,6 +5,7 @@ import { RangePills } from '@/components/ui/RangePills'
 import type { Granularity, TrendRange } from '@/lib/accounts/netWorthHistory'
 import { formatMaskableAmount } from '@/lib/format/money'
 import type { AccountHistory } from '@/lib/investments/accountHistory'
+import { TAB_CHART_HEIGHT } from '@/components/networth/chartLayout'
 
 /**
  * The investment charts' pills. On the account chart 5Y and All both reach the ~24 months Plaid's
@@ -12,7 +13,6 @@ import type { AccountHistory } from '@/lib/investments/accountHistory'
  */
 export const INVESTMENT_RANGES: TrendRange[] = ['1W', '1M', '3M', 'YTD', '1Y', '5Y', 'ALL']
 
-const CHART_H = 220
 
 interface InvestmentHistoryChartProps {
   history: AccountHistory
@@ -75,7 +75,7 @@ export function InvestmentHistoryChart({
 
   return (
     <View>
-      <View style={{ height: CHART_H }}>
+      <View style={{ height: TAB_CHART_HEIGHT }}>
         {points.length === 0 ? (
           <View className="flex-1 items-center justify-center">
             <Text className="font-sans text-sm text-textMuted">No history in this window</Text>
@@ -95,7 +95,7 @@ export function InvestmentHistoryChart({
             onZoomEnd={onZoomEnd}
             onZoom={onZoom}
             width={windowW}
-            height={CHART_H}
+            height={TAB_CHART_HEIGHT}
             gradientId="investmentHistoryArea"
             markers={markers}
           />
@@ -110,13 +110,6 @@ export function InvestmentHistoryChart({
         {tradesUnavailable ? (
           <Text className="font-sans text-xs leading-5 text-textMuted">
             Past trades aren’t available from this brokerage, so this is today’s holdings priced at each day’s close.
-          </Text>
-        ) : null}
-        {history.incomplete ? (
-          // Unwinding the activity ran a position below zero: the brokerage's history is missing
-          // rows, so earlier days undercount what was held.
-          <Text className="font-sans text-xs leading-5 text-textMuted">
-            Some older activity is missing from your brokerage&apos;s data, so earlier values may read low.
           </Text>
         ) : null}
         {history.flat.count > 0 ? (

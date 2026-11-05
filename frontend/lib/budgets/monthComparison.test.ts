@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { compareDailySpend, compareWithPreviousMonth, cumulativeSpend } from './monthComparison'
+import { compareDailySpend, compareWithPreviousMonth, comparisonStats, cumulativeSpend, totalThrough } from './monthComparison'
 import type { FeedItem } from '@/lib/transactions/resolveFeed'
 
 function spend(id: string, date: string, amount: number): FeedItem {
@@ -77,5 +77,49 @@ describe('compareWithPreviousMonth', () => {
   it('ignores refunds and income', () => {
     const feed = [spend('1', '2026-10-02', 50), spend('2', '2026-10-03', -30)]
     expect(compareWithPreviousMonth(feed, october, evening).currentTotal).toBe(50)
+  })
+})
+
+describe('comparisonStats', () => {
+  const comparison = compareDailySpend(
+    [
+      { day: 1, amount: 10 },
+      { day: 2, amount: 50 },
+      { day: 3, amount: 0 },
+      { day: 4, amount: 20 },
+    ],
+    [
+      { day: 1, amount: 100 },
+      { day: 2, amount: 0 },
+    ],
+  )
+
+  it('averages this month over the days so far and last month over all of it', () => {
+    const stats = comparisonStats(comparison, 30, true)
+    expect(stats.dailyAverage).toBe(20)
+    expect(stats.previousDailyAverage).toBe(50)
+  })
+
+  it('finds the biggest single day and counts the days with spending', () => {
+    const stats = comparisonStats(comparison, 30, true)
+    expect(stats.biggestDay).toEqual({ day: 2, amount: 50 })
+    expect(stats.spendingDays).toBe(3)
+  })
+
+  it('projects the pace so far to the month end, only while the month is under way', () => {
+    expect(comparisonStats(comparison, 30, true).projected).toBe(600)
+    expect(comparisonStats(comparison, 30, false).projected).toBeNull()
+  })
+})
+
+describe('totalThrough', () => {
+  it('reads the running total on or before a day', () => {
+    const points = [
+      { day: 2, total: 10 },
+      { day: 5, total: 30 },
+    ]
+    expect(totalThrough(points, 1)).toBe(0)
+    expect(totalThrough(points, 4)).toBe(10)
+    expect(totalThrough(points, 9)).toBe(30)
   })
 })

@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, type ReactNode } from 'react'
 import { Text, View, useWindowDimensions } from 'react-native'
 import Svg, { Line, Path } from 'react-native-svg'
 import type { DonutSegment } from '@/lib/transactions/visualizationData'
@@ -10,6 +10,8 @@ interface CategoryDonutProps {
   highlightedCategoryId?: string | null
   onSegmentPress?: (segment: DonutSegment) => void
   size?: number
+  /** Drawn in the ring's hole, e.g. the total the slices add up to. */
+  center?: ReactNode
 }
 
 function polar(cx: number, cy: number, r: number, deg: number) {
@@ -33,16 +35,22 @@ const GAP_DEG = 2
 const RING_RATIO = 0.38
 const LABEL_MIN_PCT = 3
 const LABEL_H = 20
+/** How far past the ring a slice label's leader line reaches, before the label itself. */
+const LABEL_REACH = 22
 
-export function CategoryDonut({ segments, highlightedCategoryId, onSegmentPress, size: sizeProp }: CategoryDonutProps) {
+export function CategoryDonut({ segments, highlightedCategoryId, onSegmentPress, size: sizeProp, center }: CategoryDonutProps) {
   const { width } = useWindowDimensions()
   const size = sizeProp ?? Math.min(width - 16, 320)
-  const cx = size / 2
-  const cy = size / 2
   const outerR = size * 0.28
   const ringW = outerR * RING_RATIO
   const midR = outerR - ringW / 2
   const hasHighlight = highlightedCategoryId != null
+  // `size` is the width the side labels need. Vertically only the labels above and below the ring
+  // need room, so the box is cut to that instead of left square with empty bands top and bottom.
+  const height = Math.min(size, 2 * (hasHighlight ? outerR + 2 : outerR + LABEL_REACH + LABEL_H / 2 + 2))
+  const cx = size / 2
+  const cy = height / 2
+  const holeR = outerR - ringW
 
   const arcs = useMemo(() => {
     // Zero-amount segments are listed (a category whose rows are all excluded still gets a card and
@@ -72,7 +80,7 @@ export function CategoryDonut({ segments, highlightedCategoryId, onSegmentPress,
             .filter((a) => a.percentage >= LABEL_MIN_PCT)
             .map((arc) => {
               const start = polar(cx, cy, outerR + 4, arc.mid)
-              const knee = polar(cx, cy, outerR + 22, arc.mid)
+              const knee = polar(cx, cy, outerR + LABEL_REACH, arc.mid)
               const isRight = arc.mid > 0 && arc.mid < 180
               const endX = isRight ? knee.x + 20 : knee.x - 20
               return { ...arc, start, knee, endX, isRight }
@@ -86,8 +94,8 @@ export function CategoryDonut({ segments, highlightedCategoryId, onSegmentPress,
 
   return (
     <View style={{ alignItems: 'center' }}>
-      <View style={{ width: size, height: size }}>
-        <Svg width={size} height={size}>
+      <View style={{ width: size, height }}>
+        <Svg width={size} height={height}>
           {arcs.map((arc) => {
             const opacity = hasHighlight ? (arc.categoryId === highlightedCategoryId ? 1 : 0.15) : 1
             return (
@@ -160,6 +168,15 @@ export function CategoryDonut({ segments, highlightedCategoryId, onSegmentPress,
             )}
           </View>
         ))}
+
+        {center != null ? (
+          <View
+            pointerEvents="none"
+            style={{ position: 'absolute', left: cx - holeR, top: cy - holeR, width: holeR * 2, height: holeR * 2, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 }}
+          >
+            {center}
+          </View>
+        ) : null}
       </View>
     </View>
   )

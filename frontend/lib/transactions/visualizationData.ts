@@ -93,35 +93,6 @@ export function computeDonutSegments(
   return segments.sort((a, b) => b.amount - a.amount)
 }
 
-export interface MerchantTotal {
-  name: string
-  amount: number
-  count: number
-}
-
-export function computeTopMerchants(
-  feed: FeedItem[],
-  mode: 'expense' | 'income',
-  limit = 5,
-): MerchantTotal[] {
-  const byMerchant = new Map<string, { amount: number; count: number }>()
-  for (const item of feed) {
-    if (!countsTowardTotals(item)) continue
-    const net = item.netAmount ?? item.amount
-    const isRelevant = mode === 'expense' ? net > 0 : net < 0
-    if (!isRelevant) continue
-    const existing = byMerchant.get(item.merchantName) ?? { amount: 0, count: 0 }
-    existing.amount += Math.abs(net)
-    existing.count++
-    byMerchant.set(item.merchantName, existing)
-  }
-
-  return Array.from(byMerchant.entries())
-    .map(([name, { amount, count }]) => ({ name, amount, count }))
-    .sort((a, b) => b.amount - a.amount)
-    .slice(0, limit)
-}
-
 export function computeDailyPoints(feed: FeedItem[], month: YearMonth, mode: 'expense' | 'income'): DayPoint[] {
   const daysInMonth = new Date(month.year, month.month, 0).getDate()
   const today = new Date()

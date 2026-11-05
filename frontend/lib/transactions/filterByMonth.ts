@@ -34,3 +34,11 @@ export function currentMonth(): YearMonth {
   const now = new Date()
   return { year: now.getFullYear(), month: now.getMonth() + 1 }
 }
+
+/** The month a pushed screen was opened for, from its route params; the current month if absent or malformed. */
+export function monthFromParams(params: { year?: string; month?: string }): YearMonth {
+  const year = Number(params.year)
+  const month = Number(params.month)
+  if (Number.isInteger(year) && Number.isInteger(month) && month >= 1 && month <= 12) return { year, month }
+  return currentMonth()
+}

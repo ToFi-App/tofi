@@ -124,6 +124,8 @@ fontSize = {
 - Section headers → `fontFamily.sansSemi`
 - Credential inputs (Client ID, Secret) → `fontFamily.mono`, so long alphanumeric strings are easy to visually verify character-by-character
 
+**No dot separators.** Never join two pieces of text with ` · ` (or `•`, `|`, `—` used the same way) — "Use $2,260 · 3-month average" reads as two captions glued together. Separate them with layout instead: put them in their own `Text` elements with a gap between, and let weight and colour say which is primary (`sansSemi`/`textPrimary` for the action or figure, `sansMed`/`textSecondary` for its context). If two facts don't fit side by side, stack them, or drop the less important one.
+
 ---
 
 ## Spacing & Layout

@@ -3,6 +3,7 @@ import { View } from 'react-native'
 import { MIN_LABEL_SIZE, TreemapTile } from '@/components/accounts/TreemapTile'
 import { assetClass } from '@/lib/accounts/holdings'
 import { computeAllocation, squarify } from '@/lib/accounts/treemap'
+import { securityLogoUrl } from '@/lib/investments/securityLogo'
 import type { Holding } from '@/types/domain'
 
 const MAP_HEIGHT = 220
@@ -43,6 +44,7 @@ export function HoldingsHeatMap({
   if (allocation.length === 0) return null
 
   const rects = width > 0 ? squarify(allocation, width, MAP_HEIGHT) : []
+  const holdingById = new Map(holdings.map((h) => [h.securityId, h]))
 
   // Rank within asset class. computeAllocation is already sorted by weight desc, so a
   // running count per class assigns 0 to that class's largest holding.
@@ -62,6 +64,7 @@ export function HoldingsHeatMap({
       {rects.map(({ item, x, y, width: w, height: h }) => {
         const showLabel = w >= MIN_LABEL_SIZE && h >= MIN_LABEL_SIZE
         const cls = assetClass(item.type)
+        const holding = holdingById.get(item.securityId)
         return (
           <TreemapTile
             key={item.securityId}
@@ -74,6 +77,7 @@ export function HoldingsHeatMap({
             tint={showLabel ? tintFor(item.securityId) : SLIVER_TINT}
             title={item.label}
             share={`${(item.weight * 100).toFixed(item.weight >= 0.1 ? 0 : 1)}%`}
+            logoUri={holding ? securityLogoUrl(holding) : null}
             isSelected={item.securityId === selectedId}
             onPress={() => onSelect(item.securityId === selectedId ? null : item.securityId)}
           />

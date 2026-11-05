@@ -7,3 +7,5 @@ import { MMKV } from 'react-native-mmkv'
 export const preferences = new MMKV({ id: 'ledge-preferences' })
 
 export const AMOUNTS_MASKED_KEY = 'amountsMasked'
+/** How Home draws spending against last month: 'gap' (ahead/behind) or 'total' (running totals). */
+export const SPENDING_CHART_VIEW_KEY = 'spendingChartView'

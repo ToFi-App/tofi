@@ -51,20 +51,20 @@ export function DeleteAccountSheet({ visible, onClose }: DeleteAccountSheetProps
       >
         {error ? <ErrorBanner message={error} onDismiss={() => setError(null)} /> : null}
 
-        <Text className="font-sans text-base leading-6 text-textSecondary">
+        <Text className="font-sans text-base leading-6 text-textPrimary">
           This permanently deletes your ToFi account. It cannot be undone.
         </Text>
 
-        <View className="gap-3 rounded-xl bg-surface p-4">
-          <Text className="font-sansMed text-sm text-textMuted">What gets deleted</Text>
-          <Text className="font-sans text-sm leading-5 text-textSecondary">
+        <View className="gap-3 rounded-xl bg-surfaceRaised p-4">
+          <Text className="font-sansSemi text-sm text-textPrimary">What gets deleted</Text>
+          <Text className="font-sans text-sm leading-5 text-textPrimary">
             • Every linked institution, and ToFi's access to it{'\n'}• All accounts, transactions,
             and investment holdings{'\n'}• Your categories, budgets, notes, and reimbursements
             {'\n'}• Your saved Plaid developer credentials{'\n'}• Your sign-in
           </Text>
         </View>
 
-        <Text className="font-sans text-sm leading-5 text-textMuted">
+        <Text className="font-sans text-sm leading-5 text-textPrimary">
           Your own Plaid developer account stays yours — only ToFi's connection to it is removed.
           Your bank accounts themselves are untouched.
         </Text>

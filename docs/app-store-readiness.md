@@ -130,7 +130,8 @@ It describes:
   via Plaid, user-created categories/budgets/notes, the user's Plaid API credentials (encrypted
   — `backend/src/lib/crypto`).
 - Processors: Supabase (auth + database), Plaid (bank data aggregation), Vercel (API hosting),
-  Google (sign-in), Expo/EAS (builds and OTA updates).
+  Google (sign-in), Expo/EAS (builds and OTA updates), Logo.dev (holding logos, fetched by
+  ticker symbol straight from the device).
 - That data is linked to the user's account identity.
 - That data is **not** sold, rented, traded, or used for advertising or tracking (true today —
   there are no ad or attribution SDKs in `package.json`).

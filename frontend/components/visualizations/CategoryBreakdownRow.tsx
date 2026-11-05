@@ -2,7 +2,8 @@ import { Pressable, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { CategoryIcon } from '@/components/categories/CategoryIcon'
 import { colors, hexToRgba } from '@/constants/theme'
-import { formatAmount } from '@/lib/format/money'
+import { formatMaskableAmount } from '@/lib/format/money'
+import { useAmountsMasked } from '@/hooks/useAmountsMasked'
 
 interface CategoryBreakdownRowProps {
   icon: string | null
@@ -15,6 +16,7 @@ interface CategoryBreakdownRowProps {
 }
 
 export function CategoryBreakdownRow({ icon, name, color, percentage, amount, transactionCount, onPress }: CategoryBreakdownRowProps) {
+  const { isMasked } = useAmountsMasked()
   return (
     <Pressable onPress={onPress} style={{ gap: 8, paddingVertical: 12 }}>
       <View className="flex-row items-center">
@@ -36,7 +38,7 @@ export function CategoryBreakdownRow({ icon, name, color, percentage, amount, tr
         <View style={{ flex: 1 }} />
 
         <View className="items-end">
-          <Text className="font-display text-base text-textPrimary">{formatAmount(amount)}</Text>
+          <Text className="font-display text-base text-textPrimary">{formatMaskableAmount(amount, isMasked)}</Text>
           <Text className="font-sans text-xs text-textMuted">
             {transactionCount} {transactionCount === 1 ? 'txn' : 'txns'}
           </Text>
