@@ -188,13 +188,15 @@ export function useInvestmentHistories(accounts: InvestmentAccountInput[]): Map<
               securities: activity?.data?.securities ?? [],
             }
           : null
+      const history =
+        inputs && account.holdings
+          ? buildAccountHistory({ holdings: account.holdings, anchorValue: account.anchorValue, startDate, today, ...inputs })
+          : null
       byAccount.set(account.accountId, {
-        history:
-          inputs && account.holdings
-            ? buildAccountHistory({ holdings: account.holdings, anchorValue: account.anchorValue, startDate, today, ...inputs })
-            : null,
+        history,
         inputs,
-        earliest: startDate,
+        // A young account's history starts where it opened, not at the window's start.
+        earliest: history?.points[0]?.date ?? startDate,
         priceEarliest: priceStart,
         today,
         // A failed account has nothing coming; its sheet shows the holdings error instead.

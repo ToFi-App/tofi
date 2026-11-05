@@ -8,6 +8,7 @@ import { investmentTransactionService } from '../services/investmentTransactionS
 import { notFoundError, preconditionError } from '../trpc/errors.js'
 import { AlpacaRateLimitError, alpacaClientFromEnv } from '../lib/alpaca/client.js'
 import { TRPCError } from '@trpc/server'
+import { reportEmptyHoldings } from '../lib/observability/emptyHoldingsDiagnostic.js'
 
 /** YYYY-MM-DD, the only date format Plaid's investments endpoints accept. */
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD')
@@ -39,7 +40,14 @@ export const investmentsRouter = router({
     .input(z.object({ itemId: z.string().min(1), accountId: z.string().min(1) }))
     .query(async ({ ctx, input }) => {
       const { client, accessToken } = await resolveItem(ctx.userId, input.itemId)
-      return investmentRepository.getHoldings(client, accessToken, input.accountId)
+      const holdings = await investmentRepository.getHoldings(client, accessToken, input.accountId)
+      // TEMPORARY: see emptyHoldingsDiagnostic. Awaited because the serverless invocation can
+      // freeze once the response is sent; it only runs on an empty result and sendToAxiom is
+      // bounded, so healthy accounts pay nothing.
+      if (holdings.length === 0) {
+        await reportEmptyHoldings({ client, accessToken, userId: ctx.userId, itemId: input.itemId, accountId: input.accountId })
+      }
+      return holdings
     }),
 
   // When Plaid last synced the item's investments from the institution — how current the share
