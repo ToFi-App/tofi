@@ -41,6 +41,8 @@ export function FreshnessInfo({
   const syncedAt = oldestInstant(syncQueries.map((q) => q.data))
 
   const now = openedAt ?? 0
+  // When Plaid last reached the brokerage. Not how old the shares themselves are — the brokerage stamps
+  // its holdings with the day it's asked, whatever day they're from — so the note says what covers that.
   const positions = isChecking ? 'Checking…' : (formatRelativeIsoTime(syncedAt, now) ?? 'Unavailable')
   const prices = formatRelativeIsoTime(pricedAsOf, now)
 
@@ -64,7 +66,7 @@ export function FreshnessInfo({
             <FreshnessRow
               label="Positions"
               value={positions}
-              detail="Shares and cost basis from your brokerage, through Plaid. Plaid checks in about once a day."
+              detail="Shares and cost basis from your brokerage, through Plaid, which checks in about once a day. Your brokerage can lag its own trades, so recent buys and sells it hasn't caught up with are applied from your trade history."
             />
             {prices ? (
               <>
@@ -90,7 +92,7 @@ function FreshnessRow({ label, value, detail }: { label: string; value: string; 
         <Text className="font-sansSemi text-base text-textPrimary">{label}</Text>
         <Text className="font-sansSemi text-base text-textPrimary">{value}</Text>
       </View>
-      <Text className="mt-1 font-sans text-sm leading-5 text-textSecondary">{detail}</Text>
+      <Text className="mt-1 font-sans text-sm leading-5 text-textPrimary">{detail}</Text>
     </View>
   )
 }

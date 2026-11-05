@@ -1,4 +1,5 @@
 import type { ActivitySecurity, DailyClose, Holding, InvestmentActivity, Split } from '@/types/domain'
+import { reconcileAccount } from './reconcileHoldings'
 
 /**
  * Holding types Alpaca carries daily equity bars for. Mutual funds, bonds, crypto, options and
@@ -14,6 +15,12 @@ const SPLIT_MATCH_DAYS = 7
 
 /** Shares below this after unwinding are float noise, not missing history. */
 const SHARE_EPSILON = 1e-6
+/**
+ * An account whose first activity is a deposit this long after the start of Plaid's window was
+ * opened then, not merely quiet before it: its history starts at that deposit rather than reaching
+ * back across months it didn't exist.
+ */
+const YOUNG_ACCOUNT_DAYS = 60
 
 interface SecurityInfo {
   ticker: string | null
@@ -140,7 +147,23 @@ export function buildAccountHistory(input: {
   startDate: string
   today: string
 }): AccountHistory {
-  const { holdings, activity, securities, anchorValue, closes, splits, startDate, today } = input
+  const { activity, securities, closes, splits, startDate, today } = input
+
+  // The brokerage can lag its own trades, listing a position it has already sold. Walking back from
+  // that, undoing the sale adds its shares back on top, and undoing the purchases leaves the original
+  // shares held from the window's first day — a position the account never had. So the trades it's
+  // missing are applied first (reconcileAccount), to the cash as well: its balance comes from the
+  // same snapshot as its holdings, so it's missing the sale's proceeds too.
+  const reconciled = reconcileAccount(input.holdings, activity, today)
+  const holdings = reconciled.holdings
+  const nonCashValue = (list: Holding[]) => list.reduce((sum, h) => (h.type === 'cash' ? sum : sum + valueToday(h)), 0)
+  const anchorValue = round2(input.anchorValue - nonCashValue(input.holdings) + nonCashValue(holdings) + reconciled.cashDelta)
+
+  // A young account starts where it opened — its first activity, a deposit — not at the start of
+  // Plaid's window: before that, whatever the rebuild found would be money the account never held.
+  const firstActivity = activity.reduce<string | null>((first, r) => (first == null || r.date < first ? r.date : first), null)
+  const opensWithDeposit = firstActivity != null && activity.some((r) => r.date === firstActivity && r.isCashTransfer && r.amount < 0)
+  const start = firstActivity && opensWithDeposit && daysApart(startDate, firstActivity) > YOUNG_ACCOUNT_DAYS ? firstActivity : startDate
 
   const info = new Map<string, SecurityInfo>()
   for (const s of securities) info.set(s.securityId, s)
@@ -194,7 +217,7 @@ export function buildAccountHistory(input: {
     const symbol = priceableSymbol(info.get(securityId) ?? { ticker: null, type: null, isOption: false })
     if (!symbol) continue
     for (const split of splits) {
-      if (split.symbol !== symbol || split.exDate <= startDate || split.exDate > today) continue
+      if (split.symbol !== symbol || split.exDate <= start || split.exDate > today) continue
       // Reported either as a split, or as shares delivered around the ex-date (some institutions
       // pay a split out as a share deposit). Undoing it again would divide the shares twice.
       const reported = rows.some(
@@ -209,9 +232,9 @@ export function buildAccountHistory(input: {
   }
 
   // Axis: the start, every trading day, and every activity day (an unpriced account still steps).
-  const dates = new Set<string>([startDate])
-  for (const p of positions.values()) for (const c of p.closes) if (c.date >= startDate && c.date < today) dates.add(c.date)
-  for (const r of rows) if (r.date >= startDate && r.date < today) dates.add(r.date)
+  const dates = new Set<string>([start])
+  for (const p of positions.values()) for (const c of p.closes) if (c.date >= start && c.date < today) dates.add(c.date)
+  for (const r of rows) if (r.date >= start && r.date < today) dates.add(r.date)
   const axis = [...dates].sort()
 
   const depositsThrough = (date: string) =>

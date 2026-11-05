@@ -54,6 +54,44 @@ describe('priceableSymbol', () => {
 })
 
 describe('buildAccountHistory', () => {
+  it('rebuilds from holdings with the trades the brokerage has not caught up with applied', () => {
+    // Bought 10 on Jan 3 and sold all 10 on Jan 5, but the brokerage still lists the 10 — and its
+    // balance, from the same snapshot, has no proceeds. Walking back from that would leave 10 shares
+    // held on Jan 2, before they were ever bought.
+    const result = buildAccountHistory({
+      ...base,
+      holdings: [holding({ quantity: 10, institutionValue: 1000, institutionPrice: 100 })],
+      activity: [
+        activity({ investmentTransactionId: 'b', date: '2025-01-03', subtype: 'buy', quantity: 10, amount: 1000, price: 100 }),
+        activity({ investmentTransactionId: 's', date: '2025-01-05', type: 'sell', subtype: 'sell', quantity: -10, amount: -1100, price: 110 }),
+      ],
+      anchorValue: 1000,
+      closes: { AAA: [{ date: '2025-01-02', close: 90 }, { date: '2025-01-03', close: 100 }] },
+    })
+
+    // Today: no shares, the $1,100 of proceeds. Jan 2: the $1,000 that bought them, and no shares.
+    expect(result.points[0]).toEqual({ date: '2025-01-02', value: 1000, netDeposits: 0 })
+    expect(result.points.at(-1)?.value).toBe(1100)
+  })
+
+  it('starts a young account at its opening deposit rather than the start of the window', () => {
+    const deposit = activity({ securityId: null, type: 'cash', subtype: 'deposit', date: '2024-05-01', amount: -500, isCashTransfer: true })
+    const young = buildAccountHistory({ ...base, startDate: '2024-01-01', today: '2024-06-01', holdings: [], activity: [deposit], anchorValue: 500, closes: {} })
+    expect(young.points[0].date).toBe('2024-05-01')
+
+    // An account simply quiet at the start of the window — its first deposit soon after — keeps it.
+    const quiet = buildAccountHistory({
+      ...base,
+      startDate: '2024-01-01',
+      today: '2024-06-01',
+      holdings: [],
+      activity: [{ ...deposit, date: '2024-01-20' }],
+      anchorValue: 500,
+      closes: {},
+    })
+    expect(quiet.points[0].date).toBe('2024-01-01')
+  })
+
   it('with no activity, values today’s shares at each close and ends on the balance', () => {
     const result = buildAccountHistory({
       ...base,
