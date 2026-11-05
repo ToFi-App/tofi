@@ -113,7 +113,10 @@ export function MonthNavigator({
             >
               {monthLabel(month)}
             </Text>
-            <Ionicons name="chevron-down" size={13} color={arrowColor} />
+            {/* No chevron leading a header: the arrows already flank the month, and a third mark in a
+                full row crowded it — the same call as the title variant's. The month still opens the
+                picker. */}
+            {variant === 'header' ? null : <Ionicons name="chevron-down" size={13} color={arrowColor} />}
           </Pressable>
           {next}
         </View>

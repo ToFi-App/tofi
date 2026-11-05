@@ -206,29 +206,29 @@ export function HoldingDetail({ holding, inputs, earliest, today, isMasked, info
       {trades.length > 0 ? (
         <>
           <Text className="mt-8 font-sansSemi text-md text-textPrimary">Trades</Text>
-          {/* Uppercase mono headers and mono figures, like the account console, so the columns line
-              up digit for digit. */}
+          {/* Dark headers over Inter figures with even-width digits, so the columns line up digit for
+              digit without a monospace face. */}
           <View className="mt-2 flex-row pb-2">
-            <Text className="font-mono text-xs uppercase text-textSecondary" style={COLUMNS.kind}>Type</Text>
-            <Text className="font-mono text-xs uppercase text-textSecondary" style={COLUMNS.date}>Date</Text>
-            <Text className="font-mono text-xs uppercase text-textSecondary" style={COLUMNS.quantity}>Qty</Text>
-            <Text className="font-mono text-xs uppercase text-textSecondary" style={COLUMNS.price}>Avg cost</Text>
+            <Text className="font-sansSemi text-xs text-textPrimary" style={COLUMNS.kind}>Type</Text>
+            <Text className="font-sansSemi text-xs text-textPrimary" style={COLUMNS.date}>Date</Text>
+            <Text className="font-sansSemi text-xs text-textPrimary" style={COLUMNS.quantity}>Shares</Text>
+            <Text className="font-sansSemi text-xs text-textPrimary" style={COLUMNS.price}>Price</Text>
           </View>
           {trades.map((trade) => (
             <View key={trade.id} className="flex-row items-center border-t py-3" style={{ borderColor: colors.border }}>
               <Text
-                className="font-mono text-sm"
+                className="font-sansSemi text-sm"
                 style={[COLUMNS.kind, { color: trade.kind === 'buy' ? colors.income : colors.expense }]}
               >
-                {trade.kind === 'buy' ? 'BUY' : 'SELL'}
+                {trade.kind === 'buy' ? 'Buy' : 'Sell'}
               </Text>
-              <Text className="font-mono text-sm text-textPrimary" style={COLUMNS.date}>
+              <Text className="font-sans text-sm text-textPrimary" style={COLUMNS.date}>
                 {formatTrendLabel(trade.date, 'day', 'long')}
               </Text>
-              <Text className="font-mono text-sm text-textPrimary" style={COLUMNS.quantity}>
+              <Text className="font-sans text-sm text-textPrimary" style={[COLUMNS.quantity, { fontVariant: ['tabular-nums'] }]}>
                 {formatShares(trade.quantity)}
               </Text>
-              <Text className="font-mono text-sm text-textPrimary" style={COLUMNS.price}>
+              <Text className="font-sans text-sm text-textPrimary" style={[COLUMNS.price, { fontVariant: ['tabular-nums'] }]}>
                 {formatAmount(trade.price)}
               </Text>
             </View>

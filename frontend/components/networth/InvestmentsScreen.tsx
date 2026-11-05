@@ -206,8 +206,8 @@ export function InvestmentsScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
-      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerClassName="px-5 pb-10 pt-3" refreshControl={refreshControl}>
-        <View className="flex-row items-center justify-between pb-3">
+      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerClassName="px-5 pb-10 pt-5" refreshControl={refreshControl}>
+        <View className="flex-row items-center justify-between">
           <NetWorthScopePills />
           <View className="rounded-full px-3 py-1.5" style={{ backgroundColor: colors.primaryMuted }}>
             <AccountsFilterDropdown accounts={investmentAccounts} selectedAccountId={selectedAccount?.account_id ?? null} onSelect={setFilterId} />
@@ -216,7 +216,8 @@ export function InvestmentsScreen() {
 
         <TransactionEditorErrorBanner />
 
-        <View className="pb-2">
+        {/* Spaced as Overview's headline is (NetWorthPanel), so the two pages match from the chart up. */}
+        <View className="mt-5">
           {/* Trend or Breakdown, as a small icon switch beside the figure: secondary to the
               Net Worth | Investments pills above, so the screen doesn't stack two rows of pills. */}
           <View className="flex-row items-center justify-between gap-3">
@@ -231,8 +232,8 @@ export function InvestmentsScreen() {
             <View className="mt-1 flex-row items-center gap-1.5">
               {shown ? (
                 <>
-                  {shown.gain !== 0 ? <Ionicons name={shown.gain > 0 ? 'caret-up' : 'caret-down'} size={14} color={shownColor} /> : null}
-                  <Text className="font-sansSemi text-base" style={{ color: shownColor }}>
+                  {shown.gain !== 0 ? <Ionicons name={shown.gain > 0 ? 'caret-up' : 'caret-down'} size={12} color={shownColor} /> : null}
+                  <Text className="font-sansSemi text-sm" style={{ color: shownColor }}>
                     {formatMaskableAmount(Math.abs(shown.gain), isMasked)}
                     {shown.pct != null ? ` (${formatGainPct(shown.pct)})` : ''}
                   </Text>
@@ -259,7 +260,7 @@ export function InvestmentsScreen() {
           <>
             {isTrend ? (
               // Edge to edge, like the net worth chart: the negative margin cancels the side padding.
-              <View className="mb-6 mt-2" style={{ marginHorizontal: -spacing[5] }}>
+              <View className="mb-6 mt-3" style={{ marginHorizontal: -spacing[5] }}>
                 {history ? (
                   <InvestmentHistoryChart
                     history={history}

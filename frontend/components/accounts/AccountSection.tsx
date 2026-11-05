@@ -47,7 +47,7 @@ interface AccountSectionProps {
 }
 
 /**
- * One collapsible group inside the AccountConsole: a status dot, the name as a small uppercase
+ * One collapsible group inside the AccountConsole: a status dot, the name in semibold
  * instrument label, and the total in the same mono face as the balances so their digits line up.
  * Tapping the header collapses the group.
  */
@@ -72,10 +72,10 @@ export function AccountSection({ title, total, group, isMasked, isOpen, onToggle
         <View className="h-3 w-3 items-center justify-center rounded-full" style={{ backgroundColor: hexToRgba(tone.fill, 0.18) }}>
           <View className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: tone.fill }} />
         </View>
-        <Text className="flex-1 font-mono text-xs uppercase" style={{ color: tone.text, letterSpacing: 1.6 }}>
+        <Text className="flex-1 font-sansSemi text-sm" style={{ color: tone.text }}>
           {title}
         </Text>
-        <Text className="font-mono text-base" style={{ color: tone.text }} numberOfLines={1}>
+        <Text className="font-sansSemi text-base" style={{ color: tone.text, fontVariant: ['tabular-nums'] }} numberOfLines={1}>
           {formatMaskableAmount(total, isMasked)}
         </Text>
         <Ionicons name={isOpen ? 'chevron-down' : 'chevron-forward'} size={12} color={colors.textMuted} />

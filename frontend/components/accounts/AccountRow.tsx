@@ -140,7 +140,7 @@ export function AccountRow({
         </View>
       </View>
       <View className="ml-3 items-end gap-1">
-        <Text className="font-mono text-amount" style={{ color: balanceColor }}>
+        <Text className="font-sansSemi text-base" style={{ color: balanceColor, fontVariant: ['tabular-nums'] }}>
           {formatMaskableAmount(balance, isMasked)}
         </Text>
         {hasLimit ? <UtilizationLine balance={balance} limit={limit!} isMasked={isMasked} /> : null}

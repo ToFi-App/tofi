@@ -18,8 +18,8 @@ export function NetWorthScopePills() {
 
   return (
     <View className="flex-row gap-1">
-      <Pill label="Overview" isSelected={scope === 'overview'} onPress={() => setScope('overview')} />
-      <Pill label="Investments" isSelected={scope === 'investments'} onPress={showInvestments} />
+      <Pill size="md" label="Overview" isSelected={scope === 'overview'} onPress={() => setScope('overview')} />
+      <Pill size="md" label="Investments" isSelected={scope === 'investments'} onPress={showInvestments} />
     </View>
   )
 }

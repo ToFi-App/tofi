@@ -145,7 +145,7 @@ export function TreemapTile({
       {compact ? (
         <View className="flex-row items-center gap-1.5">
           {showLogo ? glyph : null}
-          <Text className="font-mono" style={{ color: textColor, opacity: 0.85, fontSize: type.share }} numberOfLines={1}>
+          <Text className="font-sansMed" style={{ color: textColor, opacity: 0.85, fontSize: type.share, fontVariant: ['tabular-nums'] }} numberOfLines={1}>
             {share}
           </Text>
         </View>
@@ -168,7 +168,7 @@ export function TreemapTile({
           </View>
           {showShare ? (
             <Text
-              className="font-mono"
+              className="font-sansMed"
               style={{ color: textColor, opacity: 0.7, fontSize: type.share, marginTop: 2 }}
               numberOfLines={1}
             >

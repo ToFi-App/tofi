@@ -12,13 +12,14 @@ export const RANGE_LABELS: Record<TrendRange, string> = {
   ALL: 'All time',
 }
 
-/** One pill: view switches and range rows share it, lettered like the account console's headers. */
+/** One pill: view switches and range rows share it, lettered in Inter like the rest of the app. */
 export function Pill({
   label,
   isSelected,
   onPress,
   accessibilityLabel,
   tone = 'default',
+  size = 'sm',
 }: {
   label: string
   isSelected: boolean
@@ -26,6 +27,9 @@ export function Pill({
   accessibilityLabel?: string
   /** 'inverse' for a pill on the brand colour: white when selected, softened white when not. */
   tone?: 'default' | 'inverse'
+  /** 'md' for pills that head a screen, a step under the month title in Home's header (MonthHeader);
+   *  'sm' for a row of options under a chart. */
+  size?: 'sm' | 'md'
 }) {
   const isInverse = tone === 'inverse'
   return (
@@ -35,15 +39,13 @@ export function Pill({
       accessibilityLabel={accessibilityLabel ?? label}
       accessibilityState={{ selected: isSelected }}
       hitSlop={6}
-      className="rounded-full px-3 py-1.5"
+      className={size === 'md' ? 'rounded-full px-3.5 py-1.5' : 'rounded-full px-3 py-1.5'}
       style={isSelected ? { backgroundColor: isInverse ? colors.textInverse : colors.primary } : undefined}
     >
-      {/* The console's instrument lettering: uppercase mono, widely tracked. */}
       <Text
-        className="font-mono text-xs uppercase"
+        className={size === 'md' ? 'font-sansSemi text-base' : 'font-sansSemi text-sm'}
         style={{
           color: isSelected ? (isInverse ? colors.primary : colors.surface) : isInverse ? hexToRgba(colors.textInverse, 0.72) : colors.primary,
-          letterSpacing: 1.6,
         }}
       >
         {label}

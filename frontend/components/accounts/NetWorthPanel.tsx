@@ -20,6 +20,7 @@ import { MaskToggle } from '@/components/ui/MaskToggle'
 import { NetWorthScopePills } from '@/components/networth/NetWorthScopePills'
 import type { FeedItem } from '@/lib/transactions/resolveFeed'
 import type { Account } from '@/types/domain'
+import { TAB_CHART_HEIGHT } from '@/components/networth/chartLayout'
 
 const TREND_RANGES: TrendRange[] = ['1M', '3M', 'YTD', '1Y', 'ALL']
 
@@ -29,7 +30,6 @@ const GRANULARITY: Granularity = 'day'
 
 // Shorter than the chart's default, which was sized for a full-height sheet: here it shares the
 // top of the Net Worth view with the headline and the account list.
-const CHART_HEIGHT = 260
 
 const DEFAULT_RANGE: TrendRange = '1M'
 
@@ -167,7 +167,7 @@ export function NetWorthPanel({
         ) : null}
       </View>
 
-      <View className="mt-3" style={{ height: CHART_HEIGHT }}>
+      <View className="mt-3" style={{ height: TAB_CHART_HEIGHT }}>
         {points.length === 0 || panelWidth === 0 ? (
           <View className="flex-1 items-center justify-center">
             <Text className="font-sans text-sm text-textMuted">{isHistoryLoading ? 'Loading history…' : 'No history yet'}</Text>
@@ -186,7 +186,7 @@ export function NetWorthPanel({
             onZoomEnd={handleZoomEnd}
             onZoom={handleZoom}
             width={panelWidth}
-            height={CHART_HEIGHT}
+            height={TAB_CHART_HEIGHT}
             gradientId="netWorthArea"
           />
         )}
@@ -196,15 +196,17 @@ export function NetWorthPanel({
         <RangePills ranges={TREND_RANGES} value={activeRange} onChange={chooseRange} />
       </View>
 
-      {/* Uppercase mono labels and mono figures, like the account console — without its wide tracking. */}
+      {/* Labelled figures in the app's own type: a dark label over an Inter figure with even digits. */}
       <View className="flex-row justify-between px-5 pt-5">
         <View className="gap-1">
-          <Text className="font-mono text-xs uppercase text-textSecondary">Total Assets</Text>
-          <Text className="font-mono text-base text-textPrimary">{isMasked ? MASKED_AMOUNT : formatAmount(totalAssets)}</Text>
+          <Text className="font-sansMed text-xs text-textPrimary">Total assets</Text>
+          <Text className="font-sansSemi text-base text-textPrimary" style={{ fontVariant: ['tabular-nums'] }}>
+            {isMasked ? MASKED_AMOUNT : formatAmount(totalAssets)}
+          </Text>
         </View>
         <View className="items-end gap-1">
-          <Text className="font-mono text-xs uppercase text-textSecondary">Total Liabilities</Text>
-          <Text className="font-mono text-base text-textPrimary">
+          <Text className="font-sansMed text-xs text-textPrimary">Total liabilities</Text>
+          <Text className="font-sansSemi text-base text-textPrimary" style={{ fontVariant: ['tabular-nums'] }}>
             {isMasked ? MASKED_AMOUNT : formatAmount(totalLiabilities)}
           </Text>
         </View>
