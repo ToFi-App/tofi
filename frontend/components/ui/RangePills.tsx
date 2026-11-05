@@ -1,5 +1,5 @@
 import { Pressable, Text, View } from 'react-native'
-import { colors } from '@/constants/theme'
+import { colors, hexToRgba } from '@/constants/theme'
 import type { TrendRange } from '@/lib/accounts/netWorthHistory'
 
 export const RANGE_LABELS: Record<TrendRange, string> = {
@@ -18,12 +18,16 @@ export function Pill({
   isSelected,
   onPress,
   accessibilityLabel,
+  tone = 'default',
 }: {
   label: string
   isSelected: boolean
   onPress: () => void
   accessibilityLabel?: string
+  /** 'inverse' for a pill on the brand colour: white when selected, softened white when not. */
+  tone?: 'default' | 'inverse'
 }) {
+  const isInverse = tone === 'inverse'
   return (
     <Pressable
       onPress={onPress}
@@ -32,12 +36,15 @@ export function Pill({
       accessibilityState={{ selected: isSelected }}
       hitSlop={6}
       className="rounded-full px-3 py-1.5"
-      style={isSelected ? { backgroundColor: colors.primary } : undefined}
+      style={isSelected ? { backgroundColor: isInverse ? colors.textInverse : colors.primary } : undefined}
     >
       {/* The console's instrument lettering: uppercase mono, widely tracked. */}
       <Text
         className="font-mono text-xs uppercase"
-        style={{ color: isSelected ? colors.surface : colors.primary, letterSpacing: 1.6 }}
+        style={{
+          color: isSelected ? (isInverse ? colors.primary : colors.surface) : isInverse ? hexToRgba(colors.textInverse, 0.72) : colors.primary,
+          letterSpacing: 1.6,
+        }}
       >
         {label}
       </Text>

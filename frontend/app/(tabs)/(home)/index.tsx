@@ -1,24 +1,35 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Pressable, ScrollView, Text, View, useWindowDimensions } from 'react-native'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Pressable, Text, View, useWindowDimensions } from 'react-native'
+import Animated, {
+  Extrapolation,
+  interpolate,
+  runOnJS,
+  useAnimatedReaction,
+  useAnimatedRef,
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useSharedValue,
+} from 'react-native-reanimated'
 import { Ionicons } from '@expo/vector-icons'
-import { SafeAreaView } from 'react-native-safe-area-context'
-import { router } from 'expo-router'
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
+import { router, useFocusEffect } from 'expo-router'
+import { setStatusBarStyle } from 'expo-status-bar'
 import { colors } from '@/constants/theme'
 import { useTransactionFeed } from '@/hooks/useTransactionFeed'
 import { usePullToRefresh } from '@/hooks/usePullToRefresh'
 import { useAccounts } from '@/hooks/useAccounts'
 import { useBudgets } from '@/hooks/useBudgets'
 import { useCategories } from '@/hooks/useCategories'
-import { MonthNavigator } from '@/components/transactions/MonthNavigator'
-import { AccountsFilterDropdown } from '@/components/ui/AccountsFilterDropdown'
 import { ErrorBanner } from '@/components/ui/ErrorBanner'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { LoadingScreen } from '@/components/ui/LoadingScreen'
-import { Pill } from '@/components/ui/RangePills'
+import { IconSwitch, type IconSwitchOption } from '@/components/ui/IconSwitch'
 import { MonthCharts } from '@/components/visualizations/MonthCharts'
+import { SpendingComparison } from '@/components/visualizations/SpendingComparison'
 import { CategoryDetailSheet } from '@/components/visualizations/CategoryDetailSheet'
 import { filterByMonth, shiftMonth } from '@/lib/transactions/filterByMonth'
 import { useSelectedMonth } from '@/hooks/useSelectedMonth'
+import { useHomeTabReselect } from '@/hooks/useHomeTabReselect'
 import { useSelectedAccountFilter } from '@/hooks/useSelectedAccountFilter'
 import { aggregateMonth } from '@/lib/transactions/aggregateMonth'
 import { hasReimbursementSurplus } from '@/lib/transactions/totals'
@@ -26,17 +37,35 @@ import { UNCATEGORIZED_ID, computeDonutSegments } from '@/lib/transactions/visua
 import type { DonutSegment } from '@/lib/transactions/visualizationData'
 import { budgetStatus, monthElapsedFraction, resolveBudgetsForMonth } from '@/lib/budgets/budgetMath'
 import { compareWithPreviousMonth } from '@/lib/budgets/monthComparison'
-import { reviewPrompt } from '@/lib/cashflow/reviewPrompt'
 import { arrangeTiles, tileState } from '@/lib/home/categoryTiles'
-import { MonthOverviewCard } from '@/components/home/MonthOverviewCard'
+import { MonthHeadline } from '@/components/home/MonthHeadline'
+import { BudgetLine } from '@/components/home/BudgetLine'
+import { COLLAPSED_BAR_HEIGHT, CollapsedMonthBar } from '@/components/home/CollapsedMonthBar'
 import { TileRows, type GridTile } from '@/components/home/TileRows'
+import { MonthHeader } from '@/components/home/MonthHeader'
 import { useTransactionEditorActions } from '@/components/transactions/TransactionEditorProvider'
 import type { YearMonth } from '@/lib/transactions/filterByMonth'
+
+const VIEW_OPTIONS: Array<IconSwitchOption<'grid' | 'chart'>> = [
+  { value: 'grid', icon: 'grid-outline', label: 'Summary' },
+  { value: 'chart', icon: 'pie-chart-outline', label: 'Charts' },
+]
 
 /** The screen's side padding (px-5) and the grid's gutter. */
 const SCREEN_PADDING = 20
 const TILE_GAP = 10
 const TILE_HEIGHT = 116
+/** How far the sheet of tiles rides up over the bottom of the top section. */
+const SHEET_OVERLAP = 24
+const SHEET_RADIUS = 28
+/** Cast upward, onto the top section: the sheet reads as lying over it rather than beside it. */
+const SHEET_SHADOW = {
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: -4 },
+  shadowOpacity: 0.06,
+  shadowRadius: 16,
+  elevation: 6,
+}
 
 export default function DashboardScreen() {
   const [month, setMonth] = useSelectedMonth()
@@ -46,7 +75,7 @@ export default function DashboardScreen() {
   const [view, setView] = useState<'grid' | 'chart'>('grid')
   const [detailState, setDetailState] = useState<{ segment: DonutSegment; mode: 'expense' | 'income' } | null>(null)
 
-  const { feed, isLoading, error, refresh } = useTransactionFeed()
+  const { feed, categoryById, isLoading, error, refresh } = useTransactionFeed()
   const refreshControl = usePullToRefresh(refresh)
   const accounts = useAccounts()
   const budgets = useBudgets()
@@ -64,7 +93,8 @@ export default function DashboardScreen() {
     [monthFeed],
   )
 
-  const { width: windowWidth } = useWindowDimensions()
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions()
+  const insets = useSafeAreaInsets()
   const tileWidth = (windowWidth - SCREEN_PADDING * 2 - TILE_GAP * 2) / 3
 
   // Budgets are effective-dated: the ring on each card must reflect the amount in force for the
@@ -149,7 +179,46 @@ export default function DashboardScreen() {
     }
   }, [detailState, expenseSegments, incomeSegments, detailTransactions])
 
+  // The top section scrolls away over the sheet. Once it has, the sheet comes to rest just under a
+  // slim bar that keeps the month in view; the scroll snaps to fully open or fully collapsed, so the
+  // page never sits half-way. Measured from the top section's own height, which changes with it.
+  const scrollRef = useAnimatedRef<Animated.ScrollView>()
+  const scrollY = useSharedValue(0)
+  const [heroHeight, setHeroHeight] = useState(0)
+  const [isCollapsed, setIsCollapsed] = useState(false)
+  const collapseAt = Math.max(0, heroHeight - SHEET_OVERLAP - COLLAPSED_BAR_HEIGHT)
+  // Home's tab tapped again: back to the Summary view, scrolled to the top with the month showing.
+  useHomeTabReselect(() => {
+    setView('grid')
+    scrollRef.current?.scrollTo({ y: 0, animated: true })
+  })
+  const onScroll = useAnimatedScrollHandler((event) => {
+    scrollY.value = event.contentOffset.y
+  })
+  const heroStyle = useAnimatedStyle(() => ({
+    opacity: collapseAt > 0 ? interpolate(scrollY.value, [0, collapseAt], [1, 0.25], Extrapolation.CLAMP) : 1,
+  }))
+  const barStyle = useAnimatedStyle(() => ({
+    opacity: collapseAt > 0 ? interpolate(scrollY.value, [collapseAt - 32, collapseAt], [0, 1], Extrapolation.CLAMP) : 0,
+  }))
+  useAnimatedReaction(
+    () => collapseAt > 0 && scrollY.value >= collapseAt - 16,
+    (collapsed, previous) => {
+      if (collapsed !== previous) runOnJS(setIsCollapsed)(collapsed)
+    },
+    [collapseAt],
+  )
+
   const hasNoAccounts = !accounts.isLoading && (accounts.data?.length ?? 0) === 0
+  // The summary's top section is the brand teal right up under the clock, so the status bar turns
+  // white while it shows — and back to dark on leaving, for every other screen's light background.
+  const isOnTeal = view === 'grid' && !isLoading && !hasNoAccounts
+  useFocusEffect(
+    useCallback(() => {
+      setStatusBarStyle(isOnTeal ? 'light' : 'dark')
+      return () => setStatusBarStyle('dark')
+    }, [isOnTeal]),
+  )
 
   if (isLoading) return <LoadingScreen />
 
@@ -184,32 +253,22 @@ export default function DashboardScreen() {
 
   const monthParams = (target: YearMonth) => ({ year: String(target.year), month: String(target.month) })
 
-  // The same header row as Net Worth and Investments — which view on the left, the page's controls
-  // on the right — with the month, Home's subject, as the title under it.
+  const headerTone = isOnTeal ? 'inverse' : 'default'
+  // One header row: the month leads as the screen's heading, and the page's controls sit at the
+  // right — the view switch (icons, as Investments switches its views), the account filter and the
+  // pencil. Summary and Charts share it, so switching views leaves the header where it was.
   const topBar = (
-    <View className="gap-3">
-      <View className="flex-row items-center justify-between">
-        <View className="flex-row gap-2">
-          <Pill label="Summary" isSelected={view === 'grid'} onPress={() => setView('grid')} />
-          <Pill label="Charts" isSelected={view === 'chart'} onPress={() => setView('chart')} />
-        </View>
-        <View className="flex-row items-center gap-4">
-          <AccountsFilterDropdown variant="icon" accounts={accounts.data ?? []} selectedAccountId={selectedAccountId} onSelect={setSelectedAccountId} />
-          <Pressable onPress={openNewManual} hitSlop={8} accessibilityLabel="Write a transaction">
-            <Ionicons name="create-outline" size={24} color={colors.textPrimary} />
-          </Pressable>
-        </View>
-      </View>
-      <MonthNavigator
-        variant="title"
-        month={month}
-        onPrevious={() => setMonth(shiftMonth(month, -1))}
-        onNext={() => setMonth(shiftMonth(month, 1))}
-        onSelect={setMonth}
-      />
-    </View>
+    <MonthHeader
+      tone={headerTone}
+      month={month}
+      onMonthChange={setMonth}
+      accounts={accounts.data ?? []}
+      selectedAccountId={selectedAccountId}
+      onAccountChange={setSelectedAccountId}
+      onWrite={openNewManual}
+      extra={<IconSwitch tone={headerTone} options={VIEW_OPTIONS} value={view} onChange={setView} />}
+    />
   )
-
 
   function tileFor(
     category: { id: string; name: string; icon: string | null; color: string },
@@ -246,7 +305,7 @@ export default function DashboardScreen() {
   const errorBanner = error ? <ErrorBanner message="Something went wrong loading your data." /> : null
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: isOnTeal ? colors.primary : colors.background }} edges={['top']}>
       {view === 'chart' ? (
         <>
           <View className="px-5 pt-4 pb-2" style={{ gap: 12 }}>
@@ -262,44 +321,98 @@ export default function DashboardScreen() {
             totalIncome={totalIncome}
             month={month}
             onSegmentPress={(segment, mode) => setDetailState({ segment, mode })}
+            feed={feed}
+            categoryById={categoryById}
+            accounts={accounts.data ?? []}
           />
         </>
       ) : (
-        <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerClassName="gap-5 px-5 pb-8 pt-4" refreshControl={refreshControl}>
-          {topBar}
-          {errorBanner}
+        <View style={{ flex: 1 }}>
+          <Animated.ScrollView
+            ref={scrollRef}
+            onScroll={onScroll}
+            scrollEventThrottle={16}
+            contentInsetAdjustmentBehavior="automatic"
+            refreshControl={refreshControl}
+            snapToOffsets={collapseAt > 0 ? [0, collapseAt] : undefined}
+            snapToEnd={false}
+            // White under the sheet, so pulling past the bottom never shows the teal behind it.
+            style={{ backgroundColor: colors.surface }}
+          >
+            {/* Teal above the top section too, so pulling down to refresh stays on the brand colour. */}
+            <View style={{ position: 'absolute', top: -1000, left: 0, right: 0, height: 1000, backgroundColor: colors.primary }} />
 
-          {/* Pulled closer to the month title: the overview reads as that month's, not a section of its own. */}
-          <View style={{ marginTop: -8 }}>
-            <MonthOverviewCard
-              month={month}
-              totalExpense={totalExpense}
-              totalIncome={totalIncome}
-              comparison={comparison}
-              isCurrentMonth={isCurrentMonth}
-              budget={monthBudget}
-              review={reviewPrompt(month, new Date())}
-              onReviewPress={(target) => router.push({ pathname: '/(tabs)/(home)/cash-flow', params: monthParams(target) })}
-              onBudgetPress={() => router.push({ pathname: '/(tabs)/(home)/budgets', params: monthParams(month) })}
-            />
-          </View>
-
-          {/* Each group of tiles under its own heading that folds it away — no totals, the card above
-              has them. The heading also marks where the overview ends and the categories begin. */}
-          {expenseTiles.length > 0 ? (
-            <View className="gap-3">
-              <SectionToggle title="Expenses" isOpen={expensesOpen} onToggle={() => setExpensesOpen((v) => !v)} />
-              {expensesOpen ? <TileRows tiles={expenseTiles} tileWidth={tileWidth} tileHeight={TILE_HEIGHT} gap={TILE_GAP} /> : null}
+            {/* The month on the brand colour: the header, the month, and its figures. The colour stays
+                put while the contents fade, so the section never washes out as it collapses. */}
+            <View onLayout={(e) => setHeroHeight(e.nativeEvent.layout.height)} style={{ backgroundColor: colors.primary }}>
+              <Animated.View style={[{ paddingHorizontal: SCREEN_PADDING, paddingTop: 16, paddingBottom: SHEET_OVERLAP + 28, gap: 28 }, heroStyle]}>
+                {topBar}
+                {errorBanner}
+                <MonthHeadline
+                  totalExpense={totalExpense}
+                  totalIncome={totalIncome}
+                />
+              </Animated.View>
             </View>
-          ) : null}
 
-          {incomeTiles.length > 0 ? (
-            <View className="gap-3">
-              <SectionToggle title="Income" isOpen={incomeOpen} onToggle={() => setIncomeOpen((v) => !v)} />
-              {incomeOpen ? <TileRows tiles={incomeTiles} tileWidth={tileWidth} tileHeight={TILE_HEIGHT} gap={TILE_GAP} /> : null}
+            {/* The sheet: the budget, then the categories. At least a screen tall, so the top section can
+                always scroll fully away, however few tiles there are. */}
+            <View
+              style={[
+                {
+                  marginTop: -SHEET_OVERLAP,
+                  minHeight: windowHeight - COLLAPSED_BAR_HEIGHT,
+                  backgroundColor: colors.surface,
+                  borderTopLeftRadius: SHEET_RADIUS,
+                  borderTopRightRadius: SHEET_RADIUS,
+                  paddingHorizontal: SCREEN_PADDING,
+                  paddingTop: 24,
+                  // Clears the floating tab bar, which the scroll view's automatic inset doesn't account
+                  // for here, so the last row of tiles can scroll up above it (as the Charts pages do).
+                  paddingBottom: insets.bottom + 88,
+                  gap: 24,
+                },
+                SHEET_SHADOW,
+              ]}
+            >
+              {/* How the month is pacing, the two ways: against the budget, and against last month. */}
+              <View className="gap-4">
+                <BudgetLine
+                  budget={monthBudget}
+                  onPress={() => router.push({ pathname: '/(tabs)/(home)/budgets', params: monthParams(month) })}
+                />
+                <View className="h-px bg-border" />
+                <SpendingComparison month={month} comparison={comparison} isCurrentMonth={isCurrentMonth} />
+              </View>
+
+              {/* Each group of tiles under its own heading that folds it away — no totals, the top
+                  section has them. */}
+              {expenseTiles.length > 0 ? (
+                <View className="gap-3">
+                  <SectionToggle title="Expenses" isOpen={expensesOpen} onToggle={() => setExpensesOpen((v) => !v)} />
+                  {expensesOpen ? <TileRows tiles={expenseTiles} tileWidth={tileWidth} tileHeight={TILE_HEIGHT} gap={TILE_GAP} /> : null}
+                </View>
+              ) : null}
+
+              {incomeTiles.length > 0 ? (
+                <View className="gap-3">
+                  <SectionToggle title="Income" isOpen={incomeOpen} onToggle={() => setIncomeOpen((v) => !v)} />
+                  {incomeOpen ? <TileRows tiles={incomeTiles} tileWidth={tileWidth} tileHeight={TILE_HEIGHT} gap={TILE_GAP} /> : null}
+                </View>
+              ) : null}
             </View>
-          ) : null}
-        </ScrollView>
+          </Animated.ScrollView>
+
+          <CollapsedMonthBar
+            month={month}
+            net={totalIncome - totalExpense}
+            onPrevious={() => setMonth(shiftMonth(month, -1))}
+            onNext={() => setMonth(shiftMonth(month, 1))}
+            onExpand={() => scrollRef.current?.scrollTo({ y: 0, animated: true })}
+            isInteractive={isCollapsed}
+            style={barStyle}
+          />
+        </View>
       )}
 
 

@@ -10,6 +10,7 @@ import { TransactionEditorProvider } from '@/components/transactions/Transaction
 import { useTransactionFeed } from '@/hooks/useTransactionFeed'
 import { LoadingScreen } from '@/components/ui/LoadingScreen'
 import { colors } from '@/constants/theme'
+import { requestHomeTop } from '@/hooks/useHomeTabReselect'
 
 // Rendered (not called) inside the authed layout so its data hooks never run logged-out.
 function BudgetAlertWatcher() {
@@ -65,9 +66,11 @@ function tabIcon(name: React.ComponentProps<typeof Ionicons>['name']) {
   return <Trigger.Icon src={<Trigger.VectorIcon family={Ionicons} name={name} />} renderingMode="template" />
 }
 
+/** Home's own screens, as paths: groups aren't part of the path, so its index is the root. */
+const HOME_PATHS = new Set(['/', '/budgets'])
+
 export default function TabsLayout() {
   const { session, isLoading } = useSession()
-  // Groups are not part of the path, so this is cash flow inside Home's stack.
   const pathname = usePathname()
 
   if (isLoading) return <LoadingScreen />
@@ -97,13 +100,21 @@ export default function TabsLayout() {
           state, so it is unaffected. */}
       <NativeTabs
         tintColor={colors.primary}
-        hidden={pathname === '/cash-flow'}
         disableTransparentOnScrollEdge
         {...PRE_GLASS_BAR}
       >
         {/* Home is where the money goes (with budgets inside it), Calendar the same month day by day,
             Net Worth what there is — the overview, and the invested part of it, behind one switch. */}
-        <Trigger name="(home)">
+        {/* Tapped again while already on Home, it takes Home back to its top. From another tab it
+            returns to Home as it was left — that tap's path is the other tab's, not Home's. */}
+        <Trigger
+          name="(home)"
+          listeners={{
+            tabPress: () => {
+              if (HOME_PATHS.has(pathname)) requestHomeTop()
+            },
+          }}
+        >
           <Trigger.Label>Home</Trigger.Label>
           {tabIcon('home')}
         </Trigger>

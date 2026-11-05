@@ -9,7 +9,16 @@ import { useAmountsMasked } from '@/hooks/useAmountsMasked'
  * hides it as surely as tapping the eye. It flips the one app-wide masking setting, so hiding
  * amounts on Home hides them on Net Worth and Investments too.
  */
-export function MaskToggle({ children, size = 20 }: { children: ReactNode; size?: number }) {
+export function MaskToggle({
+  children,
+  size = 20,
+  color = colors.textMuted,
+}: {
+  children: ReactNode
+  size?: number
+  /** The eye's colour; a headline on the brand colour passes a softened white. */
+  color?: string
+}) {
   const { isMasked, toggleMask } = useAmountsMasked()
   return (
     <Pressable
@@ -20,7 +29,7 @@ export function MaskToggle({ children, size = 20 }: { children: ReactNode; size?
       className="shrink flex-row items-center gap-2"
     >
       {children}
-      <Ionicons name={isMasked ? 'eye-off' : 'eye'} size={size} color={colors.textMuted} />
+      <Ionicons name={isMasked ? 'eye-off' : 'eye'} size={size} color={color} />
     </Pressable>
   )
 }

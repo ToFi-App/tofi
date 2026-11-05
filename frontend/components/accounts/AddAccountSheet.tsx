@@ -1,8 +1,62 @@
+import type { ReactNode } from 'react'
 import { Image, Pressable, ScrollView, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
-import { colors } from '@/constants/theme'
+import { borderRadius, colors, shadow } from '@/constants/theme'
 import { BottomSheet, useSheetScroll } from '@/components/ui/BottomSheet'
 import type { Institution } from '@/types/domain'
+
+/** A row's logo or glyph well. */
+const MARK_SIZE = 36
+
+/** A group's heading: dark and in sentence case, a step under the row titles, not grey capitals. */
+function SectionHeading({ children, isFirst = true }: { children: ReactNode; isFirst?: boolean }) {
+  return <Text className={`font-sansSemi text-sm text-textPrimary ${isFirst ? 'pt-1' : 'pt-4'}`}>{children}</Text>
+}
+
+/** The round well a glyph sits in when there is no logo. */
+function MarkWell({ children, tint = colors.surfaceRaised }: { children: ReactNode; tint?: string }) {
+  return (
+    <View style={{ width: MARK_SIZE, height: MARK_SIZE, borderRadius: MARK_SIZE / 2, backgroundColor: tint }} className="items-center justify-center">
+      {children}
+    </View>
+  )
+}
+
+/**
+ * One choice, on a card of its own — white, rounded, lightly shadowed, as Home's categories and the
+ * investment accounts are laid out — so on the white sheet each reads as something to tap rather
+ * than a line of text.
+ */
+function SheetRow({
+  onPress,
+  accessibilityLabel,
+  mark,
+  title,
+  subtitle,
+}: {
+  onPress: () => void
+  accessibilityLabel: string
+  mark: ReactNode
+  title: string
+  subtitle?: string
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      style={[shadow.sm, { borderRadius: borderRadius.xl, backgroundColor: colors.surface }]}
+      className="flex-row items-center gap-3 px-4 py-3"
+    >
+      {mark}
+      <View className="flex-1 gap-0.5">
+        <Text className="font-sansSemi text-base text-textPrimary">{title}</Text>
+        {subtitle ? <Text className="font-sans text-sm text-textPrimary">{subtitle}</Text> : null}
+      </View>
+      <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+    </Pressable>
+  )
+}
 
 interface AddAccountSheetProps {
   visible: boolean
@@ -51,79 +105,61 @@ export function AddAccountSheet({
         <Text className="font-sansSemi text-lg text-textPrimary">Add an account</Text>
       </View>
 
-      <ScrollView {...sheetScroll.scrollProps} contentContainerClassName="gap-1 px-5 pb-6">
-        {institutions.length > 0 ? (
-          <Text className="pb-1 pt-2 font-sansMed text-xs text-textMuted">CONNECTED BANKS</Text>
-        ) : null}
+      <ScrollView {...sheetScroll.scrollProps} contentContainerClassName="gap-2.5 px-5 pb-6">
+        {/* Every bank row did the same thing, so its subtitle said the same thing six times: the
+            heading says it once instead. */}
+        {institutions.length > 0 ? <SectionHeading>Share more from a bank you've connected</SectionHeading> : null}
 
         {institutions.map((institution) => {
           const logo = logoByItemId.get(institution.itemId) ?? null
           return (
-            <Pressable
+            <SheetRow
               key={institution.itemId}
               onPress={() => onManageInstitution(institution.itemId)}
-              accessibilityRole="button"
               accessibilityLabel={`Choose accounts at ${institution.institutionName}`}
-              className="flex-row items-center gap-3 rounded-xl bg-surface px-4 py-3"
-            >
-              {logo ? (
-                <Image
-                  source={{ uri: `data:image/png;base64,${logo}` }}
-                  style={{ width: 36, height: 36, borderRadius: 18 }}
-                />
-              ) : (
-                <View className="h-9 w-9 items-center justify-center rounded-full bg-surfaceRaised">
-                  <Ionicons name="business" size={18} color={colors.textSecondary} />
-                </View>
-              )}
-              <View className="flex-1">
-                <Text className="font-sansMed text-base text-textPrimary">{institution.institutionName}</Text>
-                <Text className="font-sans text-xs text-textMuted">Choose which accounts to share</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-            </Pressable>
+              mark={
+                logo ? (
+                  <Image source={{ uri: `data:image/png;base64,${logo}` }} style={{ width: MARK_SIZE, height: MARK_SIZE, borderRadius: MARK_SIZE / 2 }} />
+                ) : (
+                  <MarkWell>
+                    <Ionicons name="business" size={18} color={colors.textSecondary} />
+                  </MarkWell>
+                )
+              }
+              title={institution.institutionName}
+            />
           )
         })}
 
-        <Text className="pb-1 pt-4 font-sansMed text-xs text-textMuted">SOMEWHERE ELSE</Text>
+        <SectionHeading isFirst={institutions.length === 0}>Somewhere else</SectionHeading>
 
         {appleAccounts?.visible ? (
-          <Pressable
+          <SheetRow
             onPress={appleAccounts.onConnect}
-            accessibilityRole="button"
             accessibilityLabel="Add Apple Card, Apple Cash and Savings"
-            className="flex-row items-center gap-3 rounded-xl bg-surface px-4 py-3"
-          >
-            <View className="h-9 w-9 items-center justify-center rounded-full bg-surfaceRaised">
-              <Ionicons name="logo-apple" size={18} color={colors.textPrimary} />
-            </View>
-            <View className="flex-1">
-              <Text className="font-sansMed text-base text-textPrimary">Apple Card, Cash & Savings</Text>
-              {/* The contrast with the row below is the point: this one reads Wallet on the device,
-                  so it costs no Plaid connection and sends nothing to a server. */}
-              <Text className="font-sans text-xs text-textMuted">
-                {appleAccounts.isConnected ? 'Connected — reads Wallet on this iPhone' : 'Reads Wallet on this iPhone'}
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-          </Pressable>
+            mark={
+              <MarkWell>
+                <Ionicons name="logo-apple" size={18} color={colors.textPrimary} />
+              </MarkWell>
+            }
+            title="Apple Card, Cash & Savings"
+            // The contrast with the row below is the point: this one reads Wallet on the device, so
+            // it costs no Plaid connection and sends nothing to a server.
+            subtitle={appleAccounts.isConnected ? 'Connected, reads Wallet on this iPhone' : 'Reads Wallet on this iPhone'}
+          />
         ) : null}
-        <Pressable
+        <SheetRow
           onPress={onConnectNewBank}
-          accessibilityRole="button"
           accessibilityLabel="Connect a new bank"
-          className="flex-row items-center gap-3 rounded-xl bg-surface px-4 py-3"
-        >
-          <View className="h-9 w-9 items-center justify-center rounded-full bg-surfaceRaised">
-            <Ionicons name="add" size={20} color={colors.primary} />
-          </View>
-          <View className="flex-1">
-            <Text className="font-sansMed text-base text-textPrimary">Connect a new bank</Text>
-            {/* The cost is stated on the only row that carries it. */}
-            <Text className="font-sans text-xs text-textMuted">Uses one of your Plaid connections</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-        </Pressable>
+          mark={
+            <MarkWell tint={colors.primaryMuted}>
+              <Ionicons name="add" size={20} color={colors.primary} />
+            </MarkWell>
+          }
+          title="Connect a new bank"
+          // The cost is stated on the only row that carries it.
+          subtitle="Uses one of your Plaid connections"
+        />
       </ScrollView>
     </BottomSheet>
   )

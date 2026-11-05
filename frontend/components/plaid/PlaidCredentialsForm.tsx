@@ -7,7 +7,7 @@ import { TextField } from '@/components/ui/TextField'
 import { SecretInput } from '@/components/ui/SecretInput'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { BottomSheet, useSheetScroll } from '@/components/ui/BottomSheet'
-import { colors } from '@/constants/theme'
+import { colors, shadow } from '@/constants/theme'
 import { reportError } from '@/lib/observability/log'
 
 interface PlaidCredentialsFormProps {
@@ -88,7 +88,7 @@ export function PlaidCredentialsForm({ onSaved }: PlaidCredentialsFormProps) {
     <>
       {isNewSetup && canChooseEnvironment ? (
         <View className="gap-2">
-          <Text className="font-sansMed text-sm text-textSecondary">Environment</Text>
+          <Text className="font-sansSemi text-sm text-textPrimary">Environment</Text>
           <SegmentedControl
             value={environment}
             onChange={setEnvironment}
@@ -97,7 +97,7 @@ export function PlaidCredentialsForm({ onSaved }: PlaidCredentialsFormProps) {
               { label: 'Production', value: 'production' },
             ]}
           />
-          <Text className="font-sans text-xs leading-4 text-textMuted">
+          <Text className="font-sans text-xs leading-4 text-textPrimary">
             This cannot be changed later — linked banks are tied to the environment they were
             connected in.
           </Text>
@@ -141,7 +141,7 @@ export function PlaidCredentialsForm({ onSaved }: PlaidCredentialsFormProps) {
       <View className="gap-6">
         <View className="gap-2">
           <Text className="font-sansSemi text-lg text-textPrimary">Plaid Developer Account</Text>
-          <Text className="font-sans text-sm leading-5 text-textSecondary">
+          <Text className="font-sans text-sm leading-5 text-textPrimary">
             ToFi uses your own free Plaid developer account so your linked banks stay under your own
             usage.
           </Text>
@@ -161,7 +161,7 @@ export function PlaidCredentialsForm({ onSaved }: PlaidCredentialsFormProps) {
           </View>
           <View className="flex-1 gap-0.5">
             <Text className="font-sansSemi text-base text-primary">How do I get these?</Text>
-            <Text className="font-sans text-xs text-textSecondary">
+            <Text className="font-sans text-xs text-textPrimary">
               Free Plaid account — about 2 minutes
             </Text>
           </View>
@@ -173,16 +173,16 @@ export function PlaidCredentialsForm({ onSaved }: PlaidCredentialsFormProps) {
         </Pressable>
 
         {isHowToOpen ? (
-          <View className="gap-4 rounded-md bg-surface p-4">
+          <View className="gap-4 rounded-xl bg-surface p-4" style={shadow.sm}>
             <View className="flex-row gap-3">
               <View className="h-5 w-5 items-center justify-center rounded-full bg-primaryMuted">
                 <Text className="font-sansSemi text-xs text-primary">1</Text>
               </View>
               <View className="flex-1 gap-1">
-                <Text className="font-sans text-sm leading-5 text-textSecondary">
+                <Text className="font-sans text-sm leading-5 text-textPrimary">
                   Create a free Plaid account.
                 </Text>
-                <Text className="font-sans text-xs leading-4 text-textMuted">
+                <Text className="font-sans text-xs leading-4 text-textPrimary">
                   When it asks what the account is for, choose Personal.
                 </Text>
               </View>
@@ -193,10 +193,10 @@ export function PlaidCredentialsForm({ onSaved }: PlaidCredentialsFormProps) {
                 <Text className="font-sansSemi text-xs text-primary">2</Text>
               </View>
               <View className="flex-1 gap-1">
-                <Text className="font-sans text-sm leading-5 text-textSecondary">
+                <Text className="font-sans text-sm leading-5 text-textPrimary">
                   Request free Trial access — this unlocks real bank data.
                 </Text>
-                <Text className="font-sans text-xs leading-4 text-textMuted">
+                <Text className="font-sans text-xs leading-4 text-textPrimary">
                   Plaid will ask for your name and address here. That's Plaid's own requirement
                   for real bank data, not ToFi's — approval is usually quick.
                 </Text>
@@ -207,7 +207,7 @@ export function PlaidCredentialsForm({ onSaved }: PlaidCredentialsFormProps) {
               <View className="h-5 w-5 items-center justify-center rounded-full bg-primaryMuted">
                 <Text className="font-sansSemi text-xs text-primary">3</Text>
               </View>
-              <Text className="flex-1 font-sans text-sm leading-5 text-textSecondary">
+              <Text className="flex-1 font-sans text-sm leading-5 text-textPrimary">
                 Copy your Production Client ID and Production Secret from Developers → Keys,
                 then come back here and paste them in.
               </Text>
@@ -232,22 +232,22 @@ export function PlaidCredentialsForm({ onSaved }: PlaidCredentialsFormProps) {
     <View className="gap-6">
       <View className="gap-2">
         <Text className="font-sansSemi text-lg text-textPrimary">Plaid Developer Account</Text>
-        <Text className="font-sans text-sm leading-5 text-textSecondary">
+        <Text className="font-sans text-sm leading-5 text-textPrimary">
           Your Plaid developer account is connected.
         </Text>
       </View>
 
-      <View className="gap-4 rounded-xl bg-surface p-4">
+      <View className="gap-4 rounded-xl bg-surface p-4" style={shadow.sm}>
         <View className="gap-1">
-          <Text className="font-sansMed text-sm text-textMuted">Client ID</Text>
+          <Text className="font-sansSemi text-sm text-textPrimary">Client ID</Text>
           <Text className="font-mono text-base text-textPrimary">{existing.clientId}</Text>
         </View>
         <View className="gap-1">
-          <Text className="font-sansMed text-sm text-textMuted">Secret</Text>
-          <Text className="font-mono text-base text-textMuted">••••••••••••••••</Text>
+          <Text className="font-sansSemi text-sm text-textPrimary">Secret</Text>
+          <Text className="font-mono text-base text-textPrimary">••••••••••••••••</Text>
         </View>
         <View className="gap-1">
-          <Text className="font-sansMed text-sm text-textMuted">Environment</Text>
+          <Text className="font-sansSemi text-sm text-textPrimary">Environment</Text>
           <Text className="font-sansMed text-base text-textPrimary capitalize">{existing.environment}</Text>
         </View>
       </View>

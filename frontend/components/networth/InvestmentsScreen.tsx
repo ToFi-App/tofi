@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState, type ComponentProps } from 'react'
-import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native'
+import { useEffect, useMemo, useState } from 'react'
+import { ActivityIndicator, ScrollView, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
@@ -20,6 +20,7 @@ import { FreshnessInfo } from '@/components/investments/FreshnessInfo'
 import { InvestmentHistoryChart } from '@/components/accounts/InvestmentHistoryChart'
 import { AccountsFilterDropdown } from '@/components/ui/AccountsFilterDropdown'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { IconSwitch, type IconSwitchOption } from '@/components/ui/IconSwitch'
 import { NetWorthScopePills } from '@/components/networth/NetWorthScopePills'
 import { DayGroupHeader } from '@/components/transactions/DayGroupHeader'
 import { TransactionRow } from '@/components/transactions/TransactionRow'
@@ -224,7 +225,7 @@ export function InvestmentsScreen() {
                 {formatMaskableAmount(isTrend && reading ? reading.value : balance, isMasked)}
               </Text>
             </MaskToggle>
-            <ViewSwitch view={view} onChange={setView} />
+            <IconSwitch options={VIEW_OPTIONS} value={view} onChange={setView} />
           </View>
           {shown || hasHoldings ? (
             <View className="mt-1 flex-row items-center gap-1.5">
@@ -382,31 +383,7 @@ function InvestmentTransferDays({
   )
 }
 
-const VIEW_OPTIONS: Array<{ value: InvestmentView; icon: ComponentProps<typeof Ionicons>['name']; label: string }> = [
+const VIEW_OPTIONS: Array<IconSwitchOption<InvestmentView>> = [
   { value: 'trend', icon: 'analytics-outline', label: 'Trend' },
   { value: 'breakdown', icon: 'grid-outline', label: 'Breakdown' },
 ]
-
-function ViewSwitch({ view, onChange }: { view: InvestmentView; onChange: (view: InvestmentView) => void }) {
-  return (
-    <View className="flex-row rounded-full" style={{ backgroundColor: colors.surfaceRaised, padding: 2 }}>
-      {VIEW_OPTIONS.map((option) => {
-        const selected = option.value === view
-        return (
-          <Pressable
-            key={option.value}
-            onPress={() => onChange(option.value)}
-            accessibilityRole="button"
-            accessibilityLabel={option.label}
-            accessibilityState={{ selected }}
-            hitSlop={4}
-            className="rounded-full px-2.5 py-1"
-            style={selected ? { backgroundColor: colors.surface } : undefined}
-          >
-            <Ionicons name={option.icon} size={16} color={selected ? colors.primary : colors.textMuted} />
-          </Pressable>
-        )
-      })}
-    </View>
-  )
-}

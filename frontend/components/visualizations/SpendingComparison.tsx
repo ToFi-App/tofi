@@ -1,25 +1,24 @@
-import { useMemo, useState, type ComponentProps } from 'react'
-import { Pressable, Text, View } from 'react-native'
-import { Ionicons } from '@expo/vector-icons'
+import { useMemo, useState } from 'react'
+import { Text, View } from 'react-native'
 import { useMMKVString } from 'react-native-mmkv'
-import Svg, { Circle, ClipPath, Defs, Line, Path, Rect, Text as SvgText } from 'react-native-svg'
-import { colors, fontFamily, hexToRgba } from '@/constants/theme'
-import { formatMaskableAmount } from '@/lib/format/money'
+import Svg, { Circle, ClipPath, Defs, Line, LinearGradient, Path, Rect, Stop } from 'react-native-svg'
+import { colors, hexToRgba } from '@/constants/theme'
+import { MASKED_AMOUNT } from '@/lib/format/money'
 import { useAmountsMasked } from '@/hooks/useAmountsMasked'
 import { monotoneLine } from '@/lib/charts/lineChart'
 import { totalThrough, type MonthComparison } from '@/lib/budgets/monthComparison'
 import { shiftMonth, type YearMonth } from '@/lib/transactions/filterByMonth'
 import { SPENDING_CHART_VIEW_KEY, preferences } from '@/lib/storage/preferences'
+import { IconSwitch, type IconSwitchOption } from '@/components/ui/IconSwitch'
+import { LineLayer, LiveDot } from './TrendLine'
+import { SectionBadge } from '@/components/ui/SectionBadge'
 
-const CHART_HEIGHT = 96
+const CHART_HEIGHT = 56
+/** Inter's tabular figures: digits all one width, so amounts line up without a monospace face. */
+const TABULAR = { fontVariant: ['tabular-nums' as const] }
 /** How much of each half the gap line may use, so its peak and the end dot clear the edges. */
 const HEADROOM = 0.82
-/**
- * A column on the right for the gap view's labels — "more" over last month's name over "less" —
- * clear of the plot, so the line can never run into them.
- */
-const LABEL_GUTTER = 64
-/** The totals view has no labels: just room past the line's last day for its end dot. */
+/** Room past the line's last day for its end dot. */
 const PLOT_RIGHT = 6
 /**
  * The smallest gap that fills the chart, as a share of last month's whole spending. Without it the
@@ -29,9 +28,19 @@ const MIN_REACH_SHARE = 0.2
 /** Under a cent either way is level: the totals are sums of cents, and float drift isn't news. */
 const LEVEL = 0.005
 
+/** The point under a finger, marked as the trend charts mark theirs: a tinted halo round a ringed dot. */
+function ScrubMarker({ x, y, color }: { x: number; y: number; color: string }) {
+  return (
+    <>
+      <Circle cx={x} cy={y} r={9} fill={hexToRgba(color, 0.18)} />
+      <Circle cx={x} cy={y} r={5} fill={colors.surface} stroke={color} strokeWidth={2.5} />
+    </>
+  )
+}
+
 type ChartView = 'gap' | 'total'
 
-const VIEW_OPTIONS: Array<{ value: ChartView; icon: ComponentProps<typeof Ionicons>['name']; label: string }> = [
+const VIEW_OPTIONS: Array<IconSwitchOption<ChartView>> = [
   { value: 'gap', icon: 'swap-vertical-outline', label: 'Ahead or behind last month' },
   { value: 'total', icon: 'trending-up-outline', label: 'Running totals' },
 ]
@@ -47,16 +56,16 @@ interface SpendingComparisonProps {
 }
 
 /**
- * This month's spending against last month's, two ways, switched by the small icons in its header
- * row (and remembered on the device):
+ * This month's spending against last month's, laid out like the Budget section above it: header,
+ * chart, then one figure line ("$72 less than October so far"). Two chart views, switched by the
+ * small icons in the header (and remembered on the device):
  *
  * - Gap: last month is the dashed line across the middle, and the line is how far ahead of it
- *   (above, red) or behind it (below, green) this month's running total was on each day. A running
- *   total plateaus whenever nothing is spent; the gap doesn't.
+ *   (above, red) or behind it (below, green) this month's running total was on each day.
  * - Totals: both months' running totals, smoothed — this month solid, last month dashed.
  *
- * No figures at rest beyond one sentence for where the month stands; touching the chart reads that
- * day into the same row.
+ * Touching the chart reads that day into the figure line. The line is a whole sentence, so early in
+ * a month, when the chart is only a few days long, it still says where things stand.
  */
 export function SpendingComparison({ month, comparison, isCurrentMonth }: SpendingComparisonProps) {
   const [width, setWidth] = useState(0)
@@ -83,7 +92,7 @@ export function SpendingComparison({ month, comparison, isCurrentMonth }: Spendi
     [current, previous, throughDay, previousDays],
   )
 
-  const plotWidth = Math.max(0, width - (view === 'gap' ? LABEL_GUTTER : PLOT_RIGHT))
+  const plotWidth = Math.max(0, width - PLOT_RIGHT)
   const x = (day: number) => (Math.min(day, daysInMonth) / daysInMonth) * plotWidth
 
   // Gap view: centred on last month.
@@ -97,7 +106,7 @@ export function SpendingComparison({ month, comparison, isCurrentMonth }: Spendi
   // Totals view: both running totals from zero, on one scale.
   const base = CHART_HEIGHT - 2
   const top = Math.max(1, previousTotal, totalThrough(current, throughDay))
-  const yTotal = (total: number) => base - (total / top) * (CHART_HEIGHT - 10)
+  const yTotal = (total: number) => base - (total / top) * (CHART_HEIGHT - 8)
   const totalPoints = (points: MonthComparison['current'], lastDay: number) =>
     Array.from({ length: lastDay + 1 }, (_, day) => ({ x: x(day), y: yTotal(totalThrough(points, day)) }))
   const currentLine = monotoneLine(totalPoints(current, throughDay))
@@ -107,13 +116,21 @@ export function SpendingComparison({ month, comparison, isCurrentMonth }: Spendi
   const readDay = scrubDay != null ? Math.min(scrubDay, throughDay) : throughDay
   const readPreviousDay = Math.min(readDay, previousDays)
   const readGap = gaps[readDay]?.gap ?? 0
+  // The line takes the colour of where the month has ended up, as a trend line follows its last point:
+  // green while under last month, red once over it.
+  const latestGap = gaps[throughDay]?.gap ?? 0
+  const gapColor = latestGap > LEVEL ? colors.expense : latestGap < -LEVEL ? colors.income : colors.textSecondary
   const prevName = monthName(previousMonth, 'long')
 
-  /** The gap as words: "$84 more than", "$20 less than", or "level with". */
-  function describe(gap: number): { lead: string; color: string } {
-    if (Math.abs(gap) < LEVEL) return { lead: 'level with', color: colors.textSecondary }
-    const amount = formatMaskableAmount(Math.abs(gap), isMasked)
-    return gap > 0 ? { lead: `${amount} more than`, color: colors.expense } : { lead: `${amount} less than`, color: colors.income }
+  /** Whole dollars, as Budget's line above prints them: on a summary line cents are noise. */
+  const dollars = (amount: number) => (isMasked ? MASKED_AMOUNT : `$${Math.round(amount).toLocaleString('en-US')}`)
+
+  /** The gap as an amount and its direction — "$84" "more than" — the amount in its side's colour. */
+  function describe(gap: number): { amount: string | null; words: string; color: string } {
+    if (Math.abs(gap) < LEVEL) return { amount: null, words: 'Level with', color: colors.textSecondary }
+    return gap > 0
+      ? { amount: dollars(gap), words: 'more than', color: colors.expense }
+      : { amount: dollars(-gap), words: 'less than', color: colors.income }
   }
 
   function scrubAt(locationX: number) {
@@ -121,53 +138,35 @@ export function SpendingComparison({ month, comparison, isCurrentMonth }: Spendi
     setScrubDay(Math.min(throughDay, Math.max(1, Math.round((locationX / plotWidth) * daysInMonth))))
   }
 
-  // Styled like Home's Budget row — badge, title — so the two sections read as a pair. Not a link:
-  // the only control in it is the switch between the two views.
+  // Built like the Budget and Cash Flow rows above it — badge, title, and its one control — so the two
+  // pacing sections read as a pair rather than two different kinds of thing stacked together.
   const labelRow = (
     <View className="flex-row items-center gap-3">
-      <View className="h-8 w-8 items-center justify-center rounded-full" style={{ backgroundColor: colors.primaryMuted }}>
-        <Ionicons name="stats-chart" size={14} color={colors.primary} />
-      </View>
+      <SectionBadge icon="stats-chart" size={14} />
       <Text className="flex-1 font-sansSemi text-base text-textPrimary" numberOfLines={1}>
         Spending
       </Text>
-      {hasHistory ? (
-        <View className="flex-row rounded-full" style={{ backgroundColor: colors.surfaceRaised, padding: 2 }}>
-          {VIEW_OPTIONS.map((option) => {
-            const selected = option.value === view
-            return (
-              <Pressable
-                key={option.value}
-                onPress={() => setStoredView(option.value)}
-                accessibilityRole="button"
-                accessibilityLabel={option.label}
-                accessibilityState={{ selected }}
-                hitSlop={4}
-                className="rounded-full px-2 py-0.5"
-                style={selected ? { backgroundColor: colors.surface } : undefined}
-              >
-                <Ionicons name={option.icon} size={14} color={selected ? colors.primary : colors.textMuted} />
-              </Pressable>
-            )
-          })}
-        </View>
-      ) : null}
+      {hasHistory ? <IconSwitch size="sm" options={VIEW_OPTIONS} value={view} onChange={setStoredView} /> : null}
     </View>
   )
 
   if (!hasHistory) {
     return (
-      <View className="gap-2">
+      <View className="gap-3">
         {labelRow}
-        <Text className="font-sans text-sm text-textMuted">Nothing from {prevName} to compare with yet.</Text>
+        <Text className="font-sans text-sm text-textSecondary">Nothing from {prevName} to compare with yet.</Text>
       </View>
     )
   }
 
   const reading = describe(readGap)
+  /** The day being touched, as a lead-in: "Nov 3 ". Empty at rest. */
+  const dayLead = scrubDay != null ? `${monthName(month, 'short')} ${readDay}  ` : ''
+  /** Who it's measured against: the whole month at rest, the same day while touching. */
+  const against = scrubDay != null ? `${monthName(previousMonth, 'short')} ${readPreviousDay}` : prevName
 
   return (
-    <View className="gap-2">
+    <View className="gap-3">
       {labelRow}
 
       <View
@@ -183,6 +182,9 @@ export function SpendingComparison({ month, comparison, isCurrentMonth }: Spendi
         onResponderMove={(e) => scrubAt(e.nativeEvent.locationX)}
         onResponderRelease={() => setScrubDay(null)}
       >
+        {/* Drawn in the trend charts' own language (TrendLine): a thin line in its direction's
+            colour, a fill that fades away from it, a pulsing dot at today, and the same ringed
+            marker under a finger. */}
         {width > 0 && view === 'gap' ? (
           <Svg width={width} height={CHART_HEIGHT}>
             <Defs>
@@ -192,30 +194,37 @@ export function SpendingComparison({ month, comparison, isCurrentMonth }: Spendi
               <ClipPath id="gap-below">
                 <Rect x={0} y={mid} width={width} height={mid} />
               </ClipPath>
+              {/* Each side fades toward last month's line: strongest where the month ran furthest
+                  over (red, above) or under (green, below), gone at the dashed line. */}
+              <LinearGradient id="gap-over" x1="0" y1="0" x2="0" y2={mid} gradientUnits="userSpaceOnUse">
+                <Stop offset="0" stopColor={colors.expense} stopOpacity={0.22} />
+                <Stop offset="1" stopColor={colors.expense} stopOpacity={0} />
+              </LinearGradient>
+              <LinearGradient id="gap-under" x1="0" y1={CHART_HEIGHT} x2="0" y2={mid} gradientUnits="userSpaceOnUse">
+                <Stop offset="0" stopColor={colors.income} stopOpacity={0.22} />
+                <Stop offset="1" stopColor={colors.income} stopOpacity={0} />
+              </LinearGradient>
             </Defs>
 
-            {/* Last month: the line this one is measured from, named at its end. */}
-            <Line x1={0} x2={plotWidth} y1={mid} y2={mid} stroke={colors.borderStrong} strokeWidth={1} strokeDasharray="4 4" />
-            <SvgText x={width} y={mid + 4} textAnchor="end" fontFamily={fontFamily.sans} fontSize={11} fill={colors.textMuted}>
-              {prevName}
-            </SvgText>
-            <SvgText x={width} y={12} textAnchor="end" fontFamily={fontFamily.sans} fontSize={11} fill={colors.expense}>
-              more
-            </SvgText>
-            <SvgText x={width} y={CHART_HEIGHT - 4} textAnchor="end" fontFamily={fontFamily.sans} fontSize={11} fill={colors.income}>
-              less
-            </SvgText>
+            {/* Last month: the line this one is measured from, the whole month across. */}
+            <Line x1={0} x2={width} y1={mid} y2={mid} stroke={colors.borderStrong} strokeWidth={1} strokeDasharray="4 4" />
 
             {gapArea ? (
               <>
-                <Path d={gapArea} fill={hexToRgba(colors.expense, 0.12)} clipPath="url(#gap-above)" />
-                <Path d={gapArea} fill={hexToRgba(colors.income, 0.16)} clipPath="url(#gap-below)" />
-                <Path d={gapLine} stroke={colors.textPrimary} strokeWidth={2} strokeLinejoin="round" fill="none" />
+                <Path d={gapArea} fill="url(#gap-over)" clipPath="url(#gap-above)" />
+                <Path d={gapArea} fill="url(#gap-under)" clipPath="url(#gap-below)" />
+                <Path d={gapLine} stroke={gapColor} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" fill="none" />
               </>
             ) : null}
 
-            {scrubDay != null ? <Line x1={x(readDay)} x2={x(readDay)} y1={0} y2={CHART_HEIGHT} stroke={colors.textSecondary} strokeWidth={1} /> : null}
-            <Circle cx={x(readDay)} cy={yGap(readGap)} r={4} fill={colors.textPrimary} stroke={colors.surface} strokeWidth={2} />
+            {scrubDay != null ? (
+              <>
+                <Line x1={x(readDay)} x2={x(readDay)} y1={0} y2={CHART_HEIGHT} stroke={colors.textSecondary} strokeWidth={1} opacity={0.7} />
+                <ScrubMarker x={x(readDay)} y={yGap(readGap)} color={gapColor} />
+              </>
+            ) : (
+              <LiveDot x={x(throughDay)} y={yGap(gaps[throughDay]?.gap ?? 0)} color={gapColor} />
+            )}
           </Svg>
         ) : null}
 
@@ -223,59 +232,43 @@ export function SpendingComparison({ month, comparison, isCurrentMonth }: Spendi
           <Svg width={width} height={CHART_HEIGHT}>
             <Line x1={0} x2={plotWidth} y1={base} y2={base} stroke={colors.border} strokeWidth={1} />
             {previousLine ? <Path d={previousLine} stroke={colors.textMuted} strokeWidth={1.5} strokeDasharray="4 4" fill="none" /> : null}
-            {currentLine ? (
-              <>
-                <Path d={currentArea} fill={hexToRgba(colors.expense, 0.08)} />
-                <Path d={currentLine} stroke={colors.expense} strokeWidth={2} strokeLinejoin="round" fill="none" />
-              </>
-            ) : null}
+            {currentLine ? <LineLayer gradientId="spending-total" areaPath={currentArea} linePath={currentLine} lineColor={colors.expense} /> : null}
 
             {scrubDay != null ? (
               <>
-                <Line x1={x(readDay)} x2={x(readDay)} y1={0} y2={base} stroke={colors.textSecondary} strokeWidth={1} />
+                <Line x1={x(readDay)} x2={x(readDay)} y1={0} y2={base} stroke={colors.textSecondary} strokeWidth={1} opacity={0.7} />
                 <Circle cx={x(readPreviousDay)} cy={yTotal(totalThrough(previous, readPreviousDay))} r={3} fill={colors.surface} stroke={colors.textMuted} strokeWidth={1.5} />
+                <ScrubMarker x={x(readDay)} y={yTotal(totalThrough(current, readDay))} color={colors.expense} />
               </>
-            ) : null}
-            <Circle cx={x(readDay)} cy={yTotal(totalThrough(current, readDay))} r={4} fill={colors.expense} stroke={colors.surface} strokeWidth={2} />
+            ) : (
+              <LiveDot x={x(throughDay)} y={yTotal(totalThrough(current, throughDay))} color={colors.expense} />
+            )}
           </Svg>
         ) : null}
       </View>
 
-      {/* Where the month stands — or, while touching, where it stood on that day. */}
-      <Text className="font-sans text-xs text-textSecondary" numberOfLines={1}>
+      {/* The figure line, in Budget's style under its bar: the amount bold, the words around it
+          regular. A whole sentence, so it never leans on the header to say what it's against. */}
+      <Text className="font-sansSemi text-sm text-textPrimary" style={TABULAR} numberOfLines={1}>
         {scrubDay != null && view === 'total' ? (
           <>
-            {monthName(month, 'short')} {readDay}{' '}
-            <Text className="font-sansSemi" style={{ color: colors.expense }}>
-              {formatMaskableAmount(totalThrough(current, readDay), isMasked)}
+            <Text className="font-sans text-textSecondary">{dayLead}</Text>
+            <Text style={{ color: colors.expense }}>{dollars(totalThrough(current, readDay))}</Text>
+            <Text className="font-sans text-textSecondary">
+              {'   '}
+              {against}{'  '}
             </Text>
-            {'  ·  '}
-            {monthName(previousMonth, 'short')} {readPreviousDay}{' '}
-            <Text className="font-sansSemi text-textSecondary">{formatMaskableAmount(totalThrough(previous, readPreviousDay), isMasked)}</Text>
-          </>
-        ) : scrubDay != null ? (
-          <>
-            {monthName(month, 'short')} {readDay} ·{' '}
-            <Text className="font-sansSemi" style={{ color: reading.color }}>
-              {reading.lead}
-            </Text>{' '}
-            {monthName(previousMonth, 'short')} {readPreviousDay}
-          </>
-        ) : isCurrentMonth ? (
-          <>
-            <Text className="font-sansSemi" style={{ color: reading.color }}>
-              {reading.lead}
-            </Text>{' '}
-            {prevName}
-            {throughDay > 0 ? ` by ${monthName(month, 'short')} ${throughDay}` : ''}
+            {dollars(totalThrough(previous, readPreviousDay))}
           </>
         ) : (
           <>
-            Ended{' '}
-            <Text className="font-sansSemi" style={{ color: reading.color }}>
-              {reading.lead}
-            </Text>{' '}
-            {prevName}
+            {dayLead ? <Text className="font-sans text-textSecondary">{dayLead}</Text> : null}
+            {reading.amount ? <Text style={{ color: reading.color }}>{reading.amount}</Text> : null}
+            <Text className="font-sans text-textSecondary">
+              {reading.amount ? ' ' : ''}
+              {reading.words} {against}
+              {scrubDay == null && isCurrentMonth ? ' so far' : ''}
+            </Text>
           </>
         )}
       </Text>

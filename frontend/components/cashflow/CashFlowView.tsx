@@ -1,17 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
-import { Pressable, ScrollView, Text, View } from 'react-native'
-import { Ionicons } from '@expo/vector-icons'
-import { SafeAreaView } from 'react-native-safe-area-context'
-import { router, useFocusEffect, useLocalSearchParams } from 'expo-router'
-import { colors } from '@/constants/theme'
-import { useTransactionFeed } from '@/hooks/useTransactionFeed'
-import { usePullToRefresh } from '@/hooks/usePullToRefresh'
-import { useAccounts } from '@/hooks/useAccounts'
+import { Text, View } from 'react-native'
+import { colors, spacing } from '@/constants/theme'
 import { useAmountsMasked } from '@/hooks/useAmountsMasked'
-import { MonthNavigator } from '@/components/transactions/MonthNavigator'
-import { ErrorBanner } from '@/components/ui/ErrorBanner'
-import { EmptyState } from '@/components/ui/EmptyState'
-import { LoadingScreen } from '@/components/ui/LoadingScreen'
 import { CashFlowHeadline } from '@/components/cashflow/CashFlowHeadline'
 import { HouseholdFlowChart } from '@/components/cashflow/HouseholdFlowChart'
 import { accountFallbackIcon, variantIcons } from '@/components/accounts/AccountRow'
@@ -21,18 +11,17 @@ import { buildFlowGraph } from '@/lib/cashflow/buildFlowGraph'
 import { buildHouseholdFlow, type AccountCard, type Lane, type Ribbon, type SideNode } from '@/lib/cashflow/householdFlow'
 import { formatMaskableAmount } from '@/lib/format/money'
 import { round2 } from '@/lib/accounts/netWorth'
-import { monthFromParams, monthLabel, shiftMonth, type YearMonth } from '@/lib/transactions/filterByMonth'
+import { monthLabel, type YearMonth } from '@/lib/transactions/filterByMonth'
 import type { FeedItem } from '@/lib/transactions/resolveFeed'
+import type { Account, Category } from '@/types/domain'
 
 const MAX_INCOME_ROWS = 4
 const MAX_SPEND_ROWS = 6
+/** The diagram's gap from the screen's edges: just enough that its cards don't touch the glass. */
+const DIAGRAM_SIDE_MARGIN = 3
 
 function byDateDesc(a: FeedItem, b: FeedItem): number {
   return b.date.localeCompare(a.date)
-}
-
-function signed(amount: number, isMasked: boolean): string {
-  return `${amount > 0 ? '+' : ''}${formatMaskableAmount(amount, isMasked)}`
 }
 
 const RIBBON_SUBTITLES: Record<Ribbon['kind'], string> = {
@@ -42,34 +31,28 @@ const RIBBON_SUBTITLES: Record<Ribbon['kind'], string> = {
   reimbursement: '',
 }
 
+interface CashFlowViewProps {
+  month: YearMonth
+  /** The whole feed, every account: see below. */
+  feed: FeedItem[]
+  categoryById: Map<string, Category>
+  accounts: Account[]
+}
+
 /**
- * Where the month's money came from and went. The chart looks at one subject at a time — the
- * household, or a single account — with its inflows on the left and outflows on the right, which
- * is what makes the flow between accounts readable: pick Checking and every transfer in and out
- * of it is a row of its own.
+ * Where the month's money came from and went — the second page of Home's Charts. The chart looks at
+ * one subject at a time — the household, or a single account — with its inflows on the left and
+ * outflows on the right, which is what makes the flow between accounts readable: pick Checking and
+ * every transfer in and out of it is a row of its own. Tapping a flow lists its transactions.
  *
  * Always all accounts: Home's account filter doesn't apply here, because a transfer only makes
  * sense with both ends in view.
  */
-export default function CashFlowScreen() {
-  const params = useLocalSearchParams<{ year?: string; month?: string }>()
-  const [month, setMonth] = useState<YearMonth>(() => monthFromParams(params))
-  // Each open re-reads the month Home passed rather than keeping whichever month was being browsed
-  // last time.
-  useFocusEffect(
-    useCallback(() => {
-      setMonth(monthFromParams({ year: params.year, month: params.month }))
-    }, [params.year, params.month]),
-  )
-
-  const { feed, categoryById, isLoading, error, refresh } = useTransactionFeed()
-  const refreshControl = usePullToRefresh(refresh)
-  const accounts = useAccounts()
+export function CashFlowView({ month, feed, categoryById, accounts }: CashFlowViewProps) {
   const { isMasked } = useAmountsMasked()
-
   const [selection, setSelection] = useState<FlowSelection | null>(null)
 
-  const graph = useMemo(() => buildFlowGraph({ feed, accounts: accounts.data ?? [], month }), [feed, accounts.data, month])
+  const graph = useMemo(() => buildFlowGraph({ feed, accounts, month }), [feed, accounts, month])
   const graphNodeById = useMemo(() => new Map(graph.nodes.map((node) => [node.id, node])), [graph.nodes])
   const feedById = useMemo(() => new Map(feed.map((item) => [item.id, item])), [feed])
   const flow = useMemo(() => buildHouseholdFlow(graph, { maxIncome: MAX_INCOME_ROWS, maxSpend: MAX_SPEND_ROWS }), [graph])
@@ -82,7 +65,7 @@ export default function CashFlowScreen() {
     [categoryById],
   )
   const sideMeta = useCallback((node: SideNode) => sideNodeMeta(node, graphNodeById, categoryById), [graphNodeById, categoryById])
-  const accountById = useMemo(() => new Map((accounts.data ?? []).map((a) => [a.account_id, a])), [accounts.data])
+  const accountById = useMemo(() => new Map(accounts.map((a) => [a.account_id, a])), [accounts])
   const glyphFor = useCallback(
     (card: AccountCard) => {
       if (!card.accountId) return { logo: null, icon: variantIcons.cashOnHand }
@@ -179,78 +162,44 @@ export default function CashFlowScreen() {
     [graph.edges, itemsFor, isMasked],
   )
 
-  const header = (
-    <View className="flex-row items-center">
-      <View className="flex-1 flex-row">
-        <Pressable onPress={() => router.back()} hitSlop={10} accessibilityLabel="Back">
-          <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-        </Pressable>
-      </View>
-      <MonthNavigator month={month} onPrevious={() => setMonth(shiftMonth(month, -1))} onNext={() => setMonth(shiftMonth(month, 1))} onSelect={setMonth} />
-      <View className="flex-1" />
-    </View>
-  )
-
-  if (isLoading) return <LoadingScreen />
-
-  const hasAccounts = (accounts.data?.length ?? 0) > 0 || feed.some((item) => item.source === 'manual')
+  const hasAccounts = accounts.length > 0 || feed.some((item) => item.source === 'manual')
   if (!hasAccounts) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
-        <View className="px-5 pt-4">{header}</View>
-        <EmptyState message="Link an account in Settings to see your cash flow here." />
-      </SafeAreaView>
+      <View className="items-center py-12">
+        <Text className="font-sans text-sm text-textMuted">Link an account in Settings to see your cash flow here.</Text>
+      </View>
     )
   }
 
   const { headline } = graph
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
-      <ScrollView contentContainerClassName="gap-5 px-5 py-4" refreshControl={refreshControl}>
-        {header}
-        {error ? <ErrorBanner message="Something went wrong loading your data." /> : null}
+    <View className="gap-5">
+      <CashFlowHeadline headline={headline} isMasked={isMasked} />
 
-        <CashFlowHeadline headline={headline} isMasked={isMasked} />
-
-        <View className="gap-3">
-          <Text className="font-sansSemi text-base text-textPrimary">Cash flow</Text>
-          {flow.ribbons.length === 0 && flow.lanes.length === 0 ? (
-            <View className="items-center rounded-xl bg-surface py-8">
-              <Text className="font-sans text-sm text-textMuted">No money moved in {monthLabel(month)}.</Text>
-            </View>
-          ) : (
-            <View className="gap-3 rounded-xl bg-surface p-3">
-              <View className="flex-row justify-between">
-                <View>
-                  <Text className="font-sans text-xs text-textSecondary">Income</Text>
-                  <Text className="font-mono text-sm" style={{ color: colors.income }}>{formatMaskableAmount(headline.income, isMasked)}</Text>
-                </View>
-                <View className="items-center">
-                  <Text className="font-sans text-xs text-textSecondary">Net</Text>
-                  <Text className="font-mono text-sm text-textPrimary">{signed(headline.net, isMasked)}</Text>
-                </View>
-                <View className="items-end">
-                  <Text className="font-sans text-xs text-textSecondary">Spending</Text>
-                  <Text className="font-mono text-sm" style={{ color: colors.expense }}>{formatMaskableAmount(headline.spending, isMasked)}</Text>
-                </View>
-              </View>
-
-              <HouseholdFlowChart
-                flow={flow}
-                sideMeta={sideMeta}
-                cardName={cardName}
-                glyphFor={glyphFor}
-                isMasked={isMasked}
-                onSidePress={openSide}
-                onCardPress={openCard}
-                onRibbonPress={openRibbon}
-                onLanePress={openLane}
-              />
-            </View>
-          )}
-        </View>
-      </ScrollView>
+      <View>
+        {flow.ribbons.length === 0 && flow.lanes.length === 0 ? (
+          <View className="items-center rounded-xl bg-surface py-8">
+            <Text className="font-sans text-sm text-textMuted">No money moved in {monthLabel(month)}.</Text>
+          </View>
+        ) : (
+          // Nearly edge to edge with no card round it: the negative margin cancels all but a sliver
+          // of the page's side padding, so the diagram gets almost the whole width to spread across.
+          <View style={{ marginHorizontal: -(spacing[5] - DIAGRAM_SIDE_MARGIN) }}>
+            <HouseholdFlowChart
+              flow={flow}
+              sideMeta={sideMeta}
+              cardName={cardName}
+              glyphFor={glyphFor}
+              isMasked={isMasked}
+              onSidePress={openSide}
+              onCardPress={openCard}
+              onRibbonPress={openRibbon}
+              onLanePress={openLane}
+            />
+          </View>
+        )}
+      </View>
 
       <FlowTransactionsSheet
         selection={selection}
@@ -259,6 +208,6 @@ export default function CashFlowScreen() {
         accountName={accountName}
         onClose={() => setSelection(null)}
       />
-    </SafeAreaView>
+    </View>
   )
 }

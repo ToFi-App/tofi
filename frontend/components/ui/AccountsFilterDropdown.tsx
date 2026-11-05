@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons'
 import { useState } from 'react'
 import { Pressable, ScrollView, Text, View } from 'react-native'
+import { WalletCards } from 'lucide-react-native'
 import { colors } from '@/constants/theme'
 import { BottomSheet } from './BottomSheet'
 import type { Account } from '@/types/domain'
@@ -9,13 +10,21 @@ interface AccountsFilterDropdownProps {
   accounts: Account[]
   selectedAccountId: string | null
   onSelect: (accountId: string | null) => void
-  /** 'icon' is a filter glyph for a crowded header: outlined while every account is shown, filled in
-   *  the brand colour while one is picked, so a narrowed view never goes unnoticed. Defaults to the
+  /** 'icon' is a wallet-and-cards glyph for a crowded header — it picks which accounts are shown —
+   *  with a dot on it while one is picked, so a narrowed view never goes unnoticed. Defaults to the
    *  account's name with a chevron. */
   variant?: 'inline' | 'icon'
+  /** 'inverse' draws the icon white, for a header on the brand colour. Icon variant only. */
+  tone?: 'default' | 'inverse'
 }
 
-export function AccountsFilterDropdown({ accounts, selectedAccountId, onSelect, variant = 'inline' }: AccountsFilterDropdownProps) {
+export function AccountsFilterDropdown({
+  accounts,
+  selectedAccountId,
+  onSelect,
+  variant = 'inline',
+  tone = 'default',
+}: AccountsFilterDropdownProps) {
   const [isOpen, setIsOpen] = useState(false)
   const selectedName = selectedAccountId
     ? accounts.find((a) => a.account_id === selectedAccountId)?.name ?? 'All'
@@ -30,11 +39,26 @@ export function AccountsFilterDropdown({ accounts, selectedAccountId, onSelect, 
           accessibilityRole="button"
           accessibilityLabel={selectedAccountId ? `Showing ${selectedName}. Choose account` : 'Showing all accounts. Choose account'}
         >
-          <Ionicons
-            name={selectedAccountId ? 'funnel' : 'funnel-outline'}
-            size={21}
-            color={selectedAccountId ? colors.primary : colors.textPrimary}
-          />
+          {/* Lucide draws outlines only, so a narrowed view is marked with a dot rather than a
+              filled glyph: brand teal on a light header, white ringed in teal on the teal one. */}
+          <View>
+            <WalletCards size={22} strokeWidth={2} color={tone === 'inverse' ? colors.textInverse : colors.textPrimary} />
+            {selectedAccountId ? (
+              <View
+                style={{
+                  position: 'absolute',
+                  top: -2,
+                  right: -3,
+                  width: 9,
+                  height: 9,
+                  borderRadius: 4.5,
+                  borderWidth: 1.5,
+                  borderColor: tone === 'inverse' ? colors.primary : colors.background,
+                  backgroundColor: tone === 'inverse' ? colors.textInverse : colors.primary,
+                }}
+              />
+            ) : null}
+          </View>
         </Pressable>
       ) : (
         <Pressable onPress={() => setIsOpen(true)} className="flex-row items-center gap-1">

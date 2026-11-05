@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { Ionicons } from '@expo/vector-icons'
 import { Dimensions, Modal, Pressable, Text, View } from 'react-native'
-import { colors, shadow } from '@/constants/theme'
+import { colors, hexToRgba, shadow } from '@/constants/theme'
 import { currentMonth, monthLabel, type YearMonth } from '@/lib/transactions/filterByMonth'
 
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -18,11 +18,21 @@ interface MonthNavigatorProps {
   /** 'title' draws the month as the page's large title, left-aligned, with the step arrows at the
    *  right — for a screen whose whole subject is the month. The title still opens the picker, but
    *  carries no chevron of its own: beside the arrows it was one mark too many. Defaults to the
-   *  compact centred control. */
-  variant?: 'inline' | 'title'
+   *  compact centred control. 'header' is that control left-aligned and a step larger, arrows hugging
+   *  the month, to lead a header row as the screen's heading. */
+  variant?: 'inline' | 'title' | 'header'
+  /** 'inverse' draws the title and arrows white, for a header on the brand colour. */
+  tone?: 'default' | 'inverse'
 }
 
-export function MonthNavigator({ month, onPrevious, onNext, onSelect, variant = 'inline' }: MonthNavigatorProps) {
+export function MonthNavigator({
+  month,
+  onPrevious,
+  onNext,
+  onSelect,
+  variant = 'inline',
+  tone = 'default',
+}: MonthNavigatorProps) {
   const labelRef = useRef<View>(null)
   // Popover position in window coordinates, null while closed. A small anchored card keeps a
   // quick month hop lightweight — a bottom sheet reads as a whole task, this reads as a menu.
@@ -47,14 +57,16 @@ export function MonthNavigator({ month, onPrevious, onNext, onSelect, variant = 
   }
 
   const isTitle = variant === 'title'
+  const isInverse = tone === 'inverse'
+  const arrowColor = isInverse ? hexToRgba(colors.textInverse, 0.72) : colors.textSecondary
   const previous = (
     <Pressable onPress={onPrevious} accessibilityLabel="Previous month" hitSlop={8}>
-      <Ionicons name="chevron-back" size={20} color={colors.textSecondary} />
+      <Ionicons name="chevron-back" size={20} color={arrowColor} />
     </Pressable>
   )
   const next = (
     <Pressable onPress={onNext} accessibilityLabel="Next month" hitSlop={8}>
-      <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+      <Ionicons name="chevron-forward" size={20} color={arrowColor} />
     </Pressable>
   )
 
@@ -70,7 +82,11 @@ export function MonthNavigator({ month, onPrevious, onNext, onSelect, variant = 
             hitSlop={8}
             className="shrink flex-row items-center gap-1.5"
           >
-            <Text className="shrink font-display text-xl text-textPrimary" numberOfLines={1}>
+            <Text
+              className="shrink font-display text-xl"
+              style={{ color: isInverse ? colors.textInverse : colors.textPrimary }}
+              numberOfLines={1}
+            >
               {monthLabel(month)}
             </Text>
           </Pressable>
@@ -80,7 +96,7 @@ export function MonthNavigator({ month, onPrevious, onNext, onSelect, variant = 
           </View>
         </View>
       ) : (
-        <View className="flex-row items-center justify-center gap-4">
+        <View className={variant === 'header' ? 'shrink flex-row items-center gap-2' : 'flex-row items-center justify-center gap-4'}>
           {previous}
           <Pressable
             ref={labelRef}
@@ -89,8 +105,15 @@ export function MonthNavigator({ month, onPrevious, onNext, onSelect, variant = 
             hitSlop={8}
             className="flex-row items-center gap-1"
           >
-            <Text className="font-sansSemi text-base text-textPrimary">{monthLabel(month)}</Text>
-            <Ionicons name="chevron-down" size={13} color={colors.textSecondary} />
+            <Text
+              // A step larger leading a header row, where it is the screen's heading rather than a
+              // control under one.
+              className={variant === 'header' ? 'font-sansSemi text-md' : 'font-sansSemi text-base'}
+              style={{ color: isInverse ? colors.textInverse : colors.textPrimary }}
+            >
+              {monthLabel(month)}
+            </Text>
+            <Ionicons name="chevron-down" size={13} color={arrowColor} />
           </Pressable>
           {next}
         </View>

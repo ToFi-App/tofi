@@ -204,9 +204,9 @@ Plaid returns a `confidence_level` (`VERY_HIGH`, `HIGH`, `MEDIUM`) on each trans
 ```
 Tab Bar
 ├── Home — where the month's money went
-│   ├── Grid / Chart / Calendar views (floating toggle)
-│   ├── Budget summary → Budgets (pushed)
-│   └── Cash flow card → Cash flow review (pushed)
+│   ├── Summary: the month's figures, over a sheet of Budget, Spending vs last month and category tiles
+│   ├── Charts: by category, then Cash Flow (swipe between the two)
+│   └── Budget → Budgets (pushed)
 ├── Net Worth — what there is, per account
 │   └── Investment account → Investments, filtered to it
 ├── Investments — performance, movers, holdings

@@ -1,15 +1,20 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { Pressable, ScrollView, Text, View, useWindowDimensions } from 'react-native'
+import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { colors } from '@/constants/theme'
+import { borderRadius, colors, shadow } from '@/constants/theme'
 import { formatMaskableAmount } from '@/lib/format/money'
 import { useAmountsMasked } from '@/hooks/useAmountsMasked'
 import type { FeedItem } from '@/lib/transactions/resolveFeed'
 import type { YearMonth } from '@/lib/transactions/filterByMonth'
 import { computeDonutSegments } from '@/lib/transactions/visualizationData'
 import type { DonutSegment } from '@/lib/transactions/visualizationData'
+import { CashFlowView } from '@/components/cashflow/CashFlowView'
+import type { Account, Category } from '@/types/domain'
 import { CategoryDonut } from './CategoryDonut'
 import { CategoryBreakdownRow } from './CategoryBreakdownRow'
+
+const PAGE_COUNT = 2
 
 type Mode = 'expense' | 'income'
 
@@ -25,6 +30,10 @@ interface MonthChartsProps {
   totalIncome: number
   month: YearMonth
   onSegmentPress: (segment: DonutSegment, mode: Mode) => void
+  /** For the Cash Flow page, which reads every account regardless of Home's filter. */
+  feed: FeedItem[]
+  categoryById: Map<string, Category>
+  accounts: Account[]
 }
 
 /** The raised card the category chart sits on. */
@@ -69,9 +78,14 @@ function ModeToggle({ mode, onChange }: { mode: Mode; onChange: (mode: Mode) => 
 }
 
 /**
- * Home's Charts view: the month by category — a donut with the total in its hole, switched between
- * expenses and income from the card's header — with the category rows under it. The spending pace
- * against last month lives on the Summary view.
+ * Home's Charts view, two pages side by side:
+ *
+ * 1. The month by category — a donut with the total in its hole, switched between expenses and
+ *    income from the card's header — with the category rows under it.
+ * 2. Cash Flow — where the month's money came from and went, between accounts too.
+ *
+ * Swiped between, with dots under them for which page is showing. The spending pace against last
+ * month lives on the Summary view.
  */
 export function MonthCharts({
   monthFeed,
@@ -82,11 +96,20 @@ export function MonthCharts({
   totalIncome,
   month,
   onSegmentPress,
+  feed,
+  categoryById,
+  accounts,
 }: MonthChartsProps) {
   const insets = useSafeAreaInsets()
   const { width } = useWindowDimensions()
   const [mode, setMode] = useState<Mode>('expense')
+  const [pageIndex, setPageIndex] = useState(0)
   const { isMasked } = useAmountsMasked()
+
+  function handlePageScroll(e: NativeSyntheticEvent<NativeScrollEvent>) {
+    const index = Math.round(e.nativeEvent.contentOffset.x / width)
+    if (index !== pageIndex) setPageIndex(index)
+  }
 
   const amountByCategory = mode === 'expense' ? spendByCategory : incomeByCategory
   const total = mode === 'expense' ? totalExpense : totalIncome
@@ -106,63 +129,96 @@ export function MonthCharts({
   // The card's inner width; the donut's side labels need all of it.
   const donutSize = Math.min(width - 2 * PAGE_PADDING - 2 * CARD_PADDING, 320)
 
+  // Each page scrolls on its own; the bottom inset clears the floating tab bar and the dots.
+  const pageContent = { paddingHorizontal: PAGE_PADDING, paddingBottom: insets.bottom + 88 }
+
   return (
-    // The bottom inset clears the floating tab bar.
-    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: PAGE_PADDING, paddingBottom: insets.bottom + 88 }}>
-      <Card style={{ marginTop: 8 }}>
-        <View className="flex-row items-center justify-between">
-          <Text className="font-sansSemi text-base" style={{ color: colors.textPrimary }}>
-            By category
-          </Text>
-          <ModeToggle mode={mode} onChange={setMode} />
-        </View>
+    <View style={{ flex: 1 }}>
+      <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} onScroll={handlePageScroll} scrollEventThrottle={16}>
+        {/* Page 1: by category. */}
+        <ScrollView style={{ width }} contentContainerStyle={pageContent} nestedScrollEnabled>
+          <Card style={{ marginTop: 8 }}>
+            <View className="flex-row items-center justify-between">
+              <Text className="font-sansSemi text-base" style={{ color: colors.textPrimary }}>
+                By category
+              </Text>
+              <ModeToggle mode={mode} onChange={setMode} />
+            </View>
 
-        {isEmpty ? (
-          <View style={{ paddingVertical: 48, alignItems: 'center' }}>
-            <Text className="font-sans text-base text-textMuted">{emptyLabel}</Text>
-          </View>
-        ) : (
-          <View style={{ marginTop: 4 }}>
-            <CategoryDonut
-              segments={segments}
-              size={donutSize}
-              onSegmentPress={(seg) => onSegmentPress(seg, mode)}
-              center={
-                <>
-                  <Text
-                    className="font-display text-md"
-                    style={{ color: mode === 'expense' ? colors.expense : colors.income }}
-                    numberOfLines={1}
-                    adjustsFontSizeToFit
-                  >
-                    {formatMaskableAmount(total, isMasked)}
-                  </Text>
-                  <Text className="font-sans text-xs text-textSecondary" numberOfLines={1} adjustsFontSizeToFit>
-                    {mode === 'expense' ? 'spent' : 'earned'} in {monthName}
-                  </Text>
-                </>
-              }
-            />
-          </View>
-        )}
-      </Card>
+            {isEmpty ? (
+              <View style={{ paddingVertical: 48, alignItems: 'center' }}>
+                <Text className="font-sans text-base text-textMuted">{emptyLabel}</Text>
+              </View>
+            ) : (
+              <View style={{ marginTop: 4 }}>
+                <CategoryDonut
+                  segments={segments}
+                  size={donutSize}
+                  onSegmentPress={(seg) => onSegmentPress(seg, mode)}
+                  center={
+                    <>
+                      <Text
+                        className="font-display text-md"
+                        style={{ color: mode === 'expense' ? colors.expense : colors.income }}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                      >
+                        {formatMaskableAmount(total, isMasked)}
+                      </Text>
+                      <Text className="font-sans text-xs text-textSecondary" numberOfLines={1} adjustsFontSizeToFit>
+                        {mode === 'expense' ? 'spent' : 'earned'} in {monthName}
+                      </Text>
+                    </>
+                  }
+                />
+              </View>
+            )}
+          </Card>
 
-      {isEmpty ? null : (
-        <View style={{ marginTop: 12 }}>
-          {segments.map((seg) => (
-            <CategoryBreakdownRow
-              key={seg.categoryId}
-              icon={seg.icon}
-              name={seg.name}
-              color={seg.color}
-              percentage={seg.percentage}
-              amount={seg.amount}
-              transactionCount={seg.transactionCount}
-              onPress={() => onSegmentPress(seg, mode)}
-            />
-          ))}
-        </View>
-      )}
-    </ScrollView>
+          {/* Each category on a card of its own, as Investments lists its accounts: white, rounded,
+              lightly shadowed, with a gap between them. */}
+          {isEmpty ? null : (
+            <View style={{ marginTop: 12, gap: 10 }}>
+              {segments.map((seg) => (
+                <View key={seg.categoryId} className="px-4" style={[shadow.sm, { borderRadius: borderRadius.xl, backgroundColor: colors.surface }]}>
+                  <CategoryBreakdownRow
+                    icon={seg.icon}
+                    name={seg.name}
+                    color={seg.color}
+                    percentage={seg.percentage}
+                    amount={seg.amount}
+                    transactionCount={seg.transactionCount}
+                    onPress={() => onSegmentPress(seg, mode)}
+                  />
+                </View>
+              ))}
+            </View>
+          )}
+        </ScrollView>
+
+        {/* Page 2: cash flow. */}
+        <ScrollView style={{ width }} contentContainerStyle={[pageContent, { paddingTop: 8 }]} nestedScrollEnabled>
+          <CashFlowView month={month} feed={feed} categoryById={categoryById} accounts={accounts} />
+        </ScrollView>
+      </ScrollView>
+
+      {/* Which page is showing. Above the floating tab bar, which the page padding also clears. */}
+      <View
+        pointerEvents="none"
+        style={{ position: 'absolute', left: 0, right: 0, bottom: insets.bottom + 44, flexDirection: 'row', justifyContent: 'center', gap: 6 }}
+      >
+        {Array.from({ length: PAGE_COUNT }, (_, i) => (
+          <View
+            key={i}
+            style={{
+              width: i === pageIndex ? 16 : 6,
+              height: 6,
+              borderRadius: 3,
+              backgroundColor: i === pageIndex ? colors.primary : colors.borderStrong,
+            }}
+          />
+        ))}
+      </View>
+    </View>
   )
 }

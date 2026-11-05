@@ -1,7 +1,7 @@
 import { Stack } from 'expo-router'
 
 /**
- * Home's own stack, so cash flow and budgets can be pushed over it.
+ * Home's own stack, so budgets can be pushed over it.
  *
  * Cash flow used to be a hidden tab, but the native tab bar drops hidden routes entirely and throws
  * when one is focused. As a screen in this stack it still sits under the tab layout's feed and
