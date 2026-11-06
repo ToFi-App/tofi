@@ -24,6 +24,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { computeNetWorthTotals, isInvestmentAccount, isLiabilityAccount } from '@/lib/accounts/netWorth'
 import { CASH_ON_HAND_KEY } from '@/lib/accounts/composition'
 import type { Account } from '@/types/domain'
+import { TabBarSpacer } from '@/components/navigation/FloatingTabs'
 
 const EMPTY_ACCOUNTS: Account[] = []
 
@@ -310,6 +311,7 @@ export function NetWorthScreen() {
             </AccountSection>
           ) : null}
         </AccountConsole>
+        <TabBarSpacer />
       </ScrollView>
 
       <AddAccountSheet

@@ -31,6 +31,62 @@ export const colors = {
   textSecondary: '#6E6E64',
   textMuted: '#A8A89C',
   textInverse: '#FFFFFF',
+  // A white card's own edge on a white page: lighter than `border`, which reads as a rule, not a rim.
+  borderCard: '#ECECE6',
+
+  // Controls on Home's mint top section where Liquid Glass isn't available (before iOS 26): a light
+  // white veil with a soft rim — enough to read as buttons, quiet enough that the net figure stays
+  // the loudest thing on the section.
+  glass: 'rgba(255,255,255,0.3)',
+  glassBorder: 'rgba(255,255,255,0.5)',
+  // The comparison pill under the net: information, not a control, so quieter still — a faint veil,
+  // no rim.
+  glassQuiet: 'rgba(255,255,255,0.22)',
+  // Frosted white for the Cash flow pill on Home's mint sheet, and the bright rim catching the light
+  // along its edge and the cards' (Card).
+  frostCard: 'rgba(255,255,255,0.55)',
+  frostCardBorder: 'rgba(255,255,255,0.9)',
+} as const
+
+/**
+ * Home's sheet: a soft sage-mint backdrop rather than white, straight down from a touch deeper under
+ * the top section to paler toward the bottom. It's what the frosted cards float on — the colour
+ * behind them is what makes the glass and blur visible at all. Stops run top to bottom; the last is
+ * also what shows past the bottom of the page.
+ */
+export const sheetBackdrop = {
+  // Starts noticeably paler than the top section's bottom edge, so the sheet's top reads as a
+  // separate, lighter layer rather than more of the same mint.
+  // Trying the sheet plain white; the mint was ['#E4F3EC', '#E9F5F0', '#EFF8F4'].
+  stops: ['#FFFFFF', '#FFFFFF', '#FFFFFF'],
+  // Whether the sheet is the tinted mint (with its colour pools) or plain white. False while trying
+  // white; the cards follow it too — frosted material on the mint, solid white cards on white.
+  tinted: false,
+  // Soft pools of other colours drifting through the mint (SheetBackdrop), each faint and wide, so
+  // the backdrop reads as a gentle mesh of light rather than a flat wash: warm lemon on the
+  // right, cool sky down the left, a lilac haze lower on the right.
+  blooms: { lemon: '#FFF1A8', sky: '#BFE2FF', lilac: '#E6D9FF' },
+} as const
+
+/**
+ * Home's top section, in the same family as the sheet below it (sheetBackdrop): a sage-mint several
+ * steps deeper than the sheet, so the section holds its own above the paler sheet, straight down and
+ * lightening a little toward the bottom — vertical, so
+ * the status bar, the header and the collapsed bar all sit on the same colour across their width.
+ * Stops run top to bottom.
+ *
+ * `pools` are faint pools of other colour washed in from its bottom corners, as on the sheet — sky
+ * from the bottom-left, lemon from the bottom-right — each gone well before the top edge so the
+ * status-bar band stays seamless (HeroBackground).
+ *
+ * `ink` — the text and icons on it — is chosen by contrast rather than by hand: white or the app's
+ * near-black, whichever reads better against every stop (readableInk). Change the stops and the
+ * ink follows.
+ */
+export const heroGradient = {
+  stops: ['#9ED3C0', '#A9D8C6', '#B4DDCC'],
+  pools: { sky: '#BFE2FF', lemon: '#FFF1A8' },
+  ink: readableInk(['#9ED3C0', '#A9D8C6', '#B4DDCC']),
 } as const
 
 export const categoryColors = {
@@ -196,6 +252,14 @@ export const shadow = {
     shadowRadius: 14,
     elevation: 4,
   },
+  // A frosted card on Home's mint sheet (Card): a soft, neutral drop that lifts it off the backdrop.
+  lift: {
+    shadowColor: '#1C1C18',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 20,
+    elevation: 3,
+  },
   card: {
     shadowColor: '#0F766E',
     shadowOffset: { width: 0, height: 4 },
@@ -204,3 +268,33 @@ export const shadow = {
     elevation: 3,
   },
 } as const
+
+/** WCAG relative luminance of a #RRGGBB colour, 0 (black) to 1 (white). Unparseable input counts as black. */
+function relativeLuminance(hex: string): number {
+  const normalized = hex.replace('#', '')
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return 0
+  const [r, g, b] = [0, 2, 4].map((i) => {
+    const c = parseInt(normalized.slice(i, i + 2), 16) / 255
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+  })
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+/** WCAG contrast ratio between two #RRGGBB colours, from 1 (none) to 21 (black on white). */
+export function contrastRatio(a: string, b: string): number {
+  const [light, dark] = [relativeLuminance(a), relativeLuminance(b)].sort((x, y) => y - x)
+  return (light + 0.05) / (dark + 0.05)
+}
+
+/**
+ * Text colour for a background — white (`textInverse`) or the app's near-black (`textPrimary`),
+ * whichever has the higher contrast. Given a gradient's stops, it judges each candidate by its worst
+ * stop, so the text holds up wherever it sits on the gradient. Accessibility decides, not taste:
+ * WCAG AA asks 4.5:1 for body text and 3:1 for large text.
+ */
+export function readableInk(backgrounds: string | readonly string[]): string {
+  const stops = typeof backgrounds === 'string' ? [backgrounds] : backgrounds
+  const candidates = [colors.textInverse, colors.textPrimary]
+  const worst = (ink: string) => Math.min(...stops.map((bg) => contrastRatio(ink, bg)))
+  return candidates.reduce((best, ink) => (worst(ink) > worst(best) ? ink : best))
+}

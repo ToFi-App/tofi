@@ -21,6 +21,7 @@ import { ensureNotificationPermission } from '@/lib/notifications/permission'
 import { formatAmount } from '@/lib/format/money'
 import { monthFromParams, shiftMonth, type YearMonth } from '@/lib/transactions/filterByMonth'
 import { monthKey, resolveBudgetsForMonth, suggestBudgetAmount } from '@/lib/budgets/budgetMath'
+import { TabBarSpacer } from '@/components/navigation/FloatingTabs'
 
 const ALERT_PRESETS = [50, 75, 90, 100]
 const DEFAULT_ALERT_PRESET = 90
@@ -288,6 +289,7 @@ export default function BudgetsScreen() {
             </RowGroup>
           </View>
         ) : null}
+        <TabBarSpacer />
       </ScrollView>
 
       <BottomSheet visible={editingCategoryId != null} onClose={() => setEditingCategoryId(null)} contentScroll={sheetScroll}>

@@ -9,6 +9,7 @@ import { useInvestmentScope } from '@/hooks/useInvestmentScope'
 import { HoldingDetail } from '@/components/accounts/HoldingDetail'
 import { FreshnessInfo } from '@/components/investments/FreshnessInfo'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { TabBarSpacer } from '@/components/navigation/FloatingTabs'
 
 /**
  * One holding's page, pushed from the Investments screen. It reads the same investments that screen
@@ -54,6 +55,7 @@ export default function HoldingScreen() {
               />
             }
           />
+          <TabBarSpacer />
         </ScrollView>
       ) : (
         // Sold or unlinked since the row was tapped.

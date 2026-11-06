@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/Button'
 import { SettingsBody, SettingsCard, SettingsTitle, StatusPill } from '@/components/settings/SettingsBlocks'
 import { useAppleAccountSettings } from '@/hooks/useAppleAccountSettings'
 import type { AppleAccountStatus } from '@/lib/financekit/status'
+import { TabBarSpacer } from '@/components/navigation/FloatingTabs'
 
 // One line per state, saying what is true now rather than what to do about it — the controls
 // underneath offer the action. Same convention as the notifications screen.
@@ -71,6 +72,7 @@ export default function AppleAccountsSettingsScreen() {
           ) : null}
         </>
       )}
+      <TabBarSpacer />
     </ScrollView>
   )
 }

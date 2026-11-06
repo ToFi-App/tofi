@@ -18,8 +18,6 @@ externally-bound identifiers still say `ledge` and that is deliberate, not an ov
 | `ledge://` (URL scheme) | Plaid's redirect URI and `oauth-redirect/oauth-callback.html` |
 | `ledge-*` (MMKV store ids) | data already on users' devices — the id is the on-disk filename |
 
-See "Decisions taken" in `docs/app-store-readiness.md`.
-
 See `docs/product.md`, `docs/architecture.md`, and `docs/design.md` for the full spec.
 
 ## Stack

@@ -5,6 +5,7 @@ import { TextField } from '@/components/ui/TextField'
 import { Button } from '@/components/ui/Button'
 import { IconPicker } from './IconPicker'
 import type { Category, PlaidCategoryMapping } from '@/types/domain'
+import { TabBarSpacer } from '@/components/navigation/FloatingTabs'
 
 interface CategoryFormProps {
   category?: Category
@@ -62,6 +63,7 @@ export function CategoryForm({ category, mappings, isSaving, onSave, onDelete }:
       />
 
       {onDelete ? <Button label="Delete Category" variant="ghost" onPress={onDelete} /> : null}
+      <TabBarSpacer />
     </ScrollView>
   )
 }

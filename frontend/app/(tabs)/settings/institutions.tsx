@@ -12,6 +12,7 @@ import { LoadingScreen } from '@/components/ui/LoadingScreen'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { StatusPill } from '@/components/settings/SettingsBlocks'
 import type { Account } from '@/types/domain'
+import { TabBarSpacer } from '@/components/navigation/FloatingTabs'
 
 // One card per institution — guaranteed by clean-slate linking: relinking an institution
 // replaces its previous connection, so duplicates can't accumulate here.
@@ -183,6 +184,7 @@ export default function InstitutionsScreen() {
           </View>
         )
       })}
+      <TabBarSpacer />
     </ScrollView>
   )
 }

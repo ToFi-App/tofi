@@ -3,6 +3,7 @@ import { hexToRgba, shadow } from '@/constants/theme'
 import { pfcLabel } from '@/constants/plaid'
 import { CategoryIcon } from './CategoryIcon'
 import type { Category, PlaidCategoryMapping } from '@/types/domain'
+import { TabBarSpacer } from '@/components/navigation/FloatingTabs'
 
 interface CategoryDetailsProps {
   category: Category
@@ -50,6 +51,7 @@ export function CategoryDetails({ category, mappings }: CategoryDetailsProps) {
           )}
         </View>
       </View>
+      <TabBarSpacer />
     </ScrollView>
   )
 }

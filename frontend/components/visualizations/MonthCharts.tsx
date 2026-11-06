@@ -10,6 +10,7 @@ import type { YearMonth } from '@/lib/transactions/filterByMonth'
 import { computeDonutSegments } from '@/lib/transactions/visualizationData'
 import type { DonutSegment } from '@/lib/transactions/visualizationData'
 import { CashFlowView } from '@/components/cashflow/CashFlowView'
+import { useTabBarOverlap } from '@/components/navigation/FloatingTabs'
 import type { Account, Category } from '@/types/domain'
 import { CategoryDonut } from './CategoryDonut'
 import { CategoryBreakdownRow } from './CategoryBreakdownRow'
@@ -34,6 +35,8 @@ interface MonthChartsProps {
   feed: FeedItem[]
   categoryById: Map<string, Category>
   accounts: Account[]
+  /** The page it opens on: 0 by category, 1 Cash Flow (Home's Cash flow button). */
+  initialPage?: number
 }
 
 /** The raised card the category chart sits on. */
@@ -99,11 +102,14 @@ export function MonthCharts({
   feed,
   categoryById,
   accounts,
+  initialPage = 0,
 }: MonthChartsProps) {
   const insets = useSafeAreaInsets()
+  // Extra lift for the page dots where the app draws its own floating tab bar (before iOS 26).
+  const tabBarOverlap = useTabBarOverlap()
   const { width } = useWindowDimensions()
   const [mode, setMode] = useState<Mode>('expense')
-  const [pageIndex, setPageIndex] = useState(0)
+  const [pageIndex, setPageIndex] = useState(initialPage)
   const { isMasked } = useAmountsMasked()
 
   function handlePageScroll(e: NativeSyntheticEvent<NativeScrollEvent>) {
@@ -134,7 +140,16 @@ export function MonthCharts({
 
   return (
     <View style={{ flex: 1 }}>
-      <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} onScroll={handlePageScroll} scrollEventThrottle={16}>
+      <ScrollView
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onScroll={handlePageScroll}
+        scrollEventThrottle={16}
+        // Mounted fresh each time Charts opens, so the starting offset is all it takes to land on
+        // the page asked for.
+        contentOffset={{ x: initialPage * width, y: 0 }}
+      >
         {/* Page 1: by category. */}
         <ScrollView style={{ width }} contentContainerStyle={pageContent} nestedScrollEnabled>
           <Card style={{ marginTop: 8 }}>
@@ -205,7 +220,7 @@ export function MonthCharts({
       {/* Which page is showing. Above the floating tab bar, which the page padding also clears. */}
       <View
         pointerEvents="none"
-        style={{ position: 'absolute', left: 0, right: 0, bottom: insets.bottom + 44, flexDirection: 'row', justifyContent: 'center', gap: 6 }}
+        style={{ position: 'absolute', left: 0, right: 0, bottom: insets.bottom + 44 + tabBarOverlap, flexDirection: 'row', justifyContent: 'center', gap: 6 }}
       >
         {Array.from({ length: PAGE_COUNT }, (_, i) => (
           <View

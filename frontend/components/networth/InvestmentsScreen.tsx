@@ -39,6 +39,7 @@ import { formatAmount, formatMaskableAmount } from '@/lib/format/money'
 import { groupByDay } from '@/lib/transactions/groupByDay'
 import type { FeedItem } from '@/lib/transactions/resolveFeed'
 import type { Category, Holding } from '@/types/domain'
+import { TabBarSpacer } from '@/components/navigation/FloatingTabs'
 
 // Capped by day, not by row: a partially-shown day would print an IN/OUT total covering rows the
 // user can't see.
@@ -342,6 +343,7 @@ export function InvestmentsScreen() {
             ) : null}
           </>
         ) : null}
+        <TabBarSpacer />
       </ScrollView>
     </SafeAreaView>
   )

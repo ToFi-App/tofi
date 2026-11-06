@@ -21,6 +21,7 @@ import { aggregateMonth } from '@/lib/transactions/aggregateMonth'
 import { toDateKey } from '@/lib/dates/dateKey'
 import type { TransferSuggestion } from '@/hooks/useTransactionFeed'
 import { monthDayActivity, type DayHeat, type DaySquare } from '@/lib/transactions/daySquares'
+import { TabBarSpacer } from '@/components/navigation/FloatingTabs'
 
 /** Shared empty values, so a quiet day passes the same objects every render. */
 const NO_SQUARES: DaySquare[] = []
@@ -247,6 +248,7 @@ function MonthCalendarContent({
             onDayLayout={recordDayOffset}
           />
         )}
+        <TabBarSpacer />
       </ScrollView>
 
       <TransferSuggestionsSheet

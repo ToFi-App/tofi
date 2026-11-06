@@ -11,9 +11,10 @@ import { shiftMonth, type YearMonth } from '@/lib/transactions/filterByMonth'
 import { SPENDING_CHART_VIEW_KEY, preferences } from '@/lib/storage/preferences'
 import { IconSwitch, type IconSwitchOption } from '@/components/ui/IconSwitch'
 import { LineLayer, LiveDot } from './TrendLine'
-import { SectionBadge } from '@/components/ui/SectionBadge'
+import { Card } from '@/components/ui/Card'
 
 const CHART_HEIGHT = 56
+const CARD = { padding: 16, gap: 12 }
 /** Inter's tabular figures: digits all one width, so amounts line up without a monospace face. */
 const TABULAR = { fontVariant: ['tabular-nums' as const] }
 /** How much of each half the gap line may use, so its peak and the end dot clear the edges. */
@@ -56,8 +57,8 @@ interface SpendingComparisonProps {
 }
 
 /**
- * This month's spending against last month's, laid out like the Budget section above it: header,
- * chart, then one figure line ("$72 less than October so far"). Two chart views, switched by the
+ * This month's spending against last month's, on a card laid out like the Budget card above it:
+ * header, chart, then one figure line ("$72 less than October so far"). Two chart views, switched by the
  * small icons in the header (and remembered on the device):
  *
  * - Gap: last month is the dashed line across the middle, and the line is how far ahead of it
@@ -138,13 +139,12 @@ export function SpendingComparison({ month, comparison, isCurrentMonth }: Spendi
     setScrubDay(Math.min(throughDay, Math.max(1, Math.round((locationX / plotWidth) * daysInMonth))))
   }
 
-  // Built like the Budget and Cash Flow rows above it — badge, title, and its one control — so the two
-  // pacing sections read as a pair rather than two different kinds of thing stacked together.
+  // Built like the Budget card above it — title, and its one control at the right — so the two
+  // pacing cards read as a pair rather than two different kinds of thing stacked together.
   const labelRow = (
     <View className="flex-row items-center gap-3">
-      <SectionBadge icon="stats-chart" size={14} />
       <Text className="flex-1 font-sansSemi text-base text-textPrimary" numberOfLines={1}>
-        Spending
+        Spending vs {prevName}
       </Text>
       {hasHistory ? <IconSwitch size="sm" options={VIEW_OPTIONS} value={view} onChange={setStoredView} /> : null}
     </View>
@@ -152,10 +152,10 @@ export function SpendingComparison({ month, comparison, isCurrentMonth }: Spendi
 
   if (!hasHistory) {
     return (
-      <View className="gap-3">
+      <Card style={CARD}>
         {labelRow}
         <Text className="font-sans text-sm text-textSecondary">Nothing from {prevName} to compare with yet.</Text>
-      </View>
+      </Card>
     )
   }
 
@@ -166,7 +166,7 @@ export function SpendingComparison({ month, comparison, isCurrentMonth }: Spendi
   const against = scrubDay != null ? `${monthName(previousMonth, 'short')} ${readPreviousDay}` : prevName
 
   return (
-    <View className="gap-3">
+    <Card style={CARD}>
       {labelRow}
 
       <View
@@ -272,6 +272,6 @@ export function SpendingComparison({ month, comparison, isCurrentMonth }: Spendi
           </>
         )}
       </Text>
-    </View>
+    </Card>
   )
 }
