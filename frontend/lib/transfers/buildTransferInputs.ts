@@ -1,4 +1,5 @@
 import type { FeedItem } from '@/lib/transactions/resolveFeed'
+import { remainingIncome } from '@/lib/reimbursements/suggest'
 import type { TransferKind } from '@/types/domain'
 
 export interface TransferCreateInput {
@@ -14,6 +15,12 @@ export interface TransferCreateInput {
 export interface PendingTransfer {
   kind: TransferKind
   counterpartIds: string[]
+  /**
+   * A reimbursement's share per counterpart, when the user split an income across expenses. Absent
+   * means the default: each pair records all the income has left, and the feed caps it at what the
+   * expense still owes.
+   */
+  amounts?: Record<string, number>
 }
 
 /**
@@ -51,10 +58,18 @@ export function buildTransferInputs(item: FeedItem, pending: PendingTransfer, fe
       expenseManualTransactionId: expenseItem?.source === 'manual' ? expenseItem.id : null,
       incomePlaidTransactionId: isPlaidLeg(incomeItem) ? incomeItem.id : null,
       incomeManualTransactionId: incomeItem?.source === 'manual' ? incomeItem.id : null,
-      // A reimbursement is only partial — it records what came back, not what was spent, so its
-      // amount always comes off the income leg whichever side the user started from. Every other
-      // kind pairs equal amounts, so the marked item's own amount is fine.
-      amount: isReimbursement && incomeItem ? Math.abs(incomeItem.amount).toFixed(2) : Math.abs(item.amount).toFixed(2),
+      // A reimbursement records what came back, not what was spent, so its amount comes off the
+      // income leg whichever side the user started from: the share the user gave this pair when
+      // they split the income, otherwise all the income has left (the whole of it, unless other
+      // reimbursements already used some). Every other kind pairs equal amounts, so the marked
+      // item's own amount is fine.
+      amount:
+        isReimbursement && incomeItem
+          ? (counterpartId && pending.amounts?.[counterpartId] != null
+              ? pending.amounts[counterpartId]
+              : remainingIncome(incomeItem)
+            ).toFixed(2)
+          : Math.abs(item.amount).toFixed(2),
       note: null,
     }
   })

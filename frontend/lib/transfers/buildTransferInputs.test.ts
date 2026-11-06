@@ -18,6 +18,7 @@ function item(overrides: Partial<FeedItem> & Pick<FeedItem, 'id' | 'amount' | 'd
     netAmount: null,
     isReimbursementIncome: false,
     reimbursementCategoryId: null,
+    reimbursementCategoryIds: [],
     transferId: null,
     transferKind: null,
     transferRole: null,
@@ -93,6 +94,29 @@ describe('buildTransferInputs', () => {
     const partial = item({ id: 'i2', amount: -120, date: '2026-08-12' })
     const [input] = buildTransferInputs(expense, { kind: 'reimbursement', counterpartIds: ['i2'] }, [expense, partial])
     expect(input.amount).toBe('120.00')
+  })
+
+  it('records each charge its own share when an income is split', () => {
+    const dinner = item({ id: 'dinner', amount: 90, date: '2026-10-30' })
+    const groceries = item({ id: 'groceries', amount: 40, date: '2026-10-31' })
+    const venmo = item({ id: 'venmo', amount: -100, date: '2026-11-02' })
+    const inputs = buildTransferInputs(
+      venmo,
+      { kind: 'reimbursement', counterpartIds: ['dinner', 'groceries'], amounts: { dinner: 50, groceries: 20 } },
+      [dinner, groceries, venmo],
+    )
+    expect(inputs.map((input) => [input.expensePlaidTransactionId, input.incomePlaidTransactionId, input.amount])).toEqual([
+      ['dinner', 'venmo', '50.00'],
+      ['groceries', 'venmo', '20.00'],
+    ])
+  })
+
+  // An income an earlier split already drew on gives only what it has left, so the two links
+  // together can't claim more than came in.
+  it('records only what is left of an income already paying something back', () => {
+    const partlyUsed = item({ id: 'venmo', amount: -100, date: '2026-11-02', isReimbursementIncome: true, netAmount: -30 })
+    const [input] = buildTransferInputs(expense, { kind: 'reimbursement', counterpartIds: ['venmo'] }, [expense, partlyUsed])
+    expect(input.amount).toBe('30.00')
   })
 
   it('falls back to the marked item amount for a reimbursement with no counterpart', () => {

@@ -25,7 +25,7 @@ interface TransactionDetailSheetProps {
   item: FeedItem | null
   categories: Category[]
   subcategories: Subcategory[]
-  pendingTransfer: { kind: TransferKind; counterpartItems: FeedItem[] } | null
+  pendingTransfer: { kind: TransferKind; counterpartItems: FeedItem[]; amounts?: Record<string, number> } | null
   /** Covers the save's whole run of writes, not one mutation — see isSavingDetail on the editor. */
   isSaving: boolean
   onClose: () => void
@@ -34,9 +34,10 @@ interface TransactionDetailSheetProps {
   onClearPendingTransfer: () => void
   onUnmarkTransfer: () => void
   onUnlink: (link: FeedLink) => Promise<void>
+  onOpenLink: (link: FeedLink) => void
 }
 
-export function TransactionDetailSheet({ sheetScroll, item, categories, subcategories, pendingTransfer, isSaving, onClose, onSave, onOpenTransfer, onClearPendingTransfer, onUnmarkTransfer, onUnlink }: TransactionDetailSheetProps) {
+export function TransactionDetailSheet({ sheetScroll, item, categories, subcategories, pendingTransfer, isSaving, onClose, onSave, onOpenTransfer, onClearPendingTransfer, onUnmarkTransfer, onUnlink, onOpenLink }: TransactionDetailSheetProps) {
   const [categoryId, setCategoryId] = useState<string | null>(item?.categoryId ?? null)
   const [subcategoryId, setSubcategoryId] = useState<string | null>(item?.subcategoryId ?? null)
   // Off by default: a one-off recategorization shouldn't quietly become a rule for every future
@@ -56,8 +57,8 @@ export function TransactionDetailSheet({ sheetScroll, item, categories, subcateg
     // Both legs count as "already reimbursed": reimbursedAmount marks the expense side,
     // isReimbursementIncome the income side. Seeding from the expense field alone left the
     // toggle OFF on an already-linked income — flipping it on offered the expense list again,
-    // and saving created a second transfer row for an income the DB allows exactly one of
-    // (transfers_income_plaid_unique), surfacing as a raw duplicate-key error.
+    // and saving created a second transfer row for that income — one the DB once refused with a
+    // raw duplicate-key error, and that would now pair the two a second time.
     setMarkReimbursed(item?.reimbursedAmount != null || item?.isReimbursementIncome === true)
     setMarkTransfer(item?.transferKind != null)
     setPickerOpen(false)
@@ -231,9 +232,13 @@ export function TransactionDetailSheet({ sheetScroll, item, categories, subcateg
               <Text className="font-sansMed text-sm" style={{ color: transferType.color }}>{transferType.label}</Text>
             </View>
             {pendingTransfer.counterpartItems.length > 0 ? (
+              // A split income names each charge's share of its total, so the summary reads as the
+              // allocation the user just made.
               pendingTransfer.counterpartItems.map((linked) => (
                 <Text key={linked.id} className="mt-1 font-sans text-sm text-textSecondary" numberOfLines={1}>
-                  {linked.merchantName} · {formatAmount(Math.abs(linked.amount))}
+                  {linked.merchantName} · {pendingTransfer.amounts?.[linked.id] != null
+                  ? `${formatAmount(pendingTransfer.amounts[linked.id])} of ${formatAmount(Math.abs(linked.amount))}`
+                  : formatAmount(Math.abs(linked.amount))}
                 </Text>
               ))
             ) : null}
@@ -275,7 +280,7 @@ export function TransactionDetailSheet({ sheetScroll, item, categories, subcateg
           </View>
         ) : null}
 
-        <LinkedTransactions item={item} onUnlink={onUnlink} />
+        <LinkedTransactions item={item} onUnlink={onUnlink} onOpen={onOpenLink} />
 
         <Button label="Save Changes" onPress={handleSave} loading={isSaving} />
       </ScrollView>

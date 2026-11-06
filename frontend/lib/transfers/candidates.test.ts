@@ -19,6 +19,7 @@ function item(overrides: Partial<FeedItem> & Pick<FeedItem, 'id' | 'amount'>): F
     netAmount: null,
     isReimbursementIncome: false,
     reimbursementCategoryId: null,
+    reimbursementCategoryIds: [],
     transferId: null,
     transferKind: null,
     transferRole: null,
@@ -48,11 +49,21 @@ describe('transferCandidates', () => {
     expect(transferCandidates([expense, taken], income).map((c) => c.id)).toEqual(['flight'])
   })
 
-  // One income pays back one expense. Once it has been spent reimbursing something, offering it
-  // again would split it across two expenses and over-credit both.
-  it('excludes an income already spent on a reimbursement', () => {
-    const spent = item({ id: 'spent', amount: -500, isReimbursementIncome: true })
+  // Once an income's reimbursements have used all of it, there's nothing left to give.
+  it('excludes an income fully spent on reimbursements', () => {
+    const spent = item({ id: 'spent', amount: -500, isReimbursementIncome: true, netAmount: 0 })
     expect(transferCandidates([spent, income], expense).map((c) => c.id)).toEqual(['payout'])
+  })
+
+  // An income split across expenses: what it hasn't paid out yet can pay back another one.
+  it('still offers an income with money left after its reimbursements', () => {
+    const partlySpent = item({ id: 'venmo', amount: -100, isReimbursementIncome: true, netAmount: -30 })
+    expect(transferCandidates([partlySpent], expense).map((c) => c.id)).toEqual(['venmo'])
+  })
+
+  it('leaves out what is already linked to the item', () => {
+    const linked = item({ id: 'venmo', amount: -100, isReimbursementIncome: true, netAmount: -30, links: [{ recordId: 'r1', kind: 'reimbursement', itemId: expense.id, merchantName: null, date: null, accountId: null, amount: 70, counterpartAmount: 70 }] })
+    expect(transferCandidates([linked], expense)).toEqual([])
   })
 
   // The reverse is allowed: an expense can be paid back by several separate incomes.

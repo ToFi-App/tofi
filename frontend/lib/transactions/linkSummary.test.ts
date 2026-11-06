@@ -19,6 +19,7 @@ function item(overrides: Partial<FeedItem> & Pick<FeedItem, 'id' | 'amount'>): F
     netAmount: null,
     isReimbursementIncome: false,
     reimbursementCategoryId: null,
+    reimbursementCategoryIds: [],
     transferId: null,
     transferKind: null,
     transferRole: null,
@@ -43,6 +44,7 @@ function link(overrides: Partial<FeedLink> = {}): FeedLink {
     date: '2026-08-13',
     accountId: 'checking',
     amount: 2000,
+    counterpartAmount: -2000,
     ...overrides,
   }
 }
@@ -62,6 +64,16 @@ describe('linkPillLabel', () => {
       links: [link({ amount: 2000 }), link({ recordId: 'r2', amount: 55.32 })],
     })
     expect(linkPillLabel(expense)).toBe('Reimbursed: $2,055.32')
+  })
+
+  it('says how far a split income was split', () => {
+    const venmo = item({ id: 'venmo', amount: -100, isReimbursementIncome: true, netAmount: 0, links: [link({ amount: 50 }), link({ recordId: 'r2', amount: 20 }), link({ recordId: 'r3', amount: 30 })] })
+    expect(linkPillLabel(venmo)).toBe('Split across 3')
+  })
+
+  it('says how much of a split income went to paybacks when some is still income', () => {
+    const venmo = item({ id: 'venmo', amount: -100, isReimbursementIncome: true, netAmount: -30, links: [link({ amount: 50 }), link({ recordId: 'r2', amount: 20 })] })
+    expect(linkPillLabel(venmo)).toBe('$70.00 reimbursed')
   })
 
   it('names the expense a reimbursement income paid back', () => {

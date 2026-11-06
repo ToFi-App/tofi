@@ -35,7 +35,7 @@ interface ManualTransactionSheetProps {
   /** True when this transaction is already part of a reimbursement (either leg). */
   isReimbursed?: boolean
   /** The counterpart picked in the transfer sheet, waiting to be written on save. */
-  pendingTransfer?: { kind: TransferKind; counterpartItems: FeedItem[] } | null
+  pendingTransfer?: { kind: TransferKind; counterpartItems: FeedItem[]; amounts?: Record<string, number> } | null
   /** Opens the transfer sheet immediately with the current (unsaved) form values. */
   onOpenTransfer?: (input: ManualTransactionInput, forcedKind?: TransferKind) => void
   onClearPendingTransfer?: () => void
@@ -284,7 +284,9 @@ export function ManualTransactionSheet({
             </View>
             {pendingTransfer!.counterpartItems.map((linked) => (
               <Text key={linked.id} className="mt-1 font-sans text-sm text-textSecondary" numberOfLines={1}>
-                {linked.merchantName} · {formatAmount(Math.abs(linked.amount))}
+                {linked.merchantName} · {pendingTransfer!.amounts?.[linked.id] != null
+                  ? `${formatAmount(pendingTransfer!.amounts[linked.id])} of ${formatAmount(Math.abs(linked.amount))}`
+                  : formatAmount(Math.abs(linked.amount))}
               </Text>
             ))}
           </View>

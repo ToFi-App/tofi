@@ -105,6 +105,9 @@ export interface FeedLink {
   /** What this link recorded: the reimbursed amount for a reimbursement, the moved amount
    *  otherwise. Always positive. */
   amount: number
+  /** The counterpart's own amount, in the feed's sign (positive = spent), or null when it isn't
+   *  in the feed. Differs from `amount` when a reimbursement covered only part of an expense. */
+  counterpartAmount: number | null
 }
 
 export interface FeedItem {
@@ -152,6 +155,9 @@ export interface FeedItem {
   netAmount: number | null
   isReimbursementIncome: boolean
   reimbursementCategoryId: string | null
+  /** Every category this reimbursement income paid back into — more than one when the income
+   *  was split across expenses. `reimbursementCategoryId` is the one that took the largest share. */
+  reimbursementCategoryIds: string[]
   transferId: string | null
   transferKind: TransferKind | null
   transferRole: 'expense' | 'income' | null
@@ -229,6 +235,7 @@ export function mergeFeed(
       netAmount: null,
       isReimbursementIncome: false,
       reimbursementCategoryId: null,
+      reimbursementCategoryIds: [],
       transferId: null,
       transferKind: null,
       transferRole: null,
@@ -260,6 +267,7 @@ export function mergeFeed(
     netAmount: null,
     isReimbursementIncome: false,
     reimbursementCategoryId: null,
+    reimbursementCategoryIds: [],
     transferId: null,
     transferKind: null,
     transferRole: null,
@@ -309,6 +317,7 @@ export function mergeFeed(
       netAmount: null,
       isReimbursementIncome: false,
       reimbursementCategoryId: null,
+      reimbursementCategoryIds: [],
       transferId: null,
       transferKind: null,
       transferRole: null,
@@ -347,6 +356,7 @@ function toLink(
     date: counterpart?.date ?? null,
     accountId: counterpart?.accountId ?? null,
     amount: Math.abs(amount),
+    counterpartAmount: counterpart?.amount ?? null,
   }
 }
 
@@ -385,9 +395,10 @@ export function applyTransfers(feed: FeedItem[], transfers: Transfer[]): FeedIte
     if (incomeId) byIncomeId.set(incomeId, transfer)
   }
 
-  // --- Reimbursement transfers: many-to-one on expense side ---
+  // --- Reimbursement transfers: many-to-many. Several incomes can pay one expense back, and one
+  // income can be split across several expenses — each row's amount is that pair's share. ---
   const reimbByExpenseId = new Map<string, Transfer[]>()
-  const reimbByIncomeId = new Map<string, Transfer>()
+  const reimbByIncomeId = new Map<string, Transfer[]>()
   for (const t of reimbursementTransfers) {
     const expenseId = t.expensePlaidTransactionId ?? t.expenseManualTransactionId
     if (expenseId) {
@@ -396,32 +407,43 @@ export function applyTransfers(feed: FeedItem[], transfers: Transfer[]): FeedIte
       reimbByExpenseId.set(expenseId, list)
     }
     const incomeId = t.incomePlaidTransactionId ?? t.incomeManualTransactionId
-    if (incomeId) reimbByIncomeId.set(incomeId, t)
+    if (incomeId) {
+      const list = reimbByIncomeId.get(incomeId) ?? []
+      list.push(t)
+      reimbByIncomeId.set(incomeId, list)
+    }
   }
 
   const categoryByFeedId = new Map(feed.map((item) => [item.id, item.categoryId]))
   const itemById = new Map(feed.map((item) => [item.id, item]))
 
-  // How much of each reimbursement actually went to paying its expense back. A link records the
-  // whole income, and an income can be bigger than the expense — $5,000 back against a $2,000
-  // charge — so the incomes fill the expense in date order and stop when it's covered. What's left
-  // of an income is ordinary income (its netAmount below), not money that vanishes.
+  // How much of each reimbursement actually went to paying its expense back. A row can record more
+  // than the pair can use — by default it records the whole income, and an income can be bigger
+  // than the expense ($5,000 back against a $2,000 charge) — so the rows fill in income-date order
+  // and each takes no more than is left of the expense, nor of the income. The second cap is what
+  // keeps a split income from paying out more than came in: a $100 Venmo split $50/$20/$30, or a
+  // whole-income row whose expense frees up room later. What's left of an income is ordinary
+  // income (its netAmount below), not money that vanishes.
   //
-  // An expense outside the feed can't be measured, so its incomes count in full, as before.
+  // A leg outside the feed can't be measured, so it caps nothing — its partner counts in full, as before.
   const usedByTransferId = new Map<string, number>()
-  for (const [expenseId, list] of reimbByExpenseId) {
-    const expense = itemById.get(expenseId)
-    let remaining = expense ? Math.max(0, expense.amount) : Infinity
-    const byIncomeDate = [...list].sort((a, b) => {
-      const dateA = itemById.get(legIds(a).incomeId ?? '')?.postedDate ?? ''
-      const dateB = itemById.get(legIds(b).incomeId ?? '')?.postedDate ?? ''
-      return dateA.localeCompare(dateB) || a.id.localeCompare(b.id)
-    })
-    for (const t of byIncomeDate) {
-      const used = Math.min(Number(t.amount), remaining)
-      usedByTransferId.set(t.id, used)
-      remaining -= used
-    }
+  const expenseLeft = new Map<string, number>()
+  const incomeLeft = new Map<string, number>()
+  const byIncomeDate = [...reimbursementTransfers].sort((a, b) => {
+    const dateA = itemById.get(legIds(a).incomeId ?? '')?.postedDate ?? ''
+    const dateB = itemById.get(legIds(b).incomeId ?? '')?.postedDate ?? ''
+    return dateA.localeCompare(dateB) || a.id.localeCompare(b.id)
+  })
+  for (const t of byIncomeDate) {
+    const { expenseId, incomeId } = legIds(t)
+    const expense = expenseId ? itemById.get(expenseId) : undefined
+    const income = incomeId ? itemById.get(incomeId) : undefined
+    const leftOfExpense = expenseId && expense ? expenseLeft.get(expenseId) ?? Math.max(0, expense.amount) : Infinity
+    const leftOfIncome = incomeId && income ? incomeLeft.get(incomeId) ?? Math.abs(income.amount) : Infinity
+    const used = Math.max(0, Math.min(Number(t.amount), leftOfExpense, leftOfIncome))
+    usedByTransferId.set(t.id, used)
+    if (expenseId && expense) expenseLeft.set(expenseId, leftOfExpense - used)
+    if (incomeId && income) incomeLeft.set(incomeId, leftOfIncome - used)
   }
   const usedOf = (t: Transfer) => usedByTransferId.get(t.id) ?? Number(t.amount)
 
@@ -461,21 +483,30 @@ export function applyTransfers(feed: FeedItem[], transfers: Transfer[]): FeedIte
       return { ...item, reimbursedAmount, netAmount, links }
     }
 
-    // Reimbursement income side: mark as reimbursement income, carry expense's category. The part
-    // that paid the expense back is already netted out of it; anything beyond that is income, and
-    // netAmount carries it (negative, the feed's sign for money in) so the totals count just that.
-    const reimbIncome = reimbByIncomeId.get(item.id)
-    if (reimbIncome) {
-      const { expenseId } = legIds(reimbIncome)
-      const expenseCategoryId = expenseId ? categoryByFeedId.get(expenseId) ?? null : null
-      const used = usedOf(reimbIncome)
+    // Reimbursement income side: mark as reimbursement income, carry the expense's category. The
+    // part that paid expenses back is already netted out of them; anything beyond that is income,
+    // and netAmount carries it (negative, the feed's sign for money in) so the totals count just
+    // that. A split income links to every expense it paid, each with its own share.
+    const reimbIncomes = reimbByIncomeId.get(item.id)
+    if (reimbIncomes) {
+      const used = reimbIncomes.reduce((sum, t) => sum + usedOf(t), 0)
       const surplus = Math.max(0, Math.abs(item.amount) - used)
+      const categoryIds: string[] = []
+      let largest: { categoryId: string | null; used: number } | null = null
+      for (const t of reimbIncomes) {
+        const { expenseId } = legIds(t)
+        const categoryId = expenseId ? categoryByFeedId.get(expenseId) ?? null : null
+        if (categoryId && !categoryIds.includes(categoryId)) categoryIds.push(categoryId)
+        if (!largest || usedOf(t) > largest.used) largest = { categoryId, used: usedOf(t) }
+      }
       return {
         ...item,
         isReimbursementIncome: true,
-        reimbursementCategoryId: expenseCategoryId,
-        netAmount: surplus > 0 ? -surplus : 0,
-        links: [toLink(reimbIncome.id, reimbIncome.kind, expenseId, used, itemById)],
+        reimbursementCategoryId: largest?.categoryId ?? null,
+        reimbursementCategoryIds: categoryIds,
+        // Rounded to the cent: shares summed in floating point can leave a 1e-15 "surplus".
+        netAmount: surplus >= 0.005 ? -surplus : 0,
+        links: reimbIncomes.map((t) => toLink(t.id, t.kind, legIds(t).expenseId, usedOf(t), itemById)),
       }
     }
 

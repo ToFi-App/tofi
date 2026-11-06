@@ -99,6 +99,16 @@ export function remainingExpense(expense: FeedItem): number {
   return Math.max(0, Math.abs(expense.amount) - (expense.reimbursedAmount ?? 0))
 }
 
+/**
+ * What an income still has to give, in positive dollars: all of it until it's linked to a
+ * reimbursement, then whatever its links haven't used — the surplus the feed already counts as
+ * income (its negative netAmount). That remainder can go toward another expense.
+ */
+export function remainingIncome(income: FeedItem): number {
+  if (!income.isReimbursementIncome) return Math.abs(income.amount)
+  return Math.max(0, -(income.netAmount ?? 0))
+}
+
 export interface ScoredCandidate {
   item: FeedItem
   score: number
@@ -123,11 +133,11 @@ export function suggestReimbursements(
     const score = startingFromExpense
       ? scoreReimbursement(
           { amount: options?.remainingOverride ?? remainingExpense(item), date: item.postedDate },
-          { amount: Math.abs(candidate.amount), date: candidate.postedDate, merchantName: candidate.merchantName },
+          { amount: remainingIncome(candidate), date: candidate.postedDate, merchantName: candidate.merchantName },
         )
       : scoreReimbursement(
           { amount: remainingExpense(candidate), date: candidate.postedDate },
-          { amount: Math.abs(item.amount), date: item.postedDate, merchantName: item.merchantName },
+          { amount: remainingIncome(item), date: item.postedDate, merchantName: item.merchantName },
         )
     if (score !== null && score >= SCORE_CUTOFF) scored.push({ item: candidate, score })
   }

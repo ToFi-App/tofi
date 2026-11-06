@@ -20,6 +20,7 @@ function item(overrides: Partial<FeedItem> & { id: string }): FeedItem {
     netAmount: null,
     isReimbursementIncome: false,
     reimbursementCategoryId: null,
+    reimbursementCategoryIds: [],
     transferId: null,
     transferKind: null,
     transferRole: null,

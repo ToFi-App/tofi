@@ -200,8 +200,9 @@ export const transfers = pgTable('transfers', {
   // literals inlined for the same drizzle-kit CJS reason as transfer_kind_valid above.
   sourceValid: check('transfer_source_valid', sql`${table.source} IN ('manual', 'auto')`),
   // Partial uniques so no transaction can be pulled into two transfers from either side.
-  // Reimbursements are excluded on the expense side because one expense can have multiple
-  // reimbursement income links (partial reimbursements).
+  // Reimbursements are excluded on both sides: one expense can be paid back by several incomes,
+  // and one income can be split across several expenses (each row's amount is that pair's share).
+  // The app keeps a reimbursement leg out of other transfer kinds (lib/transfers/candidates.ts).
   expensePlaidUnique: uniqueIndex('transfers_expense_plaid_unique')
     .on(table.userId, table.expensePlaidTransactionId)
     .where(sql`${table.expensePlaidTransactionId} IS NOT NULL AND ${table.kind} != 'reimbursement'`),
@@ -210,10 +211,10 @@ export const transfers = pgTable('transfers', {
     .where(sql`${table.expenseManualTransactionId} IS NOT NULL AND ${table.kind} != 'reimbursement'`),
   incomePlaidUnique: uniqueIndex('transfers_income_plaid_unique')
     .on(table.userId, table.incomePlaidTransactionId)
-    .where(sql`${table.incomePlaidTransactionId} IS NOT NULL`),
+    .where(sql`${table.incomePlaidTransactionId} IS NOT NULL AND ${table.kind} != 'reimbursement'`),
   incomeManualUnique: uniqueIndex('transfers_income_manual_unique')
     .on(table.userId, table.incomeManualTransactionId)
-    .where(sql`${table.incomeManualTransactionId} IS NOT NULL`),
+    .where(sql`${table.incomeManualTransactionId} IS NOT NULL AND ${table.kind} != 'reimbursement'`),
 }))
 
 // Remembers that the user unmarked a transfer on this expense leg, so auto-detection never

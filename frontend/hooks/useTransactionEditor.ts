@@ -62,6 +62,8 @@ export interface TransactionEditor {
   deleteManual: () => void
   /** Removes a single link from the open transaction, leaving its other links in place. */
   unlink: (link: FeedLink) => Promise<void>
+  /** Swaps the open sheet for the linked transaction's own, when it's in the feed. */
+  openLink: (link: FeedLink) => void
 
   // Transfer flow. The detail sheet's "Mark as Transfer"/"Mark as Reimbursement" toggles hand
   // off to the transfer sheet, which hands a pending choice back to be saved with the category.
@@ -69,9 +71,9 @@ export interface TransactionEditor {
   transferCandidateItems: FeedItem[]
   transferForcedKind: TransferKind | undefined
   /** The pending choice, with counterpart ids resolved to items for the detail sheet's summary. */
-  pendingTransfer: { kind: TransferKind; counterpartItems: FeedItem[] } | null
+  pendingTransfer: { kind: TransferKind; counterpartItems: FeedItem[]; amounts?: Record<string, number> } | null
   openTransfer: (forcedKind?: TransferKind) => void
-  confirmTransfer: (input: { kind: TransferKind; counterpartIds: string[] }) => void
+  confirmTransfer: (input: { kind: TransferKind; counterpartIds: string[]; amounts?: Record<string, number> }) => void
   declineTransfer: () => void
   clearPendingTransfer: () => void
   unmarkTransfer: () => Promise<void>
@@ -137,6 +139,21 @@ export function useTransactionEditor(feed: FeedItem[]): TransactionEditor {
       setActiveSheetItem(item)
     }
   }, [])
+
+  // Looked up in the whole feed rather than trusted from the snapshot: the link only names the
+  // counterpart, and its sheet needs the full item. Anything unsaved on the sheet being left is
+  // dropped, as closing it would — including a pending transfer, which belongs to that item.
+  const openLink = useCallback(
+    (link: FeedLink) => {
+      const counterpart = link.itemId ? feed.find((item) => item.id === link.itemId) : undefined
+      if (!counterpart) return
+      setPendingTransfer(null)
+      // A manual counterpart opens the manual sheet, which only shows once the detail sheet lets go.
+      if (counterpart.source === 'manual') setActiveSheetItem(null)
+      openTransaction(counterpart)
+    },
+    [feed, openTransaction],
+  )
 
   const openNewManual = useCallback(() => {
     setEditingManual(null)
@@ -294,8 +311,8 @@ export function useTransactionEditor(feed: FeedItem[]): TransactionEditor {
   // Confirming doesn't write anything yet — it hands the choice back to the sheet it came
   // from, which saves the edit and the transfer together.
   const confirmTransfer = useCallback(
-    ({ kind, counterpartIds }: { kind: TransferKind; counterpartIds: string[] }) => {
-      setPendingTransfer({ kind, counterpartIds })
+    ({ kind, counterpartIds, amounts }: { kind: TransferKind; counterpartIds: string[]; amounts?: Record<string, number> }) => {
+      setPendingTransfer({ kind, counterpartIds, amounts })
       setTransferItem(null)
       resumeAfterTransfer()
     },
@@ -384,7 +401,7 @@ export function useTransactionEditor(feed: FeedItem[]): TransactionEditor {
     const counterpartItems = pendingTransfer.counterpartIds
       .map((id) => feed.find((i) => i.id === id))
       .filter((i): i is FeedItem => i != null)
-    return { kind: pendingTransfer.kind, counterpartItems }
+    return { kind: pendingTransfer.kind, counterpartItems, amounts: pendingTransfer.amounts }
   }, [pendingTransfer, feed])
 
   const deleteManual = useCallback(() => {
@@ -444,6 +461,7 @@ export function useTransactionEditor(feed: FeedItem[]): TransactionEditor {
     saveManual,
     deleteManual,
     unlink,
+    openLink,
 
     transferItem,
     transferCandidateItems,

@@ -141,9 +141,10 @@ export default function DashboardScreen() {
         // filters on countsTowardTotals), and it's matched on the expense's category rather than
         // its own, which is where the money it offsets sits.
         if (item.isReimbursementIncome && detailState.mode === 'expense') {
+          // A split income shows under every category it paid back into.
           return isUncategorized
             ? item.reimbursementCategoryId === null
-            : item.reimbursementCategoryId === detailState.segment.categoryId
+            : item.reimbursementCategoryIds.includes(detailState.segment.categoryId)
         }
         // In income mode only a surplus belongs — the part beyond the expense, which is income
         // under the leg's own category and falls through to the ordinary check below.
@@ -151,7 +152,11 @@ export default function DashboardScreen() {
         if (isUncategorized ? item.categoryId !== null : item.categoryId !== detailState.segment.categoryId)
           return false
         const net = item.netAmount ?? item.amount
-        return detailState.mode === 'expense' ? net > 0 : net < 0
+        // An expense paid back in full nets to zero but stays listed: its reimbursement is listed
+        // above, and without the charge beside it that row would explain nothing. It still adds
+        // nothing to the day header, which counts the net.
+        if (detailState.mode === 'expense') return net > 0 || (item.reimbursedAmount != null && item.amount > 0)
+        return net < 0
       })
       .sort((a, b) => (a.date < b.date ? 1 : -1))
   }, [monthFeed, detailState])
