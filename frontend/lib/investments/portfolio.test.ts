@@ -75,7 +75,26 @@ describe('holdingRangeChange', () => {
 
   it('compares a position opened inside the window with what was paid for it', () => {
     // 10 shares bought for $900 in June; worth $1,000 now.
-    const change = holdingRangeChange({ ...base, holding: holding({}), activity: [trade('2026-06-30', 'buy', 10, 900)] })
+    const change = holdingRangeChange({ ...base, holding: holding({ costBasis: 900 }), activity: [trade('2026-06-30', 'buy', 10, 900)] })
+    expect(change?.gain).toBe(100)
+    expect(change?.pct).toBeCloseTo(100 / 900)
+  })
+
+  it('leaves out shares bought and sold again inside the window, as a brokerage does', () => {
+    // 10 bought for $900 and sold for $1,000, then 10 bought back for $850; worth $1,000 now. The
+    // round trip's money isn't counted twice, and what it made is realized, not this position's.
+    const activity = [
+      trade('2026-02-02', 'buy', 10, 900),
+      trade('2026-03-02', 'sell', 10, -1000),
+      trade('2026-06-30', 'buy', 10, 850),
+    ]
+    const change = holdingRangeChange({ ...base, holding: holding({ costBasis: 850 }), activity })
+    expect(change?.gain).toBe(150)
+    expect(change?.pct).toBeCloseTo(150 / 850)
+  })
+
+  it('reads a position opened inside the window from its trades when there is no cost basis', () => {
+    const change = holdingRangeChange({ ...base, holding: holding({ costBasis: null }), activity: [trade('2026-06-30', 'buy', 10, 900)] })
     expect(change?.gain).toBe(100)
     expect(change?.pct).toBeCloseTo(100 / 900)
   })
@@ -96,7 +115,7 @@ describe('holdingRangeChange', () => {
   it('carries shares and the starting close onto today\'s basis across a split', () => {
     // 5 shares bought for $450 before a 2-for-1 split are today's 10; worth $1,000 now.
     const splits = [{ symbol: 'AAA', exDate: '2026-08-01', oldRate: 1, newRate: 2 }]
-    const change = holdingRangeChange({ ...base, splits, holding: holding({}), activity: [trade('2026-06-30', 'buy', 5, 450)] })
+    const change = holdingRangeChange({ ...base, splits, holding: holding({ costBasis: 450 }), activity: [trade('2026-06-30', 'buy', 5, 450)] })
     expect(change?.gain).toBe(550)
   })
 

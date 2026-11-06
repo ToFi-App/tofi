@@ -134,8 +134,9 @@ function isTrade(row: InvestmentActivity): boolean {
  * A position's gain over the chart's window, the way a brokerage would count it: today's value,
  * less what the position was worth when the window opened, less the money put into it (buys) or
  * taken out (sells) since. A position opened inside the window started at nothing, so its gain
- * comes down to its value against what was paid for it — its cost basis. One held from before
- * the window is measured from its value then, and trades since never read as gains.
+ * comes down to its value against what was paid for it — the institution's cost basis, leaving out
+ * what shares already sold made, as a brokerage's YTD does. One held from before the window is
+ * measured from its value then, and trades since never read as gains.
  *
  * `activity` is this one account's: the shares held when the window opened are today's shares with
  * every trade since undone, so another account's trades in the same security would undo the wrong
@@ -180,6 +181,14 @@ export function holdingRangeChange(input: {
   }
   // A sliver left over is rounding in the institution's share counts, not a position.
   if (sharesAtStart < 1e-6) sharesAtStart = 0
+
+  // Opened inside the window: the shares held now against what was paid for them, as a brokerage
+  // reports it. Counting the trades instead would add in what shares already sold made, and count
+  // money sold out and bought back in once per round trip.
+  if (sharesAtStart === 0 && holding.costBasis != null && holding.costBasis > 0) {
+    const gain = valueNow - holding.costBasis
+    return { gain: Math.round(gain * 100) / 100, pct: gain / holding.costBasis }
+  }
 
   let valueAtStart = 0
   if (sharesAtStart > 0) {
