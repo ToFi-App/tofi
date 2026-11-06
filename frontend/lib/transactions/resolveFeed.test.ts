@@ -302,11 +302,27 @@ describe('applyTransfers — reimbursements', () => {
   })
 
   it('never lets net expense go negative when reimbursements exceed the original amount', () => {
+    // A $150 payback against the $100 dinner: the dinner nets to zero, the rest is income.
+    const bigPayback = dinnerPlaidTxns.map((txn) =>
+      txn.transaction_id === 'income-alice' ? { ...txn, amount: -150 } : txn,
+    ) as unknown as PlaidTransaction[]
     const overReimbursed: Transfer[] = [
       { id: 'r1', kind: 'reimbursement', source: 'manual', expensePlaidTransactionId: 'expense-1', expenseManualTransactionId: null, incomePlaidTransactionId: 'income-alice', incomeManualTransactionId: null, amount: '150.00', note: null },
     ]
-    const result = applyTransfers(baseFeed, overReimbursed)
+    const result = applyTransfers(mergeFeed(bigPayback, [], [], dinnerVendorMappings), overReimbursed)
     expect(result.find((item) => item.id === 'expense-1')!.netAmount).toBe(0)
+    expect(result.find((item) => item.id === 'income-alice')!.netAmount).toBe(-50)
+  })
+
+  it('never credits more than the income brought in, whatever the row records', () => {
+    // A row can claim more than its income — a manual income edited down after linking. Only the
+    // $30 that actually arrived can pay the dinner back.
+    const overClaimed: Transfer[] = [
+      { id: 'r1', kind: 'reimbursement', source: 'manual', expensePlaidTransactionId: 'expense-1', expenseManualTransactionId: null, incomePlaidTransactionId: 'income-alice', incomeManualTransactionId: null, amount: '150.00', note: null },
+    ]
+    const result = applyTransfers(baseFeed, overClaimed)
+    expect(result.find((item) => item.id === 'expense-1')!.netAmount).toBe(70)
+    expect(result.find((item) => item.id === 'income-alice')!.netAmount).toBe(0)
   })
 
   it('leaves unrelated feed items unchanged', () => {
@@ -520,10 +536,10 @@ describe('link stamping', () => {
     const result = applyTransfers(feed, transfers)
 
     expect(find(result, 'flight').links).toEqual([
-      { recordId: 't1', kind: 'account_transfer', itemId: 'payout', merchantName: 'Expensify', date: '2026-08-13', accountId: 'checking', amount: 2055.32 },
+      { recordId: 't1', kind: 'account_transfer', itemId: 'payout', merchantName: 'Expensify', date: '2026-08-13', accountId: 'checking', amount: 2055.32, counterpartAmount: -2000 },
     ])
     expect(find(result, 'payout').links).toEqual([
-      { recordId: 't1', kind: 'account_transfer', itemId: 'flight', merchantName: 'United Airlines', date: '2026-08-12', accountId: 'visa', amount: 2055.32 },
+      { recordId: 't1', kind: 'account_transfer', itemId: 'flight', merchantName: 'United Airlines', date: '2026-08-12', accountId: 'visa', amount: 2055.32, counterpartAmount: 2055.32 },
     ])
   })
 
@@ -534,7 +550,7 @@ describe('link stamping', () => {
     const result = applyTransfers(feed, transfers)
 
     expect(find(result, 'flight').links).toEqual([
-      { recordId: 't1', kind: 'credit_card_payment', itemId: null, merchantName: null, date: null, accountId: null, amount: 2055.32 },
+      { recordId: 't1', kind: 'credit_card_payment', itemId: null, merchantName: null, date: null, accountId: null, amount: 2055.32, counterpartAmount: null },
     ])
   })
 
@@ -555,12 +571,13 @@ describe('link stamping', () => {
     const result = applyTransfers(feed, transfers)
 
     expect(find(result, 'flight').links).toEqual([
-      { recordId: 'r1', kind: 'reimbursement', itemId: 'payout', merchantName: 'Expensify', date: '2026-08-13', accountId: 'checking', amount: 2000 },
-      { recordId: 'r2', kind: 'reimbursement', itemId: 'payout2', merchantName: 'Expensify', date: '2026-08-20', accountId: 'checking', amount: 55.32 },
+      { recordId: 'r1', kind: 'reimbursement', itemId: 'payout', merchantName: 'Expensify', date: '2026-08-13', accountId: 'checking', amount: 2000, counterpartAmount: -2000 },
+      { recordId: 'r2', kind: 'reimbursement', itemId: 'payout2', merchantName: 'Expensify', date: '2026-08-20', accountId: 'checking', amount: 55.32, counterpartAmount: -55.32 },
     ])
-    // Each income leg knows only about its own link back to the expense.
-    expect(find(result, 'payout').links).toMatchObject([{ recordId: 'r1', itemId: 'flight', amount: 2000 }])
-    expect(find(result, 'payout2').links).toMatchObject([{ recordId: 'r2', itemId: 'flight', amount: 55.32 }])
+    // Each income leg knows only about its own link back to the expense — the part it paid, and
+    // the whole charge, so the sheet can show which transaction it's against.
+    expect(find(result, 'payout').links).toMatchObject([{ recordId: 'r1', itemId: 'flight', amount: 2000, counterpartAmount: 2055.32 }])
+    expect(find(result, 'payout2').links).toMatchObject([{ recordId: 'r2', itemId: 'flight', amount: 55.32, counterpartAmount: 2055.32 }])
   })
 
   it('leaves unlinked transactions with an empty list', () => {
@@ -688,5 +705,66 @@ describe('mergeFeed date basis', () => {
     ] as unknown as InvestmentTransaction[]
     const feed = mergeFeed([], [], [], [], [], [], investments)
     expect(feed[0]).toMatchObject({ date: '2026-06-18', postedDate: '2026-06-18' })
+  })
+})
+
+// One income paying back several expenses: a $100 Venmo covering three people's shares of three
+// different charges. Each row records that pair's share.
+describe('applyTransfers — one income split across expenses', () => {
+  const txns = [
+    { transaction_id: 'dinner', account_id: 'card', amount: 90, date: '2026-10-30', name: 'NOODLE', merchant_name: 'Noodle House', pending: false },
+    { transaction_id: 'groceries', account_id: 'card', amount: 40, date: '2026-10-31', name: 'MARKET', merchant_name: 'Market', pending: false },
+    { transaction_id: 'tickets', account_id: 'card', amount: 30, date: '2026-10-31', name: 'CINEMA', merchant_name: 'Cinema', pending: false },
+    { transaction_id: 'venmo', account_id: 'checking', amount: -100, date: '2026-11-02', name: 'VENMO', merchant_name: 'Venmo', pending: false },
+  ] as unknown as PlaidTransaction[]
+  const mappings: VendorMapping[] = [
+    { id: 'vm-1', vendorName: 'Noodle House', categoryId: 'cat-food', subcategoryId: null, source: 'plaid_auto' },
+    { id: 'vm-2', vendorName: 'Market', categoryId: 'cat-groceries', subcategoryId: null, source: 'plaid_auto' },
+    { id: 'vm-3', vendorName: 'Cinema', categoryId: 'cat-fun', subcategoryId: null, source: 'plaid_auto' },
+  ]
+  const feed = mergeFeed(txns, [], [], mappings)
+  const find = (items: ReturnType<typeof mergeFeed>, id: string) => items.find((item) => item.id === id)!
+  const row = (id: string, expense: string, amount: string): Transfer => ({
+    id, kind: 'reimbursement', source: 'manual', expensePlaidTransactionId: expense, expenseManualTransactionId: null,
+    incomePlaidTransactionId: 'venmo', incomeManualTransactionId: null, amount, note: null,
+  })
+
+  it('nets each expense by its own share and leaves nothing of the income counting', () => {
+    const result = applyTransfers(feed, [row('r1', 'dinner', '50.00'), row('r2', 'groceries', '20.00'), row('r3', 'tickets', '30.00')])
+    expect(find(result, 'dinner').netAmount).toBe(40)
+    expect(find(result, 'groceries').netAmount).toBe(20)
+    expect(find(result, 'tickets').netAmount).toBe(0)
+    const venmo = find(result, 'venmo')
+    expect(venmo.isReimbursementIncome).toBe(true)
+    expect(venmo.netAmount).toBe(0)
+    expect(venmo.links.map((link) => [link.itemId, link.amount])).toEqual([['dinner', 50], ['groceries', 20], ['tickets', 30]])
+  })
+
+  it('carries every category it paid into, led by the largest share', () => {
+    const venmo = find(applyTransfers(feed, [row('r1', 'dinner', '50.00'), row('r2', 'groceries', '20.00'), row('r3', 'tickets', '30.00')]), 'venmo')
+    expect(venmo.reimbursementCategoryId).toBe('cat-food')
+    expect(venmo.reimbursementCategoryIds).toEqual(['cat-food', 'cat-groceries', 'cat-fun'])
+  })
+
+  it('keeps what was not allocated as income', () => {
+    const result = applyTransfers(feed, [row('r1', 'dinner', '50.00'), row('r2', 'groceries', '20.00')])
+    expect(find(result, 'venmo').netAmount).toBe(-30)
+  })
+
+  it('lets a whole-income link and a later share of its remainder add up to the income', () => {
+    // The default link records the whole $100 against the $30 tickets; $70 is left, and the
+    // remainder is then given to the dinner.
+    const result = applyTransfers(feed, [row('r1', 'tickets', '100.00'), row('r2', 'dinner', '70.00')])
+    expect(find(result, 'tickets').netAmount).toBe(0)
+    expect(find(result, 'dinner').netAmount).toBe(20)
+    expect(find(result, 'venmo').netAmount).toBe(0)
+  })
+
+  it('never pays out more than the income across all its expenses', () => {
+    // Two whole-income links: the first one fills the dinner with $90, the second gets the $10 left.
+    const result = applyTransfers(feed, [row('r1', 'dinner', '100.00'), row('r2', 'groceries', '100.00')])
+    expect(find(result, 'dinner').netAmount).toBe(0)
+    expect(find(result, 'groceries').netAmount).toBe(30)
+    expect(find(result, 'venmo').netAmount).toBe(0)
   })
 })

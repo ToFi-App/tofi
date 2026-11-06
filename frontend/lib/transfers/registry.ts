@@ -118,8 +118,8 @@ export const TRANSFER_TYPES: Record<TransferKind, TransferTypeDefinition> = {
     icon: 'arrow-undo',
     color: colors.reimbursed,
     // Entered from the income side: you mark the money that came back, then pick the expense it
-    // paid you back for. One income pays back one expense — a single income split across several
-    // expenses has no defined allocation, so this kind stays single-select.
+    // paid you back for. Single-select by default: one income pays back one expense. The Transfer
+    // sheet's Split control lets the user divide it across several, giving each its own share.
     appliesTo: (item) => !isExpense(item),
     matches: (item, candidate) =>
       isOppositeSign(item, candidate) &&

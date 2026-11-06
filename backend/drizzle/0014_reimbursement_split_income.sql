@@ -1,0 +1,4 @@
+DROP INDEX IF EXISTS "transfers_income_plaid_unique";--> statement-breakpoint
+DROP INDEX IF EXISTS "transfers_income_manual_unique";--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "transfers_income_plaid_unique" ON "transfers" USING btree ("user_id","income_plaid_transaction_id") WHERE "transfers"."income_plaid_transaction_id" IS NOT NULL AND "transfers"."kind" != 'reimbursement';--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "transfers_income_manual_unique" ON "transfers" USING btree ("user_id","income_manual_transaction_id") WHERE "transfers"."income_manual_transaction_id" IS NOT NULL AND "transfers"."kind" != 'reimbursement';

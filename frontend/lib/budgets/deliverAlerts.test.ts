@@ -74,6 +74,7 @@ function spend(id: string, categoryId: string, amount: number, date = '2026-08-1
     netAmount: null,
     isReimbursementIncome: false,
     reimbursementCategoryId: null,
+    reimbursementCategoryIds: [],
     transferId: null,
     transferKind: null,
     transferRole: null,

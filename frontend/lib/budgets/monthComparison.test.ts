@@ -7,7 +7,7 @@ function spend(id: string, date: string, amount: number): FeedItem {
     id, date, postedDate: date, amount, categoryId: 'food',
     source: 'plaid', merchantName: 'x', subcategoryId: null, categorySource: 'plaid_pfc',
     confidenceLevel: null, pfcDetailed: null, accountId: 'a', pending: false, note: null,
-    reimbursedAmount: null, netAmount: null, isReimbursementIncome: false, reimbursementCategoryId: null,
+    reimbursedAmount: null, netAmount: null, isReimbursementIncome: false, reimbursementCategoryId: null, reimbursementCategoryIds: [],
     transferId: null, transferKind: null, transferRole: null, transferSource: null,
     isBrokerageCashAccount: false, isSweptOutflow: false, hasCrossAccountCounterpart: false, links: [],
   } as FeedItem

@@ -6,7 +6,7 @@ function item(date: string): FeedItem {
   return {
     id: date, source: 'plaid', amount: 10, date, postedDate: date, merchantName: 'x', categoryId: null, subcategoryId: null,
     categorySource: 'uncategorized', confidenceLevel: null, pfcDetailed: null, accountId: null, pending: false, note: null,
-    reimbursedAmount: null, netAmount: null, isReimbursementIncome: false, reimbursementCategoryId: null,
+    reimbursedAmount: null, netAmount: null, isReimbursementIncome: false, reimbursementCategoryId: null, reimbursementCategoryIds: [],
     transferId: null, transferKind: null, transferRole: null, transferSource: null,
     isBrokerageCashAccount: false,
     isSweptOutflow: false,

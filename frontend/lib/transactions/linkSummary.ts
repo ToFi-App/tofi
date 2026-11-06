@@ -18,8 +18,14 @@ export function linkPillLabel(item: FeedItem): string | null {
   // spelling it out here made the pill long enough to crowd the merchant name.
   if (item.reimbursedAmount != null) return `Reimbursed: ${formatAmount(item.reimbursedAmount)}`
   if (item.isReimbursementIncome) {
-    // Several links can't happen here — one income pays back one expense — so the first link is
-    // the whole story. It still may not name anything, if the expense is outside the feed.
+    // Split across several expenses: no one merchant names it, so the pill says how far it was
+    // split — or, when some of it is still income, how much of it went to paying things back.
+    if (item.links.length > 1) {
+      const paid = item.links.reduce((sum, l) => sum + l.amount, 0)
+      return hasReimbursementSurplus(item) ? `${formatAmount(paid)} reimbursed` : `Split across ${item.links.length}`
+    }
+    // One expense: its link is the whole story. It still may not name anything, if the expense
+    // is outside the feed.
     const link = item.links[0]
     const merchant = link?.merchantName
     // Only part of a surplus income went to the expense. Saying how much is what tells the user the

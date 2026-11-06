@@ -52,7 +52,10 @@ export function TransactionEditSheets({ editor }: TransactionEditSheetsProps) {
 
   return (
     <BottomSheet visible={active != null} onClose={onClose} contentScroll={sheetScroll}>
+      {/* Keyed by transaction: opening a linked one swaps the item in place, and the new one should
+          start at the top with its own form state, as if opened from the list. */}
       <TransactionDetailSheet
+        key={editor.activeSheetItem?.id ?? 'none'}
         sheetScroll={sheetScroll}
         item={editor.activeSheetItem}
         categories={editor.categories}
@@ -65,6 +68,7 @@ export function TransactionEditSheets({ editor }: TransactionEditSheetsProps) {
         onClearPendingTransfer={editor.clearPendingTransfer}
         onUnmarkTransfer={editor.unmarkTransfer}
         onUnlink={editor.unlink}
+        onOpenLink={editor.openLink}
       />
       <TransferSheet
         sheetScroll={sheetScroll}

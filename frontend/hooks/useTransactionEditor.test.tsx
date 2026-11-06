@@ -141,3 +141,50 @@ describe('the reimbursement handoff, through the real editor', () => {
     expect(harness.active).toBeNull()
   })
 })
+
+describe('opening a linked transaction from the detail sheet', () => {
+  const link = (itemId: string | null) => ({
+    recordId: 'r1',
+    kind: 'reimbursement' as const,
+    itemId,
+    merchantName: 'Noodle House',
+    date: '2026-08-18',
+    accountId: 'acc-card',
+    amount: 30,
+    counterpartAmount: 50,
+  })
+
+  it('swaps the open sheet for the counterpart', () => {
+    const expense = feedItem({ id: 'dinner', amount: 50 })
+    const payback = feedItem({ id: 'venmo', amount: -30, accountId: 'acc-checking', isReimbursementIncome: true, links: [link('dinner')] })
+    const harness = mountEditor([expense, payback])
+
+    act(() => harness.editor.openTransaction(payback))
+    act(() => harness.editor.openLink(link('dinner')))
+
+    expect(harness.active).toBe('detail')
+    expect(harness.editor.activeSheetItem?.id).toBe('dinner')
+  })
+
+  it('opens a manual counterpart in the manual sheet, with the detail sheet let go', () => {
+    const expense = feedItem({ id: 'cash-dinner', source: 'manual', amount: 50 })
+    const payback = feedItem({ id: 'venmo', amount: -30, isReimbursementIncome: true, links: [link('cash-dinner')] })
+    const harness = mountEditor([expense, payback])
+
+    act(() => harness.editor.openTransaction(payback))
+    act(() => harness.editor.openLink(link('cash-dinner')))
+
+    expect(harness.active).toBe('manual')
+    expect(harness.editor.editingManual?.id).toBe('cash-dinner')
+  })
+
+  it('stays put when the counterpart is not in the feed', () => {
+    const payback = feedItem({ id: 'venmo', amount: -30, isReimbursementIncome: true, links: [link(null)] })
+    const harness = mountEditor([payback])
+
+    act(() => harness.editor.openTransaction(payback))
+    act(() => harness.editor.openLink(link(null)))
+
+    expect(harness.editor.activeSheetItem?.id).toBe('venmo')
+  })
+})

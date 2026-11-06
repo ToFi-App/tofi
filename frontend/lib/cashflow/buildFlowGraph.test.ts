@@ -23,6 +23,7 @@ function item(overrides: Partial<FeedItem> & { id: string }): FeedItem {
     netAmount: null,
     isReimbursementIncome: false,
     reimbursementCategoryId: null,
+    reimbursementCategoryIds: [],
     transferId: null,
     transferKind: null,
     transferRole: null,
@@ -37,7 +38,7 @@ function item(overrides: Partial<FeedItem> & { id: string }): FeedItem {
 }
 
 function link(itemId: string | null): FeedLink {
-  return { recordId: 't', kind: 'account_transfer', itemId, merchantName: null, date: null, accountId: null, amount: 0 }
+  return { recordId: 't', kind: 'account_transfer', itemId, merchantName: null, date: null, accountId: null, amount: 0, counterpartAmount: null }
 }
 
 /** Both legs of a paired transfer, outflow first. */

@@ -34,6 +34,7 @@ function item(overrides: Partial<FeedItem> & Pick<FeedItem, 'id' | 'amount'>): F
     netAmount: null,
     isReimbursementIncome: false,
     reimbursementCategoryId: null,
+    reimbursementCategoryIds: [],
     transferId: null,
     transferKind: null,
     transferRole: null,
