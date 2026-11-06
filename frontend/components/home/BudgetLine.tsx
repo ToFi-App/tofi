@@ -44,6 +44,7 @@ export function BudgetLine({ budget, onPress }: { budget: MonthBudget | null; on
   // The bar spans the larger of budget and spending, so going over runs past the limit's tick.
   const scale = Math.max(budget.budget, budget.spent)
   const limitAt = scale > 0 ? budget.budget / scale : 1
+  const filledTo = scale > 0 ? budget.spent / scale : 0
   const isCurrentMonth = budget.elapsed > 0 && budget.elapsed < 1
   const isOver = budget.spent > budget.budget
 
@@ -59,8 +60,11 @@ export function BudgetLine({ budget, onPress }: { budget: MonthBudget | null; on
         <View className="overflow-hidden rounded-full" style={{ height: BUDGET_BAR_HEIGHT, backgroundColor: colors.surfaceRaised }}>
           {/* Faint at the start, full colour where spending has reached: the same fade the trend
               charts use, laid along the bar's length. */}
-          <View className="h-full overflow-hidden rounded-full" style={{ width: `${(scale > 0 ? budget.spent / scale : 0) * 100}%` }}>
-            <Svg width="100%" height={BUDGET_BAR_HEIGHT}>
+          {/* Keyed on the width: when the month changes the fill's View resizes, but the Svg inside
+              keeps painting at its old size (react-native-svg on the new architecture doesn't redraw
+              percentage sizes on a parent resize), so a remount is what makes it draw the new width. */}
+          <View className="h-full overflow-hidden rounded-full" style={{ width: `${filledTo * 100}%` }}>
+            <Svg key={filledTo} width="100%" height={BUDGET_BAR_HEIGHT}>
               <Defs>
                 <LinearGradient id="budget-bar-fill" x1="0" y1="0" x2="1" y2="0">
                   <Stop offset="0" stopColor={statusColor(budget.status)} stopOpacity={0.25} />
