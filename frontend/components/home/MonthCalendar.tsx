@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ScrollView, Text, View } from 'react-native'
-import { colors } from '@/constants/theme'
+import { colors, shadow } from '@/constants/theme'
 import { useTransactionFeed } from '@/hooks/useTransactionFeed'
 import { usePullToRefresh } from '@/hooks/usePullToRefresh'
 import type { FeedItem } from '@/lib/transactions/resolveFeed'
@@ -180,8 +180,9 @@ function MonthCalendarContent({
           {suggestionError ? <ErrorBanner message={suggestionError} onDismiss={() => setSuggestionError(null)} /> : null}
         </View>
 
-        {/* Calendar */}
-        <View className="mx-5 mb-4 rounded-xl bg-surface p-3">
+        {/* Calendar — a card like the day cards below it, lifted by the same shadow so it holds its
+            own on a white page. */}
+        <View className="mx-5 mb-4 rounded-xl bg-surface p-3" style={shadow.sm}>
           <View className="mb-1 flex-row">
             {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
               <Text key={day} className="text-center font-sansMed text-xs text-textMuted" style={{ width: '14.28%' }}>
@@ -213,15 +214,15 @@ function MonthCalendarContent({
 
           <View className="mt-3 flex-row justify-between border-t px-2 pt-3" style={{ borderColor: colors.border }}>
             <View className="items-start">
-              <Text className="font-sans text-xs text-textMuted">Income</Text>
+              <Text className="font-sansMed text-xs text-textPrimary">Income</Text>
               <Text className="font-display text-md text-income">{formatAmount(totalIncome)}</Text>
             </View>
             <View className="items-center">
-              <Text className="font-sans text-xs text-textMuted">Expenses</Text>
+              <Text className="font-sansMed text-xs text-textPrimary">Expenses</Text>
               <Text className="font-display text-md text-expense">{formatAmount(totalExpense)}</Text>
             </View>
             <View className="items-end">
-              <Text className="font-sans text-xs text-textMuted">Balance</Text>
+              <Text className="font-sansMed text-xs text-textPrimary">Balance</Text>
               <Text className="font-display text-md text-textPrimary">{formatAmount(totalIncome - totalExpense)}</Text>
             </View>
           </View>

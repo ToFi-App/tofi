@@ -1,25 +1,23 @@
-import { useState } from 'react'
 import { Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
-import Svg, { Defs, Pattern, Rect } from 'react-native-svg'
+import { LinearGradient } from 'expo-linear-gradient'
 import { colors, hexToRgba } from '@/constants/theme'
 import { MASKED_AMOUNT } from '@/lib/format/money'
 import { useAmountsMasked } from '@/hooks/useAmountsMasked'
 import type { BudgetStatus } from '@/lib/budgets/budgetMath'
 import { statusColor } from '@/components/budgets/statusColor'
 import { Card } from '@/components/ui/Card'
+import { TileIcon } from '@/components/ui/TileIcon'
 
 /** Inter's tabular figures: digits all one width, so amounts line up without a monospace face. */
 const TABULAR = { fontVariant: ['tabular-nums' as const] }
-const BAR_HEIGHT = 10
-/** The knob riding the end of what's been spent: a white disc ringed in the health colour. */
-const KNOB_SIZE = 18
-const KNOB_RING = 3
-/** The stripes in the stretch an even pace allows but spending hasn't reached yet. */
-const HATCH_GAP = 6
-const HATCH_WIDTH = 2
+const BAR_HEIGHT = 12
+/** How pale the fill starts at the left, as a share of the health colour; it deepens to full at its end. */
+const FILL_START_OPACITY = 0.3
+/** How far a tick reaches above and below the bar. */
+const TICK_OVERHANG = 4
 
-/** Whole dollars: on a bar this size, cents are noise. */
+/** Whole dollars: on a summary this size, cents are noise. */
 function dollars(amount: number, isMasked: boolean): string {
   return isMasked ? MASKED_AMOUNT : `$${Math.round(amount).toLocaleString('en-US')}`
 }
@@ -32,172 +30,107 @@ export interface MonthBudget {
 }
 
 /**
- * The month's budgets, at the head of Home's sheet, on a card that opens the Budgets screen: the way in at
- * the top right, then the bar — spent in solid health colour up to a knob,
- * then stripes as far as an even pace would have spent by today (the room still in hand), then the
- * plain track; once past pace the solid runs beyond it (a tick marks the pace point), and once over,
- * past a tick at the limit — and "spent of budgeted" under it.
+ * The month's budgets across the head of Home's sheet: what's left as the card's big number, and a
+ * bar of what's been spent of the budget under it — one fill in the month's health colour, pale at
+ * the left and deepening to full strength at its end, so the eye lands where spending has got to.
+ * A tick marks where an even pace would put spending by today; once over, a dark tick marks the
+ * limit and the bar runs on past it. Tapping it opens the Budgets screen.
  *
  * Health is teal on track, amber ahead of pace, rose over (statusColor). With nothing budgeted it's
  * the way in to setting one.
  */
 export function BudgetLine({ budget, onPress }: { budget: MonthBudget | null; onPress: () => void }) {
   const { isMasked } = useAmountsMasked()
-  const [barWidth, setBarWidth] = useState(0)
+  // The month's health: the mark's tint and the bar's fill. Brand teal before a budget is set.
+  const healthColor = budget ? statusColor(budget.status) : colors.primary
+
+  const header = (
+    <View className="flex-row items-center justify-between gap-2">
+      <View className="flex-row items-center gap-2">
+        <TileIcon name="wallet" color={healthColor} />
+        <Text className="font-sansSemi text-base text-textPrimary">Budget</Text>
+      </View>
+      <View
+        className="items-center justify-center rounded-full"
+        style={{ width: 24, height: 24, backgroundColor: colors.surfaceRaised }}
+      >
+        <Ionicons name="chevron-forward" size={13} color={colors.textPrimary} />
+      </View>
+    </View>
+  )
 
   if (!budget) {
     return (
-      <Card onPress={onPress} accessibilityLabel="Set a monthly budget" style={{ padding: 16 }}>
-        <View className="flex-row items-center gap-3">
-          <Text className="flex-1 font-sansSemi text-base text-textPrimary">Set a monthly budget</Text>
-          <Ionicons name="chevron-forward" size={16} color={colors.textPrimary} />
-        </View>
+      <Card onPress={onPress} accessibilityLabel="Set a monthly budget" style={{ padding: 16, gap: 8 }}>
+        {header}
+        <Text className="font-sans text-sm text-textPrimary">Set a monthly budget</Text>
       </Card>
     )
   }
 
-  const healthColor = statusColor(budget.status)
   const isCurrentMonth = budget.elapsed > 0 && budget.elapsed < 1
   const isOver = budget.spent > budget.budget
   // What an even pace would have spent by today; only meaningful while the month is running.
-  const pace = isCurrentMonth ? budget.budget * budget.elapsed : null
+  const evenPace = isCurrentMonth ? budget.budget * budget.elapsed : null
 
   // The bar spans the larger of budget and spending, so going over runs past the limit's tick.
   const scale = Math.max(budget.budget, budget.spent)
-  const x = (amount: number) => (scale > 0 ? (Math.min(amount, scale) / scale) * barWidth : 0)
-  const spentX = x(budget.spent)
-  const paceX = pace != null ? x(pace) : null
-  const limitX = x(budget.budget)
-  const hatchFrom = spentX
-  const hatchTo = paceX != null && paceX > spentX ? paceX : null
+  const share = (amount: number) => (scale > 0 ? Math.min(amount, scale) / scale : 0)
+  const filled = share(budget.spent)
+  const left = budget.budget - budget.spent
+  const figure = dollars(Math.abs(left), isMasked)
+  const context = `${isOver ? 'over' : 'left of'} ${dollars(budget.budget, isMasked)}`
 
   return (
-    <Card onPress={onPress} accessibilityLabel="Budgets" style={{ padding: 16, gap: 12 }}>
-      <View className="flex-row items-center justify-between gap-3">
-        <View className="flex-row items-center gap-3">
-          {/* The budget's mark in a round well of its health colour. */}
-          <View
-            className="items-center justify-center rounded-full"
-            style={{
-              width: 36,
-              height: 36,
-              backgroundColor: hexToRgba(healthColor, 0.12),
-            }}
-          >
-            <Ionicons name="pie-chart" size={18} color={healthColor} />
-          </View>
-          <Text className="font-sansSemi text-base text-textPrimary">Budget</Text>
-        </View>
-        <View className="flex-row items-center gap-2">
-          <View
-            className="items-center justify-center rounded-full"
-            style={{
-              width: 28,
-              height: 28,
-              backgroundColor: colors.surfaceRaised,
-            }}
-          >
-            <Ionicons name="chevron-forward" size={14} color={colors.textPrimary} />
-          </View>
-        </View>
+    <Card onPress={onPress} accessibilityLabel={`Budget. ${figure} ${context}`} style={{ padding: 16, gap: 12 }}>
+      {header}
+
+      {/* What's left: the card's one big number, its context beside it. */}
+      <View className="flex-row items-baseline gap-2">
+        <Text
+          className="font-display text-2xl"
+          style={[TABULAR, { color: isOver ? colors.expense : colors.textPrimary }]}
+          numberOfLines={1}
+        >
+          {figure}
+        </Text>
+        <Text className="shrink font-sansMed text-sm text-textPrimary" style={TABULAR} numberOfLines={1}>
+          {context}
+        </Text>
       </View>
 
-      <View>
-        <View onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)} style={{ height: KNOB_SIZE, justifyContent: 'center' }}>
-          {barWidth > 0 ? (
-            <>
-              {/* The track, then the room an even pace allows (stripes), then what's been spent. */}
-              <View
-                style={{
-                  height: BAR_HEIGHT,
-                  borderRadius: BAR_HEIGHT / 2,
-                  backgroundColor: hexToRgba(healthColor, 0.12),
-                }}
-              />
-              {hatchTo != null ? (
-                <Svg
-                  key={`${hatchFrom}-${hatchTo}`}
-                  width={hatchTo - hatchFrom}
-                  height={BAR_HEIGHT}
-                  style={{
-                    position: 'absolute',
-                    left: hatchFrom,
-                    top: (KNOB_SIZE - BAR_HEIGHT) / 2,
-                  }}
-                >
-                  <Defs>
-                    <Pattern
-                      id="budget-hatch"
-                      width={HATCH_GAP}
-                      height={HATCH_GAP}
-                      patternUnits="userSpaceOnUse"
-                      patternTransform="rotate(45)"
-                    >
-                      <Rect x="0" y="0" width={HATCH_WIDTH} height={HATCH_GAP} fill={hexToRgba(healthColor, 0.45)} />
-                    </Pattern>
-                  </Defs>
-                  <Rect
-                    x="0"
-                    y="0"
-                    width={hatchTo - hatchFrom}
-                    height={BAR_HEIGHT}
-                    rx={BAR_HEIGHT / 2}
-                    fill="url(#budget-hatch)"
-                  />
-                </Svg>
-              ) : null}
-              <View
-                style={{
-                  position: 'absolute',
-                  left: 0,
-                  top: (KNOB_SIZE - BAR_HEIGHT) / 2,
-                  width: Math.max(spentX, BAR_HEIGHT),
-                  height: BAR_HEIGHT,
-                  borderRadius: BAR_HEIGHT / 2,
-                  backgroundColor: healthColor,
-                }}
-              />
-              {isOver ? <Tick x={limitX} color={colors.textPrimary} /> : null}
-              {/* Past pace there are no stripes to end at, so the pace point is marked instead. */}
-              {paceX != null && hatchTo == null ? <Tick x={paceX} color={colors.textSecondary} /> : null}
-              <View
-                style={{
-                  position: 'absolute',
-                  left: Math.min(Math.max(spentX - KNOB_SIZE / 2, 0), barWidth - KNOB_SIZE),
-                  top: 0,
-                  width: KNOB_SIZE,
-                  height: KNOB_SIZE,
-                  borderRadius: KNOB_SIZE / 2,
-                  borderWidth: KNOB_RING,
-                  borderColor: healthColor,
-                  backgroundColor: colors.surface,
-                }}
-              />
-            </>
+      <View style={{ height: BAR_HEIGHT + TICK_OVERHANG * 2, justifyContent: 'center' }}>
+        <View
+          style={{ height: BAR_HEIGHT, borderRadius: BAR_HEIGHT / 2, backgroundColor: colors.surfaceRaised, overflow: 'hidden' }}
+        >
+          {filled > 0 ? (
+            // At least as wide as it is tall, so a first small purchase still shows as a rounded nub.
+            <LinearGradient
+              colors={[hexToRgba(healthColor, FILL_START_OPACITY), healthColor]}
+              start={{ x: 0, y: 0.5 }}
+              end={{ x: 1, y: 0.5 }}
+              style={{ width: `${filled * 100}%`, minWidth: BAR_HEIGHT, height: BAR_HEIGHT, borderRadius: BAR_HEIGHT / 2 }}
+            />
           ) : null}
         </View>
-      </View>
-
-      {/* "of … budgeted", not "spent": the budget counts only budgeted categories, so its figure is
-          smaller than the month's spending, and two different "spent" amounts read as a bug. */}
-      <View className="flex-row items-center justify-between gap-3">
-        <Text className="shrink font-sans text-sm text-textPrimary" style={TABULAR} numberOfLines={1}>
-          <Text className="font-sansSemi">{dollars(budget.spent, isMasked)}</Text> of {dollars(budget.budget, isMasked)} budgeted
-        </Text>
+        {evenPace != null ? <Tick at={share(evenPace)} color={colors.textSecondary} /> : null}
+        {isOver ? <Tick at={share(budget.budget)} color={colors.textPrimary} /> : null}
       </View>
     </Card>
   )
 }
 
-function Tick({ x, color }: { x: number; color: string }) {
+/** A thin mark across the bar at a share of its length. */
+function Tick({ at, color }: { at: number; color: string }) {
   return (
     <View
       style={{
         position: 'absolute',
-        left: x - 1,
-        top: (KNOB_SIZE - BAR_HEIGHT) / 2 - 3,
+        left: `${at * 100}%`,
+        marginLeft: -1,
+        top: 0,
         width: 2,
-        height: BAR_HEIGHT + 6,
+        height: BAR_HEIGHT + TICK_OVERHANG * 2,
         borderRadius: 1,
         backgroundColor: color,
       }}

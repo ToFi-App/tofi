@@ -33,7 +33,7 @@ export function CategoryForm({ category, mappings, isSaving, onSave, onDelete }:
   const canSave = name.trim().length > 0 && icon.trim().length > 0
 
   return (
-    <ScrollView contentInsetAdjustmentBehavior="automatic" className="flex-1 bg-background" contentContainerClassName="gap-6 px-5 py-6">
+    <ScrollView contentInsetAdjustmentBehavior="automatic" className="flex-1" contentContainerClassName="gap-6 px-5 py-6">
       <TextField label="Name" value={name} onChangeText={setName} placeholder="e.g. Groceries" />
 
       <View className="gap-2">

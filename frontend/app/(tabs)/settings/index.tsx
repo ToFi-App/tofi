@@ -22,7 +22,7 @@ export default function SettingsIndexScreen() {
   }
 
   return (
-    <ScrollView contentInsetAdjustmentBehavior="automatic" className="flex-1 bg-background" contentContainerClassName="gap-6 px-5 py-6">
+    <ScrollView contentInsetAdjustmentBehavior="automatic" className="flex-1" contentContainerClassName="gap-6 px-5 py-6">
       {error ? <ErrorBanner message={error} onDismiss={() => setError(null)} /> : null}
 
       <SettingsGroup title="Accounts">

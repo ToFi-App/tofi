@@ -3,13 +3,14 @@ import { Pressable, ScrollView, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { router, useLocalSearchParams } from 'expo-router'
-import { colors } from '@/constants/theme'
+import { colors, pageBackdrop } from '@/constants/theme'
 import { useAmountsMasked } from '@/hooks/useAmountsMasked'
 import { useInvestmentScope } from '@/hooks/useInvestmentScope'
 import { HoldingDetail } from '@/components/accounts/HoldingDetail'
 import { FreshnessInfo } from '@/components/investments/FreshnessInfo'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { TabBarSpacer } from '@/components/navigation/FloatingTabs'
+import { PageBackdrop } from '@/components/ui/PageBackdrop'
 
 /**
  * One holding's page, pushed from the Investments screen. It reads the same investments that screen
@@ -30,7 +31,8 @@ export default function HoldingScreen() {
   }, [shownAccounts, portfolio.holdingsByAccount, securityId])
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: pageBackdrop.stops[0] }} edges={['top']}>
+      <PageBackdrop />
       <View className="flex-row items-center gap-2 px-5 pb-2 pt-3">
         <Pressable onPress={() => router.back()} hitSlop={10} accessibilityLabel="Back">
           <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />

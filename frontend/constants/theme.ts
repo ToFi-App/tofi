@@ -32,7 +32,10 @@ export const colors = {
   textMuted: '#A8A89C',
   textInverse: '#FFFFFF',
   // A white card's own edge on a white page: lighter than `border`, which reads as a rule, not a rim.
-  borderCard: '#ECECE6',
+  borderCard: '#E6E6DF',
+  // A control's fill on a plain white page: iOS's own neutral fill (the light grey of its segmented
+  // controls and search fields) — cool and quiet, where a warm grey or a brand tint read as off.
+  controlFill: 'rgba(118,118,128,0.12)',
 
   // Controls on Home's mint top section where Liquid Glass isn't available (before iOS 26): a light
   // white veil with a soft rim — enough to read as buttons, quiet enough that the net figure stays
@@ -49,44 +52,45 @@ export const colors = {
 } as const
 
 /**
- * Home's sheet: a soft sage-mint backdrop rather than white, straight down from a touch deeper under
- * the top section to paler toward the bottom. It's what the frosted cards float on — the colour
- * behind them is what makes the glass and blur visible at all. Stops run top to bottom; the last is
- * also what shows past the bottom of the page.
+ * The app's page backdrop (PageBackdrop), for any screen that wants more than flat off-white: Home's
+ * sheet and its Charts view use it. Stops run top to bottom; the first is also the colour to give
+ * the status-bar area above a page that uses it, the last what shows past the bottom.
  */
-export const sheetBackdrop = {
-  // Starts noticeably paler than the top section's bottom edge, so the sheet's top reads as a
-  // separate, lighter layer rather than more of the same mint.
-  // Trying the sheet plain white; the mint was ['#E4F3EC', '#E9F5F0', '#EFF8F4'].
+export const pageBackdrop = {
+  // Every page but Home's sheet: plain white, no pools. (The faint mint it had was
+  // ['#F6FAF8', '#F8FBF9', '#FAFCFB'] with pools at 0.13 — set those back to bring it to every page.)
   stops: ['#FFFFFF', '#FFFFFF', '#FFFFFF'],
-  // Whether the sheet is the tinted mint (with its colour pools) or plain white. False while trying
-  // white; the cards follow it too — frosted material on the mint, solid white cards on white.
-  tinted: false,
-  // Soft pools of other colours drifting through the mint (SheetBackdrop), each faint and wide, so
-  // the backdrop reads as a gentle mesh of light rather than a flat wash: warm lemon on the
-  // right, cool sky down the left, a lilac haze lower on the right.
+  // Soft pools of other colours drifting through it (PageBackdrop), faint and wide, so the near-white
+  // reads as a gentle mesh of light rather than a flat wash: lemon on the right, sky down the left, a
+  // lilac haze lower on the right.
   blooms: { lemon: '#FFF1A8', sky: '#BFE2FF', lilac: '#E6D9FF' },
+  bloomStrength: 0,
+  // Home's sheet: plain white too now. (Its faint mint was ['#F9FCFB', '#FBFDFC', '#FCFEFD'] with
+  // pools at 0.08.)
+  sheet: { stops: ['#FFFFFF', '#FFFFFF', '#FFFFFF'], bloomStrength: 0 },
+  // Home's cards, and its Cash flow pill: iOS's standard frosted material (true) or solid white
+  // (false).
+  frostedCards: false,
 } as const
 
 /**
- * Home's top section, in the same family as the sheet below it (sheetBackdrop): a sage-mint several
- * steps deeper than the sheet, so the section holds its own above the paler sheet, straight down and
- * lightening a little toward the bottom — vertical, so
- * the status bar, the header and the collapsed bar all sit on the same colour across their width.
- * Stops run top to bottom.
+ * Home's top section: a near-white mint, a breath of colour at the top fading paler still — just enough mint
+ * left there that the white sheet's edge, rim and shadow still read where it rides up over it. The
+ * section reads as a light wash of brand colour rather than a block, and moving from
+ * Home to the other, white tabs doesn't jolt the eye. The brand teal lives on in the data instead
+ * (the In/Out pills, the budget bar, the charts, the selected tab). Vertical, so the status bar, the
+ * header and the collapsed bar all sit on the same colour across their width. Stops run top to bottom.
  *
- * `pools` are faint pools of other colour washed in from its bottom corners, as on the sheet — sky
- * from the bottom-left, lemon from the bottom-right — each gone well before the top edge so the
- * status-bar band stays seamless (HeroBackground).
+ * `pools` are faint pools of other colour washed in from its bottom corners — sky from the
+ * bottom-left, lemon from the bottom-right — gone well before the top edge (HeroBackground).
  *
  * `ink` — the text and icons on it — is chosen by contrast rather than by hand: white or the app's
- * near-black, whichever reads better against every stop (readableInk). Change the stops and the
- * ink follows.
+ * near-black, whichever reads better against every stop (readableInk). Here that's the near-black.
  */
 export const heroGradient = {
-  stops: ['#9ED3C0', '#A9D8C6', '#B4DDCC'],
+  stops: ['#EEF8F3', '#F3FAF6', '#F7FCF9'],
   pools: { sky: '#BFE2FF', lemon: '#FFF1A8' },
-  ink: readableInk(['#9ED3C0', '#A9D8C6', '#B4DDCC']),
+  ink: readableInk(['#EEF8F3', '#F3FAF6', '#F7FCF9']),
 } as const
 
 export const categoryColors = {
@@ -238,12 +242,14 @@ export const borderRadius = {
 } as const
 
 export const shadow = {
+  // The everyday card shadow. Tuned for white pages: deep and soft enough that a white card still
+  // stands clear of a white background, with no border to help it.
   sm: {
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.09,
+    shadowRadius: 12,
+    elevation: 3,
   },
   md: {
     shadowColor: '#000',
@@ -252,12 +258,21 @@ export const shadow = {
     shadowRadius: 14,
     elevation: 4,
   },
-  // A frosted card on Home's mint sheet (Card): a soft, neutral drop that lifts it off the backdrop.
+  // Small controls and pills on Home's near-white top section: a soft, short drop that lifts a white
+  // chip just clear of the wash, without the weight of a card's shadow.
+  chip: {
+    shadowColor: '#1C1C18',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  // Home's cards (Card) and the floating tab bar: a soft, neutral drop that lifts them clear of a white page.
   lift: {
     shadowColor: '#1C1C18',
-    shadowOffset: { width: 0, height: 8 },
+    shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.08,
-    shadowRadius: 20,
+    shadowRadius: 18,
     elevation: 3,
   },
   card: {

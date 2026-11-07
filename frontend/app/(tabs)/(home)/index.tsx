@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Pressable, Text, View, useWindowDimensions } from 'react-native'
 import Animated, {
   Extrapolation,
@@ -12,8 +12,9 @@ import Animated, {
 } from 'react-native-reanimated'
 import { Ionicons } from '@expo/vector-icons'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
-import { router } from 'expo-router'
-import { colors, heroGradient, sheetBackdrop } from '@/constants/theme'
+import { router, useFocusEffect } from 'expo-router'
+import { setStatusBarStyle } from 'expo-status-bar'
+import { colors, heroGradient, pageBackdrop } from '@/constants/theme'
 import { useTransactionFeed } from '@/hooks/useTransactionFeed'
 import { usePullToRefresh } from '@/hooks/usePullToRefresh'
 import { useAccounts } from '@/hooks/useAccounts'
@@ -22,7 +23,7 @@ import { useCategories } from '@/hooks/useCategories'
 import { ErrorBanner } from '@/components/ui/ErrorBanner'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { LoadingScreen } from '@/components/ui/LoadingScreen'
-import { IconSwitch, type IconSwitchOption } from '@/components/ui/IconSwitch'
+import type { IconSwitchOption } from '@/components/ui/IconSwitch'
 import { MonthCharts } from '@/components/visualizations/MonthCharts'
 import { SpendingComparison } from '@/components/visualizations/SpendingComparison'
 import { CategoryDetailSheet } from '@/components/visualizations/CategoryDetailSheet'
@@ -39,12 +40,15 @@ import { compareWithPreviousMonth } from '@/lib/budgets/monthComparison'
 import { arrangeTiles, tileState } from '@/lib/home/categoryTiles'
 import { MonthHeadline } from '@/components/home/MonthHeadline'
 import { BudgetLine } from '@/components/home/BudgetLine'
+import { SavingsRate } from '@/components/home/SavingsRate'
 import { COLLAPSED_BAR_HEIGHT, CollapsedMonthBar } from '@/components/home/CollapsedMonthBar'
 import { TileRows, type GridTile } from '@/components/home/TileRows'
-import { MonthHeader } from '@/components/home/MonthHeader'
 import { HomeHeader } from '@/components/home/HomeHeader'
+import { LinearGradient } from 'expo-linear-gradient'
 import { HeroBackground } from '@/components/home/HeroBackground'
-import { SheetBackdrop } from '@/components/home/SheetBackdrop'
+import { GlassSwitch } from '@/components/ui/GlassSwitch'
+import { HeroSurfaceContext } from '@/components/ui/HeroGlass'
+import { PageBackdrop } from '@/components/ui/PageBackdrop'
 import { useTransactionEditorActions } from '@/components/transactions/TransactionEditorProvider'
 import type { YearMonth } from '@/lib/transactions/filterByMonth'
 
@@ -93,10 +97,7 @@ export default function DashboardScreen() {
   )
   const monthFeed = useMemo(() => filterByMonth(accountFilteredFeed, month), [accountFilteredFeed, month])
 
-  const { spendByCategory, incomeByCategory, totalExpense, totalIncome } = useMemo(
-    () => aggregateMonth(monthFeed),
-    [monthFeed],
-  )
+  const { spendByCategory, incomeByCategory, totalExpense, totalIncome } = useMemo(() => aggregateMonth(monthFeed), [monthFeed])
 
   const { width: windowWidth, height: windowHeight } = useWindowDimensions()
   const insets = useSafeAreaInsets()
@@ -120,6 +121,13 @@ export default function DashboardScreen() {
     }
     return { budget, spent, status: budgetStatus(spent, budget, elapsed), elapsed }
   }, [resolvedBudgets, spendByCategory, elapsed])
+  // Last month's In and Out, for the savings rate's comparison when its tile is held.
+  const previousTotals = useMemo(() => {
+    const { totalIncome: income, totalExpense: expense } = aggregateMonth(
+      filterByMonth(accountFilteredFeed, shiftMonth(month, -1)),
+    )
+    return { income, expense }
+  }, [accountFilteredFeed, month])
   // This month against last as running totals — every category, budgeted or not — for the chart view.
   const comparison = useMemo(() => compareWithPreviousMonth(accountFilteredFeed, month), [accountFilteredFeed, month])
 
@@ -154,8 +162,7 @@ export default function DashboardScreen() {
         // In income mode only a surplus belongs — the part beyond the expense, which is income
         // under the leg's own category and falls through to the ordinary check below.
         if (item.isReimbursementIncome && !hasReimbursementSurplus(item)) return false
-        if (isUncategorized ? item.categoryId !== null : item.categoryId !== detailState.segment.categoryId)
-          return false
+        if (isUncategorized ? item.categoryId !== null : item.categoryId !== detailState.segment.categoryId) return false
         const net = item.netAmount ?? item.amount
         // An expense paid back in full nets to zero but stays listed: its reimbursement is listed
         // above, and without the charge beside it that row would explain nothing. It still adds
@@ -209,6 +216,16 @@ export default function DashboardScreen() {
   const heroStyle = useAnimatedStyle(() => ({
     opacity: collapseAt > 0 ? interpolate(scrollY.value, [0, collapseAt], [1, 0.25], Extrapolation.CLAMP) : 1,
   }))
+  // The sheet's top corners square off as it comes to rest under the collapsed bar: rounded, it reads
+  // as a sheet lifted over the top section; once that section is gone, under a straight bar, the round
+  // corners would only leave notches of colour at the bar's ends.
+  const sheetCornerStyle = useAnimatedStyle(() => {
+    const radius =
+      collapseAt > 0
+        ? interpolate(scrollY.value, [collapseAt - 40, collapseAt], [SHEET_RADIUS, 0], Extrapolation.CLAMP)
+        : SHEET_RADIUS
+    return { borderTopLeftRadius: radius, borderTopRightRadius: radius }
+  })
   const barStyle = useAnimatedStyle(() => ({
     opacity: collapseAt > 0 ? interpolate(scrollY.value, [collapseAt - 32, collapseAt], [0, 1], Extrapolation.CLAMP) : 0,
   }))
@@ -221,9 +238,16 @@ export default function DashboardScreen() {
   )
 
   const hasNoAccounts = !accounts.isLoading && (accounts.data?.length ?? 0) === 0
-  // The Summary's mint top section runs up under the clock, so the status bar takes its colour. The
-  // mint is light, so the status bar keeps the app's usual dark style.
+  // The Summary's top section runs up under the clock, so the status bar takes its colour — and its
+  // text follows the section's own ink: white over the deep teal, dark if the section is ever light.
+  // Back to dark on leaving, for every other screen's light background.
   const isOnHero = view === 'grid' && !isLoading && !hasNoAccounts
+  useFocusEffect(
+    useCallback(() => {
+      setStatusBarStyle(isOnHero && heroGradient.ink === colors.textInverse ? 'light' : 'dark')
+      return () => setStatusBarStyle('dark')
+    }, [isOnHero]),
+  )
 
   if (isLoading) return <LoadingScreen />
 
@@ -263,21 +287,9 @@ export default function DashboardScreen() {
     setView(next)
   }
 
-  // Charts' header row: the month leads as the screen's heading, and the page's controls sit at the
-  // right — the view switch (icons, as Investments switches its views) back to the Summary, the
-  // account filter and the pencil. The Summary has its own, quieter row on the gradient (HomeHeader)
-  // and carries its view switch down on the sheet, by the categories.
-  const topBar = (
-    <MonthHeader
-      month={month}
-      onMonthChange={setMonth}
-      accounts={accounts.data ?? []}
-      selectedAccountId={selectedAccountId}
-      onAccountChange={setSelectedAccountId}
-      onWrite={openNewManual}
-      extra={<IconSwitch options={VIEW_OPTIONS} value={view} onChange={(next) => changeView(next)} />}
-    />
-  )
+  // The Summary/Charts switch, at the left of the header both views share — so the way between them,
+  // and the month, filter and pen beside it, stay in the same place whichever view is showing.
+  const viewSwitch = <GlassSwitch options={VIEW_OPTIONS} value={view} onChange={(next) => changeView(next)} />
   const summaryHeader = (
     <HomeHeader
       month={month}
@@ -286,6 +298,7 @@ export default function DashboardScreen() {
       selectedAccountId={selectedAccountId}
       onAccountChange={setSelectedAccountId}
       onWrite={openNewManual}
+      leading={viewSwitch}
     />
   )
 
@@ -316,28 +329,43 @@ export default function DashboardScreen() {
   )
   const incomeTiles: GridTile[] = [
     ...incomeCategories.map((c) => tileFor(c, incomeByCategory.get(c.id) ?? 0, 'income')),
-    ...(uncategorizedIncome ? [tileFor({ ...uncategorizedIncome, id: UNCATEGORIZED_ID }, uncategorizedIncome.amount, 'income')] : []),
+    ...(uncategorizedIncome
+      ? [tileFor({ ...uncategorizedIncome, id: UNCATEGORIZED_ID }, uncategorizedIncome.amount, 'income')]
+      : []),
   ].map((tile) => ({ ...tile, wide: false }))
 
   // Save errors are reported by the edit sheets themselves (CategoryDetailSheet owns the editor),
   // so this screen only surfaces its own data-loading failure.
   const errorBanner = error ? <ErrorBanner message="Something went wrong loading your data." /> : null
 
-  // The view switch rides on the first group's heading — Expenses, or Income in a month with no
-  // spending — beside the tiles it swaps for the chart.
-  const viewSwitch = <IconSwitch size="sm" options={VIEW_OPTIONS} value={view} onChange={(next) => changeView(next)} />
-  const switchOnExpenses = expenseTiles.length > 0
   // The gradient's first stop, flat: behind the status bar, above the top section when pulled down
   // to refresh, and on the collapsed bar. The gradient runs straight down from it, so the three
   // meet the section's top edge without a seam.
   const heroTop = heroGradient.stops[0]
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: isOnHero ? heroTop : colors.background }} edges={['top']}>
+    // Behind the status bar: the top section's colour on the Summary, the page backdrop's top on Charts.
+    <SafeAreaView
+      style={{ flex: 1, backgroundColor: isOnHero ? heroTop : view === 'chart' ? pageBackdrop.stops[0] : colors.background }}
+      edges={['top']}
+    >
+      {/* The status-bar band on the Summary, drawn by the same gradient renderer as the top section
+          and in its exact top colour, rather than as the safe area's flat fill — so the two meet as one
+          surface with no visible line where the safe area ends. */}
+      {isOnHero ? (
+        <LinearGradient
+          colors={[heroTop, heroTop]}
+          pointerEvents="none"
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, height: insets.top }}
+        />
+      ) : null}
       {view === 'chart' ? (
-        <>
-          <View className="px-5 pt-4 pb-2" style={{ gap: 12 }}>
-            {topBar}
+        // On the app's page backdrop — the same faint near-white the Summary's sheet uses — with no sheet
+        // and no mint band. Only the header is shared, in the same place, so the way around stays the same.
+        <View style={{ flex: 1 }}>
+          <PageBackdrop />
+          <View style={{ paddingHorizontal: SCREEN_PADDING, paddingTop: 16, paddingBottom: 16, gap: 12 }}>
+            <HeroSurfaceContext.Provider value="plain">{summaryHeader}</HeroSurfaceContext.Provider>
             {errorBanner}
           </View>
           <MonthCharts
@@ -354,7 +382,7 @@ export default function DashboardScreen() {
             accounts={accounts.data ?? []}
             initialPage={chartPage}
           />
-        </>
+        </View>
       ) : (
         <View style={{ flex: 1 }}>
           <Animated.ScrollView
@@ -366,7 +394,7 @@ export default function DashboardScreen() {
             snapToOffsets={collapseAt > 0 ? [0, collapseAt] : undefined}
             snapToEnd={false}
             // The sheet's colour under it, so pulling past the bottom never shows the mint behind it.
-            style={{ backgroundColor: sheetBackdrop.stops[sheetBackdrop.stops.length - 1] }}
+            style={{ backgroundColor: pageBackdrop.sheet.stops[pageBackdrop.sheet.stops.length - 1] }}
           >
             {/* The gradient's top colour above the section too, so pulling down to refresh stays on it. */}
             <View style={{ position: 'absolute', top: -1000, left: 0, right: 0, height: 1000, backgroundColor: heroTop }} />
@@ -376,26 +404,26 @@ export default function DashboardScreen() {
                 never washes out as it collapses. */}
             <View onLayout={(e) => setHeroHeight(e.nativeEvent.layout.height)}>
               <HeroBackground />
-              <Animated.View style={[{ paddingHorizontal: SCREEN_PADDING, paddingTop: 16, paddingBottom: SHEET_OVERLAP + 32, gap: 28 }, heroStyle]}>
+              <Animated.View
+                style={[
+                  { paddingHorizontal: SCREEN_PADDING, paddingTop: 16, paddingBottom: SHEET_OVERLAP + 32, gap: 28 },
+                  heroStyle,
+                ]}
+              >
                 {summaryHeader}
                 {errorBanner}
-                <MonthHeadline
-                  totalExpense={totalExpense}
-                  totalIncome={totalIncome}
-                />
+                <MonthHeadline totalExpense={totalExpense} totalIncome={totalIncome} />
               </Animated.View>
             </View>
 
             {/* The sheet: a soft mint backdrop, each group on a frosted card floating on it. At least a
                 screen tall, so the top section can always scroll fully away, however few tiles there
                 are. */}
-            <View
+            <Animated.View
               style={[
                 {
                   marginTop: -SHEET_OVERLAP,
                   minHeight: windowHeight - COLLAPSED_BAR_HEIGHT,
-                  borderTopLeftRadius: SHEET_RADIUS,
-                  borderTopRightRadius: SHEET_RADIUS,
                   paddingHorizontal: SCREEN_PADDING,
                   paddingTop: 20,
                   // Clears the floating tab bar, which the scroll view's automatic inset doesn't account
@@ -404,13 +432,14 @@ export default function DashboardScreen() {
                   gap: 24,
                 },
                 SHEET_SHADOW,
+                sheetCornerStyle,
               ]}
             >
-              {/* The mint backdrop with its faint pools of colour; it carries the sheet's top corners
-                  itself, since clipping the sheet would clip its shadow too. */}
-              <SheetBackdrop radius={SHEET_RADIUS} />
-              {/* How the month is pacing, the two ways: against the budget, and against last month —
-                  with the way into where the money went, between accounts too, above them. */}
+              {/* The backdrop; it carries the sheet's top corners itself (squaring off with them as the
+                  top section collapses), since clipping the sheet would clip its shadow too. */}
+              <PageBackdrop variant="sheet" rim cornerStyle={sheetCornerStyle} />
+              {/* How the month is going: against the budget across the top, then against last month and
+                  how much was kept — with the way into where the money went, between accounts too, above. */}
               <View className="gap-3">
                 <View className="flex-row items-center justify-between">
                   <Text className="font-sansSemi text-md text-textPrimary" accessibilityRole="header">
@@ -422,7 +451,12 @@ export default function DashboardScreen() {
                   budget={monthBudget}
                   onPress={() => router.push({ pathname: '/(tabs)/(home)/budgets', params: monthParams(month) })}
                 />
-                <SpendingComparison month={month} comparison={comparison} isCurrentMonth={isCurrentMonth} />
+                {/* Two tiles side by side, stretched to one height: how much of what came in was kept,
+                    and spending against last month. */}
+                <View className="flex-row gap-3">
+                  <SavingsRate income={totalIncome} expense={totalExpense} previous={previousTotals} />
+                  <SpendingComparison month={month} comparison={comparison} />
+                </View>
               </View>
 
               {/* Each group of tiles under its own heading that folds it away — no totals, the top
@@ -431,9 +465,10 @@ export default function DashboardScreen() {
                 <View className="gap-3">
                   <View className="flex-row items-center justify-between">
                     <SectionToggle title="Expenses" isOpen={expensesOpen} onToggle={() => setExpensesOpen((v) => !v)} />
-                    {viewSwitch}
                   </View>
-                  {expensesOpen ? <TileRows tiles={expenseTiles} tileWidth={tileWidth} tileHeight={TILE_HEIGHT} gap={TILE_GAP} /> : null}
+                  {expensesOpen ? (
+                    <TileRows tiles={expenseTiles} tileWidth={tileWidth} tileHeight={TILE_HEIGHT} gap={TILE_GAP} />
+                  ) : null}
                 </View>
               ) : null}
 
@@ -441,12 +476,13 @@ export default function DashboardScreen() {
                 <View className="gap-3">
                   <View className="flex-row items-center justify-between">
                     <SectionToggle title="Income" isOpen={incomeOpen} onToggle={() => setIncomeOpen((v) => !v)} />
-                    {switchOnExpenses ? null : viewSwitch}
                   </View>
-                  {incomeOpen ? <TileRows tiles={incomeTiles} tileWidth={tileWidth} tileHeight={TILE_HEIGHT} gap={TILE_GAP} /> : null}
+                  {incomeOpen ? (
+                    <TileRows tiles={incomeTiles} tileWidth={tileWidth} tileHeight={TILE_HEIGHT} gap={TILE_GAP} />
+                  ) : null}
                 </View>
               ) : null}
-            </View>
+            </Animated.View>
           </Animated.ScrollView>
 
           <CollapsedMonthBar
@@ -483,9 +519,9 @@ function PillButton({ label, onPress }: { label: string; onPress: () => void }) 
           style={{
             height: 30,
             // The cards' material: frosted on the tinted sheet, solid white with a grey rim on a white one.
-            backgroundColor: sheetBackdrop.tinted ? colors.frostCard : colors.surface,
+            backgroundColor: pageBackdrop.frostedCards ? colors.frostCard : colors.surface,
             borderWidth: 1,
-            borderColor: sheetBackdrop.tinted ? colors.frostCardBorder : colors.borderCard,
+            borderColor: pageBackdrop.frostedCards ? colors.frostCardBorder : colors.borderCard,
             opacity: pressed ? 0.7 : 1,
           }}
         >

@@ -3,7 +3,7 @@ import { ActivityIndicator, ScrollView, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
-import { colors, spacing } from '@/constants/theme'
+import { colors, spacing, pageBackdrop } from '@/constants/theme'
 import { useTransactionFeed } from '@/hooks/useTransactionFeed'
 import { usePullToRefresh } from '@/hooks/usePullToRefresh'
 import { useAmountsMasked } from '@/hooks/useAmountsMasked'
@@ -40,6 +40,7 @@ import { groupByDay } from '@/lib/transactions/groupByDay'
 import type { FeedItem } from '@/lib/transactions/resolveFeed'
 import type { Category, Holding } from '@/types/domain'
 import { TabBarSpacer } from '@/components/navigation/FloatingTabs'
+import { PageBackdrop } from '@/components/ui/PageBackdrop'
 
 // Capped by day, not by row: a partially-shown day would print an IN/OUT total covering rows the
 // user can't see.
@@ -194,7 +195,8 @@ export function InvestmentsScreen() {
 
   if (!portfolio.accounts.isLoading && investmentAccounts.length === 0) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: pageBackdrop.stops[0] }} edges={['top']}>
+        <PageBackdrop />
         {/* The switch stays reachable with nothing to show, or the tab would strand you here. */}
         <View className="px-5 pt-3">
           <NetWorthScopePills />
@@ -206,7 +208,8 @@ export function InvestmentsScreen() {
 
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: pageBackdrop.stops[0] }} edges={['top']}>
+      <PageBackdrop />
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerClassName="px-5 pb-10 pt-5" refreshControl={refreshControl}>
         <View className="flex-row items-center justify-between">
           <NetWorthScopePills />

@@ -29,7 +29,7 @@ export default function AppleAccountsSettingsScreen() {
   const { status } = apple
 
   return (
-    <ScrollView contentInsetAdjustmentBehavior="automatic" className="flex-1 bg-background" contentContainerClassName="gap-4 px-5 py-4">
+    <ScrollView contentInsetAdjustmentBehavior="automatic" className="flex-1" contentContainerClassName="gap-4 px-5 py-4">
       {status === 'loading' ? (
         <View className="items-center py-8">
           <ActivityIndicator color={colors.primary} />

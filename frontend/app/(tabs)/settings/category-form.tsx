@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { router, useLocalSearchParams } from 'expo-router'
 import { Alert, View } from 'react-native'
-import { colors } from '@/constants/theme'
 import { useCategories } from '@/hooks/useCategories'
 import { usePlaidCategoryMappings } from '@/hooks/usePlaidCategoryMappings'
 import { CategoryDetails } from '@/components/categories/CategoryDetails'
@@ -91,14 +90,14 @@ export default function CategoryFormScreen() {
   // and Delete the server would reject anyway.
   if (category?.isDefault) {
     return (
-      <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <View style={{ flex: 1 }}>
         <CategoryDetails category={category} mappings={mappings.data ?? []} />
       </View>
     )
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
+    <View style={{ flex: 1 }}>
       <View className="px-5 pt-2">{error ? <ErrorBanner message={error} onDismiss={() => setError(null)} /> : null}</View>
       <CategoryForm
         category={category}

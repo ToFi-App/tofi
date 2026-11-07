@@ -63,6 +63,37 @@ export function accountFallbackIcon(variant: string, itemId?: string | null) {
   return variantIcons[variant] ?? variantIcons.cash
 }
 
+/**
+ * An account's mark, in a fixed 28pt box so names line up down any list: its institution's logo, or
+ * when there is none, its fallback glyph (accountFallbackIcon) on a pale teal tile. Shared by the
+ * accounts list and the account picker, so an account looks the same in both.
+ *
+ * A logo sits on the row itself: many are transparent PNGs, and a tinted tile shows through behind
+ * them as a grey box. Only the fallback glyphs get a tile.
+ */
+export function AccountIcon({
+  logo,
+  variant,
+  itemId,
+  size = ICON_SIZE,
+}: {
+  logo?: string | null
+  variant: string
+  itemId?: string | null
+  /** The box's side; the list's 28pt by default, smaller where the mark stands in for a control's glyph. */
+  size?: number
+}) {
+  if (logo) {
+    return <Image source={{ uri: `data:image/png;base64,${logo}` }} style={{ width: size, height: size }} resizeMode="contain" />
+  }
+  const icon = accountFallbackIcon(variant, itemId)
+  return (
+    <View className="items-center justify-center rounded-sm" style={{ width: size, height: size, backgroundColor: colors.primaryMuted }}>
+      <Ionicons name={icon.name as any} size={Math.round(size * 0.54)} color={icon.color} />
+    </View>
+  )
+}
+
 // Above this share of the limit, utilization starts to weigh on a credit score — the usual
 // guideline, and the point where the bar turns from teal to red.
 const HIGH_UTILIZATION = 0.3
@@ -104,7 +135,6 @@ export function AccountRow({
   delayLongPress,
 }: AccountRowProps) {
   const balanceColor = variant === 'credit' ? colors.expense : colors.textPrimary
-  const icon = accountFallbackIcon(variant, itemId)
   // Charge cards report no preset limit as 0, which would read as "0% of $0.00".
   const hasLimit = variant === 'credit' && limit != null && limit > 0
 
@@ -120,16 +150,7 @@ export function AccountRow({
     >
       {/* Capped so the name stops well short of the balance, leaving a clear gap between them. */}
       <View className="flex-1 flex-row items-center gap-3" style={{ maxWidth: NAME_AREA_MAX_WIDTH }}>
-        {/* The same 28pt box for every row, logo or not, so names line up down the list. A logo sits
-            on the row itself: many are transparent PNGs, and a tinted tile shows through behind
-            them as a grey box. Only the fallback glyphs get a tile, in the console's pale teal. */}
-        {logo ? (
-          <Image source={{ uri: `data:image/png;base64,${logo}` }} style={{ width: ICON_SIZE, height: ICON_SIZE }} resizeMode="contain" />
-        ) : (
-          <View className="h-7 w-7 items-center justify-center rounded-sm" style={{ backgroundColor: colors.primaryMuted }}>
-            <Ionicons name={icon.name as any} size={15} color={icon.color} />
-          </View>
-        )}
+        <AccountIcon logo={logo} variant={variant} itemId={itemId} />
         <View className="flex-1 justify-center">
           <ScrollingText
             className="font-sansMed text-base text-textPrimary"

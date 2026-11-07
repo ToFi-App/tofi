@@ -27,7 +27,7 @@ export function Pill({
   accessibilityLabel?: string
   /** 'inverse' for a pill on the brand colour: white when selected, softened white when not. */
   tone?: 'default' | 'inverse'
-  /** 'md' for pills that head a screen, a step under the month title in Home's header (MonthHeader);
+  /** 'md' for pills that head a screen, a step under the month pill in Home's header (HomeHeader);
    *  'sm' for a row of options under a chart. */
   size?: 'sm' | 'md'
 }) {

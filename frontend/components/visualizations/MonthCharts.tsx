@@ -1,8 +1,9 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Pressable, ScrollView, Text, View, useWindowDimensions } from 'react-native'
 import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { borderRadius, colors, shadow } from '@/constants/theme'
+import { colors, shadow } from '@/constants/theme'
+import { Card } from '@/components/ui/Card'
 import { formatMaskableAmount } from '@/lib/format/money'
 import { useAmountsMasked } from '@/hooks/useAmountsMasked'
 import type { FeedItem } from '@/lib/transactions/resolveFeed'
@@ -15,7 +16,6 @@ import type { Account, Category } from '@/types/domain'
 import { CategoryDonut } from './CategoryDonut'
 import { CategoryBreakdownRow } from './CategoryBreakdownRow'
 
-const PAGE_COUNT = 2
 
 type Mode = 'expense' | 'income'
 
@@ -39,14 +39,30 @@ interface MonthChartsProps {
   initialPage?: number
 }
 
-/** The raised card the category chart sits on. */
-function Card({ children, style }: { children: ReactNode; style?: object }) {
+const PAGES = ['Categories', 'Cash flow'] as const
+
+/**
+ * Which page is showing, and the way to the other: a two-way switch at the top of the sheet, so the
+ * pages are named and a tap away rather than found by swiping and read off dots.
+ */
+function PageSwitch({ index, onChange }: { index: number; onChange: (index: number) => void }) {
   return (
-    <View
-      className="rounded-lg bg-surface"
-      style={[{ padding: CARD_PADDING, shadowColor: '#0F766E', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 16, elevation: 3 }, style]}
-    >
-      {children}
+    <View className="flex-row self-center rounded-full" style={{ backgroundColor: colors.surfaceRaised, padding: 3 }}>
+      {PAGES.map((label, i) => {
+        const selected = i === index
+        return (
+          <Pressable
+            key={label}
+            onPress={() => onChange(i)}
+            accessibilityRole="tab"
+            accessibilityState={{ selected }}
+            className="rounded-full px-5"
+            style={[{ paddingVertical: 7 }, selected ? { backgroundColor: colors.surface, ...shadow.sm } : null]}
+          >
+            <Text className={selected ? 'font-sansSemi text-sm text-textPrimary' : 'font-sansMed text-sm text-textPrimary'}>{label}</Text>
+          </Pressable>
+        )
+      })}
     </View>
   )
 }
@@ -87,7 +103,7 @@ function ModeToggle({ mode, onChange }: { mode: Mode; onChange: (mode: Mode) => 
  *    income from the card's header — with the category rows under it.
  * 2. Cash Flow — where the month's money came from and went, between accounts too.
  *
- * Swiped between, with dots under them for which page is showing. The spending pace against last
+ * Swiped between, or picked from the switch at the top, which also names the page showing. The spending pace against last
  * month lives on the Summary view.
  */
 export function MonthCharts({
@@ -105,14 +121,23 @@ export function MonthCharts({
   initialPage = 0,
 }: MonthChartsProps) {
   const insets = useSafeAreaInsets()
-  // Extra lift for the page dots where the app draws its own floating tab bar (before iOS 26).
+  // Extra room at each page's end where the app draws its own floating tab bar (before iOS 26).
   const tabBarOverlap = useTabBarOverlap()
+  const pagerRef = useRef<ScrollView>(null)
   const { width } = useWindowDimensions()
   const [mode, setMode] = useState<Mode>('expense')
   const [pageIndex, setPageIndex] = useState(initialPage)
   const { isMasked } = useAmountsMasked()
 
-  function handlePageScroll(e: NativeSyntheticEvent<NativeScrollEvent>) {
+  function goToPage(index: number) {
+    setPageIndex(index)
+    pagerRef.current?.scrollTo({ x: index * width, animated: true })
+  }
+
+  // Settled once a swipe comes to rest, not on every frame: a tap on the switch sets the page and then
+  // slides there, and reading the position mid-slide snapped the switch back to the page it was
+  // leaving before it caught up.
+  function handlePageSettle(e: NativeSyntheticEvent<NativeScrollEvent>) {
     const index = Math.round(e.nativeEvent.contentOffset.x / width)
     if (index !== pageIndex) setPageIndex(index)
   }
@@ -135,28 +160,27 @@ export function MonthCharts({
   // The card's inner width; the donut's side labels need all of it.
   const donutSize = Math.min(width - 2 * PAGE_PADDING - 2 * CARD_PADDING, 320)
 
-  // Each page scrolls on its own; the bottom inset clears the floating tab bar and the dots.
-  const pageContent = { paddingHorizontal: PAGE_PADDING, paddingBottom: insets.bottom + 88 }
+  // Each page scrolls on its own; the bottom inset clears the floating tab bar.
+  const pageContent = { paddingHorizontal: PAGE_PADDING, paddingBottom: insets.bottom + 88 + tabBarOverlap }
 
   return (
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1, gap: 12 }}>
+      <PageSwitch index={pageIndex} onChange={goToPage} />
       <ScrollView
+        ref={pagerRef}
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
-        onScroll={handlePageScroll}
-        scrollEventThrottle={16}
+        onMomentumScrollEnd={handlePageSettle}
         // Mounted fresh each time Charts opens, so the starting offset is all it takes to land on
         // the page asked for.
         contentOffset={{ x: initialPage * width, y: 0 }}
       >
         {/* Page 1: by category. */}
         <ScrollView style={{ width }} contentContainerStyle={pageContent} nestedScrollEnabled>
-          <Card style={{ marginTop: 8 }}>
-            <View className="flex-row items-center justify-between">
-              <Text className="font-sansSemi text-base" style={{ color: colors.textPrimary }}>
-                By category
-              </Text>
+          <Card style={{ marginTop: 4, padding: CARD_PADDING }}>
+            {/* The page's name is on the switch above, so the card leads with its own control. */}
+            <View className="flex-row justify-center">
               <ModeToggle mode={mode} onChange={setMode} />
             </View>
 
@@ -190,12 +214,11 @@ export function MonthCharts({
             )}
           </Card>
 
-          {/* Each category on a card of its own, as Investments lists its accounts: white, rounded,
-              lightly shadowed, with a gap between them. */}
+          {/* Each category on a card of its own — the same card as the Summary's — with a gap between them. */}
           {isEmpty ? null : (
             <View style={{ marginTop: 12, gap: 10 }}>
               {segments.map((seg) => (
-                <View key={seg.categoryId} className="px-4" style={[shadow.sm, { borderRadius: borderRadius.xl, backgroundColor: colors.surface }]}>
+                <Card key={seg.categoryId} style={{ paddingHorizontal: 16 }}>
                   <CategoryBreakdownRow
                     icon={seg.icon}
                     name={seg.name}
@@ -205,35 +228,18 @@ export function MonthCharts({
                     transactionCount={seg.transactionCount}
                     onPress={() => onSegmentPress(seg, mode)}
                   />
-                </View>
+                </Card>
               ))}
             </View>
           )}
         </ScrollView>
 
         {/* Page 2: cash flow. */}
-        <ScrollView style={{ width }} contentContainerStyle={[pageContent, { paddingTop: 8 }]} nestedScrollEnabled>
+        <ScrollView style={{ width }} contentContainerStyle={[pageContent, { paddingTop: 4 }]} nestedScrollEnabled>
           <CashFlowView month={month} feed={feed} categoryById={categoryById} accounts={accounts} />
         </ScrollView>
       </ScrollView>
 
-      {/* Which page is showing. Above the floating tab bar, which the page padding also clears. */}
-      <View
-        pointerEvents="none"
-        style={{ position: 'absolute', left: 0, right: 0, bottom: insets.bottom + 44 + tabBarOverlap, flexDirection: 'row', justifyContent: 'center', gap: 6 }}
-      >
-        {Array.from({ length: PAGE_COUNT }, (_, i) => (
-          <View
-            key={i}
-            style={{
-              width: i === pageIndex ? 16 : 6,
-              height: 6,
-              borderRadius: 3,
-              backgroundColor: i === pageIndex ? colors.primary : colors.borderStrong,
-            }}
-          />
-        ))}
-      </View>
     </View>
   )
 }
