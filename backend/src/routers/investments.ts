@@ -9,6 +9,7 @@ import { notFoundError, preconditionError } from '../trpc/errors.js'
 import { AlpacaRateLimitError, alpacaClientFromEnv } from '../lib/alpaca/client.js'
 import { TRPCError } from '@trpc/server'
 import { reportEmptyHoldings } from '../lib/observability/emptyHoldingsDiagnostic.js'
+import { resolveActivitySecurities, resolveHoldingTickers } from '../services/tickerResolutionService.js'
 
 /** YYYY-MM-DD, the only date format Plaid's investments endpoints accept. */
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD')
@@ -46,8 +47,17 @@ export const investmentsRouter = router({
       // bounded, so healthy accounts pay nothing.
       if (holdings.length === 0) {
         await reportEmptyHoldings({ client, accessToken, userId: ctx.userId, itemId: input.itemId, accountId: input.accountId })
+        return holdings
       }
-      return holdings
+      // Plaid's catalog can keep a ticker the market has since moved (ACIC for Archer's ACHR).
+      // Corrected here, once, so the label, live price and charts all read the same symbol.
+      let alpaca
+      try {
+        alpaca = alpacaClientFromEnv()
+      } catch {
+        return holdings
+      }
+      return resolveHoldingTickers(holdings, alpaca)
     }),
 
   // When Plaid last synced the item's investments from the institution — how current the share
@@ -66,7 +76,25 @@ export const investmentsRouter = router({
     .input(z.object({ itemId: z.string().min(1), accountId: z.string().min(1), startDate: isoDate, endDate: isoDate }))
     .query(async ({ ctx, input }) => {
       const { client, accessToken } = await resolveItem(ctx.userId, input.itemId)
-      return investmentRepository.getAccountActivity(client, accessToken, input.accountId, input.startDate, input.endDate)
+      const activity = await investmentRepository.getAccountActivity(
+        client,
+        accessToken,
+        input.accountId,
+        input.startDate,
+        input.endDate,
+      )
+      // The same stale-ticker correction as holdings, for the stocks sold since: these price the
+      // account's past value. See resolveActivitySecurities.
+      let alpaca
+      try {
+        alpaca = alpacaClientFromEnv()
+      } catch {
+        return activity
+      }
+      return {
+        ...activity,
+        securities: await resolveActivitySecurities(activity.securities, activity.transactions, alpaca),
+      }
     }),
 
   // Item-wide, unlike holdings above: these rows feed transfer pairing across ALL accounts,

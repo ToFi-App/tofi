@@ -26,20 +26,38 @@ interface SecurityInfo {
   ticker: string | null
   type: string | null
   isOption: boolean
+  /** False when the backend couldn't tie the ticker to this security (see tickerResolutionService). */
+  marketPriceTrusted?: boolean
 }
 
 /** The symbol to ask Alpaca for, or null when this security is drawn flat. */
 export function priceableSymbol(security: SecurityInfo): string | null {
+  // Another company's price under a stale ticker is worse than none: the institution's price stays.
+  if (security.marketPriceTrusted === false) return null
   if (security.isOption || !security.type || !PRICEABLE_TYPES.has(security.type)) return null
   if (!security.ticker || !ALPACA_SYMBOL.test(security.ticker)) return null
   return security.ticker
+}
+
+/** A holding's Alpaca symbol: `priceableSymbol` with the holding's own fields. */
+export function holdingSymbol(holding: Holding): string | null {
+  return priceableSymbol(holdingInfo(holding))
+}
+
+function holdingInfo(holding: Holding): SecurityInfo {
+  return {
+    ticker: holding.ticker,
+    type: holding.type,
+    isOption: holding.optionContract != null,
+    marketPriceTrusted: holding.marketPriceTrusted,
+  }
 }
 
 /** Every Alpaca symbol the account's history needs: today's holdings and anything traded since. */
 export function historySymbols(holdings: Holding[], securities: ActivitySecurity[]): string[] {
   const symbols = new Set<string>()
   for (const h of holdings) {
-    const symbol = priceableSymbol({ ticker: h.ticker, type: h.type, isOption: h.optionContract != null })
+    const symbol = holdingSymbol(h)
     if (symbol) symbols.add(symbol)
   }
   for (const s of securities) {
@@ -167,7 +185,7 @@ export function buildAccountHistory(input: {
 
   const info = new Map<string, SecurityInfo>()
   for (const s of securities) info.set(s.securityId, s)
-  for (const h of holdings) info.set(h.securityId, { ticker: h.ticker, type: h.type, isOption: h.optionContract != null })
+  for (const h of holdings) info.set(h.securityId, holdingInfo(h))
   const isCash = (securityId: string) => info.get(securityId)?.type === 'cash'
 
   const positions = new Map<string, Position>()

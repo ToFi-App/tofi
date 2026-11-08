@@ -7,8 +7,25 @@ export interface Holding {
   securityId: string
   /** Security display name ("Vanguard Total Stock Market ETF"), null for unknowns. */
   name: string | null
-  /** Ticker symbol ("VTI"); null for e.g. cash-equivalent sweep positions. */
+  /**
+   * Ticker symbol ("VTI"); null for e.g. cash-equivalent sweep positions. The symbol the security
+   * trades under today once tickerResolutionService has run, which can differ from Plaid's.
+   */
   ticker: string | null
+  /** Plaid's ticker, present only when it was corrected above (Plaid's stale "ACIC" for ACHR). */
+  plaidTicker?: string | null
+  /**
+   * Plaid's security name, present only when `name` was replaced with the corrected ticker's
+   * current company name (Plaid can keep a SPAC's name, as it keeps its ticker).
+   */
+  plaidName?: string | null
+  /**
+   * False when the market price for `ticker` must not replace the institution's: the symbol could
+   * not be tied to this security. Absent means trusted.
+   */
+  marketPriceTrusted?: boolean
+  /** CUSIP from Plaid's security catalog, when the institution and Plaid account expose it. */
+  cusip?: string | null
   /** Plaid security type: 'equity' | 'etf' | 'mutual fund' | 'cash' | 'fixed income' | 'cryptocurrency' | ... */
   type: string | null
   quantity: number
@@ -84,7 +101,13 @@ export interface InvestmentActivity {
 /** The securities an account's activity names, including ones no longer held. */
 export interface ActivitySecurity {
   securityId: string
+  /** Corrected the same way as Holding.ticker (see tickerResolutionService). */
   ticker: string | null
+  /** Plaid's ticker, present only when it was corrected. */
+  plaidTicker?: string | null
+  /** False when Alpaca's closes for `ticker` must not price this security. Absent means trusted. */
+  marketPriceTrusted?: boolean
+  cusip?: string | null
   type: string | null
   isOption: boolean
 }
@@ -174,6 +197,7 @@ export const investmentRepository = {
         securityId: holding.security_id,
         name: security?.name ?? null,
         ticker: security?.ticker_symbol ?? null,
+        cusip: security?.cusip ?? null,
         type: security?.type ?? null,
         quantity: holding.quantity,
         institutionValue: holding.institution_value ?? null,
@@ -242,6 +266,7 @@ export const investmentRepository = {
         securities.set(security.security_id, {
           securityId: security.security_id,
           ticker: security.ticker_symbol ?? null,
+          cusip: security.cusip ?? null,
           type: security.type ?? null,
           isOption: security.option_contract != null,
         })

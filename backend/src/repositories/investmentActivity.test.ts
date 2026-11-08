@@ -85,7 +85,7 @@ describe('investmentRepository.getAccountActivity', () => {
         isCashTransfer: true,
       },
     ])
-    expect(activity.securities).toEqual([{ securityId: 'sec-vti', ticker: 'VTI', type: 'etf', isOption: false }])
+    expect(activity.securities).toEqual([{ securityId: 'sec-vti', ticker: 'VTI', cusip: null, type: 'etf', isOption: false }])
   })
 
   it('collects securities from every page, once each', async () => {

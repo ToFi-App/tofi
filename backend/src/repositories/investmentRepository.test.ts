@@ -33,7 +33,7 @@ describe('investmentRepository.getHoldings', () => {
           },
         ],
         securities: [
-          { security_id: 'sec-vti', name: 'Vanguard Total Stock Market ETF', ticker_symbol: 'VTI', type: 'etf', close_price: 248.0 },
+          { security_id: 'sec-vti', name: 'Vanguard Total Stock Market ETF', ticker_symbol: 'VTI', cusip: '922908769', type: 'etf', close_price: 248.0 },
           {
             security_id: 'sec-opt',
             name: 'NFLX Feb 2018 Call',
@@ -57,6 +57,7 @@ describe('investmentRepository.getHoldings', () => {
         securityId: 'sec-vti',
         name: 'Vanguard Total Stock Market ETF',
         ticker: 'VTI',
+        cusip: '922908769',
         type: 'etf',
         quantity: 12.5,
         institutionValue: 3125.5,
@@ -71,6 +72,7 @@ describe('investmentRepository.getHoldings', () => {
         securityId: 'sec-opt',
         name: 'NFLX Feb 2018 Call',
         ticker: 'NFLX180201C00355000',
+        cusip: null,
         type: 'derivative',
         quantity: 10000,
         institutionValue: 110,
@@ -86,6 +88,7 @@ describe('investmentRepository.getHoldings', () => {
         securityId: 'sec-unknown',
         name: null,
         ticker: null,
+        cusip: null,
         type: null,
         quantity: 1,
         institutionValue: null,
