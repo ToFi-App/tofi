@@ -86,9 +86,14 @@ export function InvestmentsScreen() {
   useEffect(() => {
     setSelectedId(null)
   }, [filterId])
-  // A holding's own page, pushed on this tab's stack: it slides in, and swipes back.
-  const openHolding = (securityId: string) =>
-    router.push({ pathname: '/(tabs)/net-worth/holding', params: { securityId, accountId: selectedAccount?.account_id ?? '' } })
+  // A holding's own page, pushed on this tab's stack: it slides in, and swipes back. Opened from an
+  // account's card in the all-accounts list, it's scoped to that account, so a security held in two
+  // accounts shows only the tapped account's shares and trades.
+  const openHolding = (securityId: string, accountId?: string) =>
+    router.push({
+      pathname: '/(tabs)/net-worth/holding',
+      params: { securityId, accountId: accountId ?? selectedAccount?.account_id ?? '' },
+    })
 
   const history = investmentHistory.history
   const trendPoints = useMemo(
