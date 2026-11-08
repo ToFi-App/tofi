@@ -1,5 +1,5 @@
-import type { AlpacaClient, LatestPrice, TickerChange } from '../lib/alpaca/client.js'
-import type { Holding } from '../repositories/investmentRepository.js'
+import type { AlpacaClient, DailyClose, LatestPrice, TickerChange } from '../lib/alpaca/client.js'
+import type { ActivitySecurity, Holding, InvestmentActivity } from '../repositories/investmentRepository.js'
 
 /**
  * Plaid's security catalog can keep a ticker long after the market moved it. A SPAC that merged
@@ -29,6 +29,12 @@ export const PRICE_TOLERANCE = 1.35
 
 /** A last trade older than this is a delisted or retired symbol, not a market price. */
 export const STALE_QUOTE_DAYS = 30
+
+/**
+ * How far before a trade the nearest close may sit and still price it: a weekend plus a holiday,
+ * with room for a thin IEX day.
+ */
+export const TRADE_CLOSE_WINDOW_DAYS = 7
 
 /** Renames followed from one symbol before giving up: real chains are one or two long. */
 const MAX_CHAIN = 5
@@ -86,24 +92,27 @@ export function followChain(symbol: string, changes: TickerChange[]): TickerChan
 }
 
 /**
- * Which symbol this security trades under now, and whether its market price can be trusted. Pure:
- * every fact it needs is passed in, so each case below is pinned by a test.
+ * Which symbol this security trades under now, and whether its market price can be trusted.
+ *
+ * `referencePrice` is a price known to be this security's — the institution's price for a holding,
+ * a trade's own price for a sold position — and `marketPrice` gives a candidate symbol's market
+ * price at the same moment (today's quote, or the close on that trade's date), null when it has
+ * none. Pure: every fact it needs is passed in, so each case below is pinned by a test.
  */
-export function decideTicker(
-  security: SecurityFacts,
+export function decideTickerAgainst(
+  security: { ticker: string; cusip: string | null; referencePrice: number | null },
   changes: TickerChange[],
-  quotes: Record<string, LatestPrice>,
-  today: string,
+  marketPrice: (symbol: string) => number | null,
 ): TickerDecision {
-  const { ticker, cusip, institutionPrice } = security
+  const { ticker, cusip, referencePrice } = security
   const chain = followChain(ticker, changes)
-  const ownPrice = freshPrice(quotes[ticker], today)
-  const hasInstitutionPrice = institutionPrice != null && institutionPrice > 0
+  const ownPrice = marketPrice(ticker)
+  const reference = referencePrice != null && referencePrice > 0 ? referencePrice : null
 
   if (chain.length === 0) {
     // The common case: the ticker never moved. Trust its price unless it contradicts the
-    // institution's, which catches a stale symbol Alpaca has no rename for.
-    const trusted = ownPrice == null || !hasInstitutionPrice || priceMatches(ownPrice, institutionPrice)
+    // reference, which catches a stale symbol Alpaca has no rename for.
+    const trusted = ownPrice == null || reference == null || priceMatches(ownPrice, reference)
     return { ticker, marketPriceTrusted: trusted }
   }
 
@@ -119,26 +128,39 @@ export function decideTicker(
     if (reassignedTo?.toCusip === cusip) return checked(ticker)
   }
 
-  if (hasInstitutionPrice) {
+  if (reference != null) {
     const candidates = [ticker, successor]
-      .map((symbol) => ({ symbol, price: freshPrice(quotes[symbol], today) }))
-      .filter((c): c is { symbol: string; price: number } => c.price != null && priceMatches(c.price, institutionPrice))
-      .sort((a, b) => Math.abs(Math.log(a.price / institutionPrice)) - Math.abs(Math.log(b.price / institutionPrice)))
+      .map((symbol) => ({ symbol, price: marketPrice(symbol) }))
+      .filter((c): c is { symbol: string; price: number } => c.price != null && priceMatches(c.price, reference))
+      .sort((a, b) => Math.abs(Math.log(a.price / reference)) - Math.abs(Math.log(b.price / reference)))
     if (candidates.length > 0) return { ticker: candidates[0].symbol, marketPriceTrusted: true }
     // Neither symbol's price fits. A retired, never-reused ticker still moved for sure; one that
-    // was handed on can't be told apart. Either way the institution's price stays.
+    // was handed on can't be told apart. Either way the reference price stays.
     return { ticker: reassignedTo || ownPrice != null ? ticker : successor, marketPriceTrusted: false }
   }
 
-  // No institution price to compare against. A vacated symbol nobody took is unambiguous.
+  // No reference price to compare against. A vacated symbol nobody took is unambiguous.
   if (!reassignedTo && ownPrice == null) return { ticker: successor, marketPriceTrusted: true }
   return { ticker, marketPriceTrusted: false }
 
   function checked(symbol: string): TickerDecision {
-    const price = freshPrice(quotes[symbol], today)
-    const trusted = price == null || !hasInstitutionPrice || priceMatches(price, institutionPrice)
-    return { ticker: symbol, marketPriceTrusted: trusted }
+    const price = marketPrice(symbol)
+    return { ticker: symbol, marketPriceTrusted: price == null || reference == null || priceMatches(price, reference) }
   }
+}
+
+/** `decideTickerAgainst` for a holding: the institution's price against today's quotes. */
+export function decideTicker(
+  security: SecurityFacts,
+  changes: TickerChange[],
+  quotes: Record<string, LatestPrice>,
+  today: string,
+): TickerDecision {
+  return decideTickerAgainst(
+    { ticker: security.ticker, cusip: security.cusip, referencePrice: security.institutionPrice },
+    changes,
+    (symbol) => freshPrice(quotes[symbol], today),
+  )
 }
 
 /** Ticker changes per symbol, kept for a day: renames are permanent, so one lookup serves everyone. */
@@ -148,6 +170,33 @@ const changesCache = new Map<string, { changes: TickerChange[]; at: number }>()
 /** Only for tests: the cache is module state shared across a warm serverless instance. */
 export function clearTickerChangeCache(): void {
   changesCache.clear()
+  namesCache.clear()
+}
+
+/** Company names per symbol, kept for a day like the ticker changes they follow. */
+const namesCache = new Map<string, { name: string | null; at: number }>()
+
+/**
+ * Current company names for the symbols a resolution moved a security to. A failed lookup only
+ * leaves that name out: the caller keeps Plaid's, which is no worse than before.
+ */
+async function companyNames(alpaca: AlpacaClient, symbols: string[]): Promise<Map<string, string>> {
+  const now = Date.now()
+  const names = new Map<string, string>()
+  for (const symbol of new Set(symbols)) {
+    let hit = namesCache.get(symbol)
+    if (!hit || now - hit.at > CHANGES_TTL_MS) {
+      try {
+        hit = { name: await alpaca.getAssetName(symbol), at: now }
+        namesCache.set(symbol, hit)
+      } catch (err) {
+        console.warn(`[tickerResolution] no name for ${symbol}: ${err instanceof Error ? err.message : String(err)}`)
+        continue
+      }
+    }
+    if (hit.name) names.set(symbol, hit.name)
+  }
+  return names
 }
 
 async function tickerChanges(alpaca: AlpacaClient, symbols: string[], today: string): Promise<TickerChange[]> {
@@ -217,19 +266,141 @@ export async function resolveHoldingTickers(
     }
     const quotes = await alpaca.getLatestPrices([...symbols].filter((s) => ALPACA_SYMBOL.test(s)).slice(0, 100))
 
-    return holdings.map((holding) => {
-      if (!isPriceable(holding)) return holding
-      const decision = decideTicker(
-        { ticker: holding.ticker, cusip: holding.cusip ?? null, institutionPrice: holding.institutionPrice },
-        changes,
-        quotes,
-        today,
-      )
-      if (decision.ticker === holding.ticker && decision.marketPriceTrusted) return holding
-      return { ...holding, ticker: decision.ticker, plaidTicker: holding.ticker, marketPriceTrusted: decision.marketPriceTrusted }
+    const decisions = holdings.map((holding) =>
+      isPriceable(holding)
+        ? decideTicker(
+            { ticker: holding.ticker, cusip: holding.cusip ?? null, institutionPrice: holding.institutionPrice },
+            changes,
+            quotes,
+            today,
+          )
+        : null,
+    )
+    // Plaid keeps the SPAC's name along with its ticker, so a moved ticker gets today's name too.
+    const names = await companyNames(
+      alpaca,
+      decisions.flatMap((d, i) => (d && d.ticker !== holdings[i].ticker ? [d.ticker] : [])),
+    )
+
+    return holdings.map((holding, i) => {
+      const decision = decisions[i]
+      if (!decision || (decision.ticker === holding.ticker && decision.marketPriceTrusted)) return holding
+      const resolved: Holding = {
+        ...holding,
+        ticker: decision.ticker,
+        plaidTicker: holding.ticker,
+        marketPriceTrusted: decision.marketPriceTrusted,
+      }
+      const name = names.get(decision.ticker)
+      if (name && name !== holding.name) {
+        resolved.name = name
+        resolved.plaidName = holding.name
+      }
+      return resolved
     })
   } catch (err) {
     console.warn(`[tickerResolution] left Plaid's tickers as-is: ${err instanceof Error ? err.message : String(err)}`)
     return holdings
+  }
+}
+
+function isPriceableSecurity(security: ActivitySecurity): security is ActivitySecurity & { ticker: string } {
+  return (
+    !security.isOption &&
+    security.type != null &&
+    PRICEABLE_TYPES.has(security.type) &&
+    security.ticker != null &&
+    ALPACA_SYMBOL.test(security.ticker)
+  )
+}
+
+function isoDaysBefore(date: string, days: number): string {
+  const d = new Date(`${date}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() - days)
+  return d.toISOString().slice(0, 10)
+}
+
+/** The close on `date`, or the nearest one before it within TRADE_CLOSE_WINDOW_DAYS. */
+export function closeOn(closes: DailyClose[] | undefined, date: string): number | null {
+  const floor = isoDaysBefore(date, TRADE_CLOSE_WINDOW_DAYS)
+  let best: DailyClose | null = null
+  for (const c of closes ?? []) {
+    if (c.date > date || c.date < floor || !(c.close > 0)) continue
+    if (!best || c.date > best.date) best = c
+  }
+  return best?.close ?? null
+}
+
+/**
+ * The securities an account's activity names, with tickers corrected as `resolveHoldingTickers`
+ * does — these are what price the stocks sold since, when the account's past value is rebuilt.
+ *
+ * A sold stock has no institution price today, so its newest trade stands in: the trade's own
+ * price, against each candidate symbol's close on that day. Only securities whose ticker Alpaca
+ * shows moving are checked, which keeps this to a corporate-actions call (usually cached) and, when
+ * something moved, one bars call. Holdings override these by security id on the client, so a stock
+ * still held is settled by its holding either way.
+ *
+ * Never fails: on any Alpaca error the securities come back as Plaid sent them.
+ */
+export async function resolveActivitySecurities(
+  securities: ActivitySecurity[],
+  activity: InvestmentActivity[],
+  alpaca: AlpacaClient,
+  today: string = new Date().toISOString().slice(0, 10),
+): Promise<ActivitySecurity[]> {
+  const priceable = securities.filter(isPriceableSecurity)
+  if (priceable.length === 0) return securities
+
+  try {
+    const changes = await tickerChanges(
+      alpaca,
+      priceable.map((s) => s.ticker),
+      today,
+    )
+    const moved = priceable.filter((s) => followChain(s.ticker, changes).length > 0)
+    if (moved.length === 0) return securities
+
+    // Each moved security's newest trade with a price: the reference its candidates must match.
+    const reference = new Map<string, { date: string; price: number }>()
+    for (const row of activity) {
+      if (!row.securityId || !(row.price > 0) || row.quantity === 0) continue
+      const seen = reference.get(row.securityId)
+      if (!seen || row.date > seen.date) reference.set(row.securityId, { date: row.date, price: row.price })
+    }
+
+    const candidates = new Set<string>()
+    for (const s of moved) {
+      candidates.add(s.ticker)
+      for (const c of followChain(s.ticker, changes)) candidates.add(c.toSymbol)
+    }
+    const dates = moved.flatMap((s) => {
+      const ref = reference.get(s.securityId)
+      return ref ? [ref.date] : []
+    })
+    const closes =
+      dates.length > 0
+        ? await alpaca.getDailyCloses(
+            [...candidates].filter((s) => ALPACA_SYMBOL.test(s)).slice(0, 100),
+            isoDaysBefore(dates.reduce((a, b) => (a < b ? a : b)), TRADE_CLOSE_WINDOW_DAYS),
+            dates.reduce((a, b) => (a > b ? a : b)),
+          )
+        : {}
+
+    const movedIds = new Set(moved.map((s) => s.securityId))
+    return securities.map((security) => {
+      if (!isPriceableSecurity(security) || !movedIds.has(security.securityId)) return security
+      const ref = reference.get(security.securityId)
+      const decision = decideTickerAgainst(
+        { ticker: security.ticker, cusip: security.cusip ?? null, referencePrice: ref?.price ?? null },
+        changes,
+        (symbol) => (ref ? closeOn(closes[symbol], ref.date) : null),
+      )
+      if (decision.ticker === security.ticker && decision.marketPriceTrusted) return security
+      return { ...security, ticker: decision.ticker, plaidTicker: security.ticker, marketPriceTrusted: decision.marketPriceTrusted }
+    })
+  } catch (err) {
+    console.warn(`[tickerResolution] left activity tickers as-is: ${err instanceof Error ? err.message : String(err)}`)
+    return securities
   }
 }

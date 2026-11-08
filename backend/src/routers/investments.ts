@@ -9,7 +9,7 @@ import { notFoundError, preconditionError } from '../trpc/errors.js'
 import { AlpacaRateLimitError, alpacaClientFromEnv } from '../lib/alpaca/client.js'
 import { TRPCError } from '@trpc/server'
 import { reportEmptyHoldings } from '../lib/observability/emptyHoldingsDiagnostic.js'
-import { resolveHoldingTickers } from '../services/tickerResolutionService.js'
+import { resolveActivitySecurities, resolveHoldingTickers } from '../services/tickerResolutionService.js'
 
 /** YYYY-MM-DD, the only date format Plaid's investments endpoints accept. */
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD')
@@ -76,7 +76,25 @@ export const investmentsRouter = router({
     .input(z.object({ itemId: z.string().min(1), accountId: z.string().min(1), startDate: isoDate, endDate: isoDate }))
     .query(async ({ ctx, input }) => {
       const { client, accessToken } = await resolveItem(ctx.userId, input.itemId)
-      return investmentRepository.getAccountActivity(client, accessToken, input.accountId, input.startDate, input.endDate)
+      const activity = await investmentRepository.getAccountActivity(
+        client,
+        accessToken,
+        input.accountId,
+        input.startDate,
+        input.endDate,
+      )
+      // The same stale-ticker correction as holdings, for the stocks sold since: these price the
+      // account's past value. See resolveActivitySecurities.
+      let alpaca
+      try {
+        alpaca = alpacaClientFromEnv()
+      } catch {
+        return activity
+      }
+      return {
+        ...activity,
+        securities: await resolveActivitySecurities(activity.securities, activity.transactions, alpaca),
+      }
     }),
 
   // Item-wide, unlike holdings above: these rows feed transfer pairing across ALL accounts,

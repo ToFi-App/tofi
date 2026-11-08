@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildAccountHistory, priceableSymbol, rangeGain } from './accountHistory'
+import { buildAccountHistory, historySymbols, priceableSymbol, rangeGain } from './accountHistory'
 import type { Holding, InvestmentActivity } from '@/types/domain'
 
 function holding(overrides: Partial<Holding>): Holding {
@@ -50,6 +50,24 @@ describe('priceableSymbol', () => {
     expect(priceableSymbol({ ticker: 'CUR:USD', type: 'cash', isOption: false })).toBeNull()
     expect(priceableSymbol({ ticker: 'NFLX', type: 'equity', isOption: true })).toBeNull()
     expect(priceableSymbol({ ticker: null, type: 'equity', isOption: false })).toBeNull()
+  })
+
+  it('prices nothing the backend could not tie to its ticker', () => {
+    expect(priceableSymbol({ ticker: 'ACIC', type: 'equity', isOption: false, marketPriceTrusted: false })).toBeNull()
+    expect(priceableSymbol({ ticker: 'ACHR', type: 'equity', isOption: false, marketPriceTrusted: true })).toBe('ACHR')
+  })
+})
+
+describe('historySymbols', () => {
+  it('asks for sold stocks under their corrected ticker, and skips untrusted ones', () => {
+    const symbols = historySymbols(
+      [holding({ ticker: 'ACHR', plaidTicker: 'ACIC' })],
+      [
+        { securityId: 'ionq', ticker: 'IONQ', plaidTicker: 'DMYI', marketPriceTrusted: true, cusip: null, type: 'equity', isOption: false },
+        { securityId: 'x', ticker: 'ACIC', marketPriceTrusted: false, cusip: null, type: 'equity', isOption: false },
+      ],
+    )
+    expect(symbols).toEqual(['ACHR', 'IONQ'])
   })
 })
 

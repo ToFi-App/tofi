@@ -230,3 +230,27 @@ describe('getTickerChanges', () => {
     expect(new URL(fetch.urls[1]).searchParams.get('page_token')).toBe('p2')
   })
 })
+
+describe('getAssetName', () => {
+  it('falls back to the paper host when the live host rejects the key, then remembers it', async () => {
+    const fetch = fakeFetch([
+      { status: 401 },
+      { status: 200, body: { symbol: 'ACHR', name: 'Archer Aviation Inc. Class A Common Stock' } },
+      { status: 200, body: { symbol: 'IONQ', name: 'IonQ, Inc. Common Stock' } },
+    ])
+    const client = createAlpacaClient('k', 's', fetch.impl)
+
+    expect(await client.getAssetName('ACHR')).toBe('Archer Aviation Inc. Class A Common Stock')
+    expect(await client.getAssetName('IONQ')).toBe('IonQ, Inc. Common Stock')
+    expect(fetch.urls).toEqual([
+      'https://api.alpaca.markets/v2/assets/ACHR',
+      'https://paper-api.alpaca.markets/v2/assets/ACHR',
+      'https://paper-api.alpaca.markets/v2/assets/IONQ',
+    ])
+  })
+
+  it('is null for a symbol Alpaca does not list', async () => {
+    const client = createAlpacaClient('k', 's', fakeFetch([{ status: 404 }]).impl)
+    expect(await client.getAssetName('DMYI')).toBeNull()
+  })
+})

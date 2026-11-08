@@ -1,5 +1,12 @@
 const DATA_HOST = 'https://data.alpaca.markets'
 
+/**
+ * Company names live on the trading API, not the data API, and live and paper keys each work on
+ * only one of these hosts. Market data accepts either kind, so the app's key could be either: the
+ * first host that accepts it is remembered.
+ */
+const TRADING_HOSTS = ['https://api.alpaca.markets', 'https://paper-api.alpaca.markets']
+
 /** Alpaca's page cap for bars. One page covers ~40 tickers x a year of daily bars. */
 const BARS_PAGE_LIMIT = 10_000
 
@@ -71,11 +78,12 @@ function retryAfterFrom(response: Response): number {
  * data, and the device cache is the only place they persist.
  */
 export function createAlpacaClient(keyId: string, secret: string, fetchImpl: typeof fetch = fetch) {
+  const headers = { 'APCA-API-KEY-ID': keyId, 'APCA-API-SECRET-KEY': secret }
+  let tradingHost: string | null = null
+
   async function get<T>(path: string, params: Record<string, string>): Promise<T> {
     const url = `${DATA_HOST}${path}?${new URLSearchParams(params).toString()}`
-    const response = await fetchImpl(url, {
-      headers: { 'APCA-API-KEY-ID': keyId, 'APCA-API-SECRET-KEY': secret },
-    })
+    const response = await fetchImpl(url, { headers })
     if (response.status === 429) throw new AlpacaRateLimitError(retryAfterFrom(response))
     if (!response.ok) throw new Error(`Alpaca ${path} failed with ${response.status}`)
     return (await response.json()) as T
@@ -242,6 +250,26 @@ export function createAlpacaClient(keyId: string, secret: string, fetchImpl: typ
       }
 
       return changes
+    },
+
+    /**
+     * The company name Alpaca lists a symbol under today ("Archer Aviation Inc. Class A Common
+     * Stock"), or null when it lists none.
+     */
+    async getAssetName(symbol: string): Promise<string | null> {
+      const hosts = tradingHost ? [tradingHost] : TRADING_HOSTS
+      for (const host of hosts) {
+        const response = await fetchImpl(`${host}/v2/assets/${encodeURIComponent(symbol)}`, { headers })
+        // The key belongs to the other environment.
+        if (response.status === 401 || response.status === 403) continue
+        if (response.status === 429) throw new AlpacaRateLimitError(retryAfterFrom(response))
+        tradingHost = host
+        if (response.status === 404) return null
+        if (!response.ok) throw new Error(`Alpaca /v2/assets failed with ${response.status}`)
+        const body = (await response.json()) as { name?: string | null }
+        return body.name?.trim() || null
+      }
+      throw new Error('Alpaca /v2/assets rejected the key on both the live and paper hosts')
     },
   }
 }
