@@ -35,6 +35,20 @@ export interface Split {
 }
 
 /**
+ * A ticker leaving one symbol for another: a rename (`name_change`, how most SPAC mergers land —
+ * Atlas Crest's ACIC became Archer's ACHR) or a stock merger whose acquiree's shares became the
+ * acquirer's. Read from Alpaca's corporate actions, never hand-maintained.
+ */
+export interface TickerChange {
+  fromSymbol: string
+  toSymbol: string
+  fromCusip: string | null
+  toCusip: string | null
+  /** When the change took effect, YYYY-MM-DD. */
+  date: string
+}
+
+/**
  * Alpaca's per-minute quota ran out. Typed so the caller can pass the wait on to the client
  * rather than retrying here: the quota is shared by every user of the app, so a serverless
  * function sleeping on it would only spend money to make the queue longer.
@@ -162,6 +176,72 @@ export function createAlpacaClient(keyId: string, secret: string, fetchImpl: typ
       }
 
       return splits
+    },
+
+    /**
+     * Every rename and stock merger touching these symbols between the two dates, as either the
+     * old or the new symbol. Alpaca's `symbols` filter is not documented to match both sides of a
+     * rename, so both sides are kept and the caller follows the chain itself.
+     */
+    async getTickerChanges(symbols: string[], startDate: string, endDate: string): Promise<TickerChange[]> {
+      type RawNameChange = {
+        old_symbol?: string
+        new_symbol?: string
+        old_cusip?: string | null
+        new_cusip?: string | null
+        process_date?: string
+      }
+      type RawStockMerger = {
+        acquirer_symbol?: string
+        acquiree_symbol?: string
+        acquirer_cusip?: string | null
+        acquiree_cusip?: string | null
+        effective_date?: string
+        process_date?: string
+      }
+      const changes: TickerChange[] = []
+      let pageToken: string | null = null
+
+      for (let page = 0; page < MAX_PAGES; page++) {
+        const params: Record<string, string> = {
+          symbols: symbols.join(','),
+          types: 'name_change,stock_merger',
+          start: startDate,
+          end: endDate,
+        }
+        if (pageToken) params.page_token = pageToken
+
+        const body = await get<{
+          corporate_actions: { name_changes?: RawNameChange[]; stock_mergers?: RawStockMerger[] }
+          next_page_token: string | null
+        }>('/v1/corporate-actions', params)
+        const actions = body.corporate_actions ?? {}
+        for (const c of actions.name_changes ?? []) {
+          if (!c.old_symbol || !c.new_symbol || c.old_symbol === c.new_symbol) continue
+          changes.push({
+            fromSymbol: c.old_symbol,
+            toSymbol: c.new_symbol,
+            fromCusip: c.old_cusip ?? null,
+            toCusip: c.new_cusip ?? null,
+            date: c.process_date ?? '',
+          })
+        }
+        for (const m of actions.stock_mergers ?? []) {
+          if (!m.acquiree_symbol || !m.acquirer_symbol || m.acquiree_symbol === m.acquirer_symbol) continue
+          changes.push({
+            fromSymbol: m.acquiree_symbol,
+            toSymbol: m.acquirer_symbol,
+            fromCusip: m.acquiree_cusip ?? null,
+            toCusip: m.acquirer_cusip ?? null,
+            date: m.effective_date ?? m.process_date ?? '',
+          })
+        }
+
+        pageToken = body.next_page_token
+        if (!pageToken) break
+      }
+
+      return changes
     },
   }
 }

@@ -11,7 +11,7 @@ import { averageCost, formatGainPct, formatShares, holdingGain, holdingGainPct, 
 import { bucketOf, formatTrendLabel, type Granularity, type TrendRange } from '@/lib/accounts/netWorthHistory'
 import { dayOf, viewportBuckets, visiblePoints } from '@/lib/accounts/trendViewport'
 import { formatAmount, formatMaskableAmount } from '@/lib/format/money'
-import { fillCalendarDays, priceableSymbol } from '@/lib/investments/accountHistory'
+import { fillCalendarDays, holdingSymbol } from '@/lib/investments/accountHistory'
 import { buildSecurityHistory, tradeMarkers, tradeTable } from '@/lib/investments/securityHistory'
 import type { DailyClose, Holding, InvestmentActivity, Split } from '@/types/domain'
 
@@ -56,7 +56,7 @@ function gainColor(value: number): string {
  */
 export function HoldingDetail({ holding, inputs, earliest, today, isMasked, info }: HoldingDetailProps) {
   const { width: windowW } = useWindowDimensions()
-  const symbol = priceableSymbol({ ticker: holding.ticker, type: holding.type, isOption: holding.optionContract != null })
+  const symbol = holdingSymbol(holding)
   const activity = useMemo(
     () => (inputs?.activity ?? []).filter((r) => r.securityId === holding.securityId),
     [inputs, holding.securityId],

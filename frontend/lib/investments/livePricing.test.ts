@@ -49,6 +49,21 @@ describe('applyLivePrices', () => {
     expect(kept).toBe(fund)
   })
 
+  it('keeps the institution’s price when the backend could not tie the ticker to this security', () => {
+    // Plaid's stale ACIC, say, which now names a different company.
+    const stale = holding({ marketPriceTrusted: false })
+    const [kept] = applyLivePrices([stale], { AAA: { price: 105.5, at: '2025-01-06T20:59:58Z' } })
+
+    expect(kept).toBe(stale)
+  })
+
+  it('reprices under the corrected ticker the backend resolved', () => {
+    const resolved = holding({ ticker: 'ACHR', plaidTicker: 'ACIC', marketPriceTrusted: true })
+    const [live] = applyLivePrices([resolved], { ACHR: { price: 8.2, at: '2025-01-06T20:59:58Z' } })
+
+    expect(live.institutionPrice).toBe(8.2)
+  })
+
   it('leaves alone a holding with no quote', () => {
     const plaid = holding({})
     expect(applyLivePrices([plaid], {})[0]).toBe(plaid)

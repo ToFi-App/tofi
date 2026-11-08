@@ -1,4 +1,4 @@
-import { priceableSymbol } from './accountHistory'
+import { holdingSymbol } from './accountHistory'
 import type { Holding, LatestPrice } from '@/types/domain'
 
 function round2(value: number): number {
@@ -27,7 +27,7 @@ function isNewer(at: string, priceAsOf: string | null): boolean {
  */
 export function applyLivePrices(holdings: Holding[], prices: Record<string, LatestPrice>): Holding[] {
   return holdings.map((holding) => {
-    const symbol = priceableSymbol({ ticker: holding.ticker, type: holding.type, isOption: holding.optionContract != null })
+    const symbol = holdingSymbol(holding)
     const quote = symbol ? prices[symbol] : undefined
     if (!quote || !isNewer(quote.at, holding.priceAsOf)) return holding
     return {

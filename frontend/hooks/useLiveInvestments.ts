@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { api } from '@/lib/api/client'
 import { isInvestmentAccount } from '@/lib/accounts/netWorth'
-import { priceableSymbol } from '@/lib/investments/accountHistory'
+import { holdingSymbol } from '@/lib/investments/accountHistory'
 import { applyLivePrices, liveBalance } from '@/lib/investments/livePricing'
 import { priceRetryDelayMs, shouldRetryPriceFetch } from '@/lib/investments/priceCache'
 import type { Account, Holding } from '@/types/domain'
@@ -46,7 +46,7 @@ export function useLiveInvestments(accounts: Account[] | undefined): {
     const unique = new Set<string>()
     for (const list of plaidHoldings) {
       for (const h of list ?? []) {
-        const symbol = priceableSymbol({ ticker: h.ticker, type: h.type, isOption: h.optionContract != null })
+        const symbol = holdingSymbol(h)
         if (symbol) unique.add(symbol)
       }
     }

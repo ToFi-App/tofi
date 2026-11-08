@@ -1,4 +1,4 @@
-import { fillCalendarDays, priceableSymbol, type AccountHistory, type AccountPoint } from './accountHistory'
+import { fillCalendarDays, holdingSymbol, type AccountHistory, type AccountPoint } from './accountHistory'
 import type { InvestmentHistoryState } from '@/hooks/useInvestmentHistory'
 import type { DailyClose, Holding, InvestmentActivity, Split } from '@/types/domain'
 
@@ -165,7 +165,7 @@ export function holdingRangeChange(input: {
     return { gain: Math.round(gain * 100) / 100, pct: gain / holding.costBasis }
   }
 
-  const symbol = priceableSymbol({ ticker: holding.ticker, type: holding.type, isOption: holding.optionContract != null })
+  const symbol = holdingSymbol(holding)
   const trades = activity.filter((row) => row.securityId === holding.securityId && isTrade(row) && row.date > start)
 
   // Today's shares with every trade since the window opened undone, all on today's share basis.

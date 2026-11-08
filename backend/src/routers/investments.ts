@@ -9,6 +9,7 @@ import { notFoundError, preconditionError } from '../trpc/errors.js'
 import { AlpacaRateLimitError, alpacaClientFromEnv } from '../lib/alpaca/client.js'
 import { TRPCError } from '@trpc/server'
 import { reportEmptyHoldings } from '../lib/observability/emptyHoldingsDiagnostic.js'
+import { resolveHoldingTickers } from '../services/tickerResolutionService.js'
 
 /** YYYY-MM-DD, the only date format Plaid's investments endpoints accept. */
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD')
@@ -46,8 +47,17 @@ export const investmentsRouter = router({
       // bounded, so healthy accounts pay nothing.
       if (holdings.length === 0) {
         await reportEmptyHoldings({ client, accessToken, userId: ctx.userId, itemId: input.itemId, accountId: input.accountId })
+        return holdings
       }
-      return holdings
+      // Plaid's catalog can keep a ticker the market has since moved (ACIC for Archer's ACHR).
+      // Corrected here, once, so the label, live price and charts all read the same symbol.
+      let alpaca
+      try {
+        alpaca = alpacaClientFromEnv()
+      } catch {
+        return holdings
+      }
+      return resolveHoldingTickers(holdings, alpaca)
     }),
 
   // When Plaid last synced the item's investments from the institution — how current the share

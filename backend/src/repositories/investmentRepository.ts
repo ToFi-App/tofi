@@ -7,8 +7,20 @@ export interface Holding {
   securityId: string
   /** Security display name ("Vanguard Total Stock Market ETF"), null for unknowns. */
   name: string | null
-  /** Ticker symbol ("VTI"); null for e.g. cash-equivalent sweep positions. */
+  /**
+   * Ticker symbol ("VTI"); null for e.g. cash-equivalent sweep positions. The symbol the security
+   * trades under today once tickerResolutionService has run, which can differ from Plaid's.
+   */
   ticker: string | null
+  /** Plaid's ticker, present only when it was corrected above (Plaid's stale "ACIC" for ACHR). */
+  plaidTicker?: string | null
+  /**
+   * False when the market price for `ticker` must not replace the institution's: the symbol could
+   * not be tied to this security. Absent means trusted.
+   */
+  marketPriceTrusted?: boolean
+  /** CUSIP from Plaid's security catalog, when the institution and Plaid account expose it. */
+  cusip?: string | null
   /** Plaid security type: 'equity' | 'etf' | 'mutual fund' | 'cash' | 'fixed income' | 'cryptocurrency' | ... */
   type: string | null
   quantity: number
@@ -174,6 +186,7 @@ export const investmentRepository = {
         securityId: holding.security_id,
         name: security?.name ?? null,
         ticker: security?.ticker_symbol ?? null,
+        cusip: security?.cusip ?? null,
         type: security?.type ?? null,
         quantity: holding.quantity,
         institutionValue: holding.institution_value ?? null,

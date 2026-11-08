@@ -189,3 +189,44 @@ describe('getLatestPrices', () => {
     await expect(client.getLatestPrices(['AAA'])).rejects.toBeInstanceOf(AlpacaRateLimitError)
   })
 })
+
+describe('getTickerChanges', () => {
+  it('reads renames and stock mergers as old -> new symbol, skipping incomplete rows', async () => {
+    const fetch = fakeFetch([
+      {
+        status: 200,
+        body: {
+          corporate_actions: {
+            name_changes: [
+              { old_symbol: 'ACIC', new_symbol: 'ACHR', old_cusip: 'C1', new_cusip: 'C2', process_date: '2021-09-17' },
+              { old_symbol: 'XX', process_date: '2021-01-01' },
+            ],
+          },
+          next_page_token: 'p2',
+        },
+      },
+      {
+        status: 200,
+        body: {
+          corporate_actions: {
+            stock_mergers: [{ acquiree_symbol: 'DMYI', acquirer_symbol: 'IONQ', effective_date: '2021-10-01' }],
+          },
+          next_page_token: null,
+        },
+      },
+    ])
+    const client = createAlpacaClient('k', 's', fetch.impl)
+
+    const changes = await client.getTickerChanges(['ACIC', 'DMYI'], '2015-01-01', '2026-11-07')
+
+    expect(changes).toEqual([
+      { fromSymbol: 'ACIC', toSymbol: 'ACHR', fromCusip: 'C1', toCusip: 'C2', date: '2021-09-17' },
+      { fromSymbol: 'DMYI', toSymbol: 'IONQ', fromCusip: null, toCusip: null, date: '2021-10-01' },
+    ])
+    const url = new URL(fetch.urls[0])
+    expect(url.pathname).toBe('/v1/corporate-actions')
+    expect(url.searchParams.get('types')).toBe('name_change,stock_merger')
+    expect(url.searchParams.get('symbols')).toBe('ACIC,DMYI')
+    expect(new URL(fetch.urls[1]).searchParams.get('page_token')).toBe('p2')
+  })
+})
