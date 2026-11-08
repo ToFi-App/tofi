@@ -11,9 +11,10 @@ import { FreshnessInfo } from '@/components/investments/FreshnessInfo'
 import { EmptyState } from '@/components/ui/EmptyState'
 
 /**
- * One holding's page, pushed from the Investments screen. It reads the same investments that screen
- * had in view — one account, or all of them, a security held in several merged into one position —
- * so the page shows the position that was tapped.
+ * One holding's page, pushed from the Investments screen. It reads one account's investments when
+ * the row tapped belonged to one (a picked account, or an account's card in the all-accounts list),
+ * so a security held in several accounts shows only that account's shares and trades; with no
+ * account it reads all of them, the security merged into one position.
  */
 export default function HoldingScreen() {
   const { securityId, accountId } = useLocalSearchParams<{ securityId?: string; accountId?: string }>()

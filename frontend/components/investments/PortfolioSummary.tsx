@@ -31,7 +31,8 @@ interface AccountListProps {
   changeFor?: (holding: Holding, accountId: string) => HoldingChange | null
   selectedHoldingId: string | null
   onSelectHolding: (securityId: string | null) => void
-  onOpenHolding: (securityId: string) => void
+  /** Opens a position as held in that one account, so its page reads only that account's shares and trades. */
+  onOpenHolding: (securityId: string, accountId: string) => void
   onOpenAccount: (accountId: string) => void
 }
 
@@ -104,7 +105,7 @@ export function AccountList({ rows, isMasked, changeFor, selectedHoldingId, onSe
                     isMasked={isMasked}
                     selectedId={selectedHoldingId}
                     onSelect={onSelectHolding}
-                    onOpen={onOpenHolding}
+                    onOpen={(securityId) => onOpenHolding(securityId, row.accountId)}
                     flat
                     changeFor={changeFor ? (holding) => changeFor(holding, row.accountId) : undefined}
                   />
