@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { Pressable, Text, View, useWindowDimensions } from 'react-native'
 import Animated, {
   Extrapolation,
@@ -18,7 +18,6 @@ import { colors, heroGradient, pageBackdrop } from '@/constants/theme'
 import { useTransactionFeed } from '@/hooks/useTransactionFeed'
 import { usePullToRefresh } from '@/hooks/usePullToRefresh'
 import { useAccounts } from '@/hooks/useAccounts'
-import { useBudgets } from '@/hooks/useBudgets'
 import { useCategories } from '@/hooks/useCategories'
 import { ErrorBanner } from '@/components/ui/ErrorBanner'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -31,18 +30,15 @@ import { filterByMonth, shiftMonth } from '@/lib/transactions/filterByMonth'
 import { useSelectedMonth } from '@/hooks/useSelectedMonth'
 import { useHomeTabReselect } from '@/hooks/useHomeTabReselect'
 import { useSelectedAccountFilter } from '@/hooks/useSelectedAccountFilter'
+import { useMonthCategories } from '@/hooks/useMonthCategories'
 import { aggregateMonth } from '@/lib/transactions/aggregateMonth'
-import { hasReimbursementSurplus } from '@/lib/transactions/totals'
-import { UNCATEGORIZED_ID, computeDonutSegments } from '@/lib/transactions/visualizationData'
-import type { DonutSegment } from '@/lib/transactions/visualizationData'
-import { budgetStatus, monthElapsedFraction, resolveBudgetsForMonth } from '@/lib/budgets/budgetMath'
+import { budgetStatus } from '@/lib/budgets/budgetMath'
 import { compareWithPreviousMonth } from '@/lib/budgets/monthComparison'
-import { arrangeTiles, tileState } from '@/lib/home/categoryTiles'
 import { MonthHeadline } from '@/components/home/MonthHeadline'
 import { BudgetLine } from '@/components/home/BudgetLine'
 import { SavingsRate } from '@/components/home/SavingsRate'
 import { COLLAPSED_BAR_HEIGHT, CollapsedMonthBar } from '@/components/home/CollapsedMonthBar'
-import { TileRows, type GridTile } from '@/components/home/TileRows'
+import { CategorySummaryCard } from '@/components/home/CategorySummaryCard'
 import { HomeHeader } from '@/components/home/HomeHeader'
 import { LinearGradient } from 'expo-linear-gradient'
 import { HeroBackground } from '@/components/home/HeroBackground'
@@ -57,10 +53,8 @@ const VIEW_OPTIONS: Array<IconSwitchOption<'grid' | 'chart'>> = [
   { value: 'chart', icon: 'pie-chart-outline', label: 'Charts' },
 ]
 
-/** The screen's side padding (px-5) and the grid's gutter. */
+/** The screen's side padding (px-5). */
 const SCREEN_PADDING = 20
-const TILE_GAP = 10
-const TILE_HEIGHT = 116
 /** How far the sheet of tiles rides up over the bottom of the top section. */
 const SHEET_OVERLAP = 24
 const SHEET_RADIUS = 28
@@ -76,38 +70,35 @@ const SHEET_SHADOW = {
 export default function DashboardScreen() {
   const [month, setMonth] = useSelectedMonth()
   const [selectedAccountId, setSelectedAccountId] = useSelectedAccountFilter()
-  const [expensesOpen, setExpensesOpen] = useState(true)
-  const [incomeOpen, setIncomeOpen] = useState(true)
   const [view, setView] = useState<'grid' | 'chart'>('grid')
   // Which Charts page to open on: the Summary's view switch opens by-category, its Cash flow button
   // the Cash Flow page.
   const [chartPage, setChartPage] = useState(0)
-  const [detailState, setDetailState] = useState<{ segment: DonutSegment; mode: 'expense' | 'income' } | null>(null)
 
   const { feed, categoryById, isLoading, error, refresh } = useTransactionFeed()
   const refreshControl = usePullToRefresh(refresh)
   const accounts = useAccounts()
-  const budgets = useBudgets()
   const categories = useCategories()
   const { openNewManual } = useTransactionEditorActions()
 
-  const accountFilteredFeed = useMemo(
-    () => (selectedAccountId ? feed.filter((item) => item.accountId === selectedAccountId) : feed),
-    [feed, selectedAccountId],
-  )
-  const monthFeed = useMemo(() => filterByMonth(accountFilteredFeed, month), [accountFilteredFeed, month])
+  const {
+    accountFilteredFeed,
+    monthFeed,
+    spendByCategory,
+    incomeByCategory,
+    totalExpense,
+    totalIncome,
+    resolvedBudgets,
+    elapsed,
+    expenseTiles,
+    incomeTiles,
+    openSegment,
+    detail,
+  } = useMonthCategories()
 
-  const { spendByCategory, incomeByCategory, totalExpense, totalIncome } = useMemo(() => aggregateMonth(monthFeed), [monthFeed])
-
-  const { width: windowWidth, height: windowHeight } = useWindowDimensions()
+  const { height: windowHeight } = useWindowDimensions()
   const insets = useSafeAreaInsets()
-  const tileWidth = (windowWidth - SCREEN_PADDING * 2 - TILE_GAP * 2) / 3
 
-  // Budgets are effective-dated: the ring on each card must reflect the amount in force for the
-  // viewed month (and vanish for months where the budget didn't exist or was stopped).
-  const resolvedBudgets = useMemo(() => resolveBudgetsForMonth(budgets.data ?? [], month), [budgets.data, month])
-
-  const elapsed = monthElapsedFraction(month)
   const isCurrentMonth = elapsed > 0 && elapsed < 1
 
   // The tiles' rings summed, for the overview card's budget bar.
@@ -130,71 +121,6 @@ export default function DashboardScreen() {
   }, [accountFilteredFeed, month])
   // This month against last as running totals — every category, budgeted or not — for the chart view.
   const comparison = useMemo(() => compareWithPreviousMonth(accountFilteredFeed, month), [accountFilteredFeed, month])
-
-  // The category cards open the same detail sheet the donut chart does, so their segments are
-  // built the same way — otherwise a card and its chart slice could disagree on percentage or
-  // transaction count for the same category.
-  const expenseSegments = useMemo(
-    () => computeDonutSegments(monthFeed, spendByCategory, categories.data ?? [], totalExpense, 'expense'),
-    [monthFeed, spendByCategory, categories.data, totalExpense],
-  )
-  const incomeSegments = useMemo(
-    () => computeDonutSegments(monthFeed, incomeByCategory, categories.data ?? [], totalIncome, 'income'),
-    [monthFeed, incomeByCategory, categories.data, totalIncome],
-  )
-
-  const detailTransactions = useMemo(() => {
-    if (!detailState) return []
-    return monthFeed
-      .filter((item) => {
-        const isUncategorized = detailState.segment.categoryId === UNCATEGORIZED_ID
-        // A reimbursement's income leg keeps its place in the list, under the expense it paid
-        // back — that netting is the reason the expense above it reads lower than the charge, and
-        // dropping the row left it unexplained. It adds nothing to the totals (the day header
-        // filters on countsTowardTotals), and it's matched on the expense's category rather than
-        // its own, which is where the money it offsets sits.
-        if (item.isReimbursementIncome && detailState.mode === 'expense') {
-          // A split income shows under every category it paid back into.
-          return isUncategorized
-            ? item.reimbursementCategoryId === null
-            : item.reimbursementCategoryIds.includes(detailState.segment.categoryId)
-        }
-        // In income mode only a surplus belongs — the part beyond the expense, which is income
-        // under the leg's own category and falls through to the ordinary check below.
-        if (item.isReimbursementIncome && !hasReimbursementSurplus(item)) return false
-        if (isUncategorized ? item.categoryId !== null : item.categoryId !== detailState.segment.categoryId) return false
-        const net = item.netAmount ?? item.amount
-        // An expense paid back in full nets to zero but stays listed: its reimbursement is listed
-        // above, and without the charge beside it that row would explain nothing. It still adds
-        // nothing to the day header, which counts the net.
-        if (detailState.mode === 'expense') return net > 0 || (item.reimbursedAmount != null && item.amount > 0)
-        return net < 0
-      })
-      .sort((a, b) => (a.date < b.date ? 1 : -1))
-  }, [monthFeed, detailState])
-
-  // Must be the full segment list, uncategorized slice included: the sheet's donut draws each
-  // segment's percentage of the month total, so leaving any spend out draws a gap in the ring.
-  const detailSegments = detailState == null ? [] : detailState.mode === 'expense' ? expenseSegments : incomeSegments
-
-  // Edits made from inside the sheet (a reimbursement, a transfer, a recategorisation) rewrite
-  // this month's numbers under it, but `detailState.segment` is a snapshot from open time. Keep
-  // it honest: when the segment no longer exists or has nothing left to show, bring the user
-  // back instead of a stale ring over "No transactions"; otherwise refresh the snapshot so the
-  // header amount matches the list below it.
-  useEffect(() => {
-    if (!detailState) return
-    const fresh = (detailState.mode === 'expense' ? expenseSegments : incomeSegments).find(
-      (s) => s.categoryId === detailState.segment.categoryId,
-    )
-    if (!fresh || detailTransactions.length === 0) {
-      setDetailState(null)
-      return
-    }
-    if (fresh.amount !== detailState.segment.amount || fresh.percentage !== detailState.segment.percentage) {
-      setDetailState({ segment: fresh, mode: detailState.mode })
-    }
-  }, [detailState, expenseSegments, incomeSegments, detailTransactions])
 
   // The top section scrolls away over the sheet. Once it has, the sheet comes to rest just under a
   // slim bar that keeps the month in view; the scroll snaps to fully open or fully collapsed, so the
@@ -259,27 +185,6 @@ export default function DashboardScreen() {
     )
   }
 
-  // Driven by the segments, not by spendByCategory: a category whose transactions are all excluded
-  // has no entry in that map but does have a segment (at zero), and it needs a card — the card is
-  // the only way into its detail sheet, and without one those rows are unreachable from here.
-  // Filtering `categories` rather than mapping the segments keeps the grid in category order.
-  const expenseSegmentIds = new Set(expenseSegments.map((s) => s.categoryId))
-  const incomeSegmentIds = new Set(incomeSegments.map((s) => s.categoryId))
-  const expenseCategories = categories.data?.filter((c) => expenseSegmentIds.has(c.id)) ?? []
-  const incomeCategories = categories.data?.filter((c) => incomeSegmentIds.has(c.id)) ?? []
-
-  // Uncategorized isn't a real category, so it has no row in `categories` to filter for — it's
-  // whatever the month total has left over once the real categories are accounted for. Without a
-  // card for it the grid silently understates the month.
-  const uncategorizedExpense = expenseSegments.find((s) => s.categoryId === UNCATEGORIZED_ID)
-  const uncategorizedIncome = incomeSegments.find((s) => s.categoryId === UNCATEGORIZED_ID)
-
-  function openCategoryDetail(categoryId: string, mode: 'expense' | 'income') {
-    const segment = (mode === 'expense' ? expenseSegments : incomeSegments).find((s) => s.categoryId === categoryId)
-    if (!segment) return
-    setDetailState({ segment, mode })
-  }
-
   const monthParams = (target: YearMonth) => ({ year: String(target.year), month: String(target.month) })
 
   function changeView(next: 'grid' | 'chart', page = 0) {
@@ -301,38 +206,6 @@ export default function DashboardScreen() {
       leading={viewSwitch}
     />
   )
-
-  function tileFor(
-    category: { id: string; name: string; icon: string | null; color: string },
-    spent: number,
-    mode: 'expense' | 'income',
-  ): Omit<GridTile, 'wide'> {
-    const budget = mode === 'expense' ? (resolvedBudgets.get(category.id)?.amount ?? null) : null
-    const state = tileState(spent, budget, elapsed)
-    return {
-      ...category,
-      spent,
-      budget,
-      state,
-      onPress: () => openCategoryDetail(category.id, mode),
-    }
-  }
-
-  const expenseTiles: GridTile[] = arrangeTiles(
-    [
-      ...expenseCategories.map((c) => tileFor(c, spendByCategory.get(c.id) ?? 0, 'expense')),
-      ...(uncategorizedExpense
-        ? [tileFor({ ...uncategorizedExpense, id: UNCATEGORIZED_ID }, uncategorizedExpense.amount, 'expense')]
-        : []),
-    ],
-    totalExpense,
-  )
-  const incomeTiles: GridTile[] = [
-    ...incomeCategories.map((c) => tileFor(c, incomeByCategory.get(c.id) ?? 0, 'income')),
-    ...(uncategorizedIncome
-      ? [tileFor({ ...uncategorizedIncome, id: UNCATEGORIZED_ID }, uncategorizedIncome.amount, 'income')]
-      : []),
-  ].map((tile) => ({ ...tile, wide: false }))
 
   // Save errors are reported by the edit sheets themselves (CategoryDetailSheet owns the editor),
   // so this screen only surfaces its own data-loading failure.
@@ -376,7 +249,7 @@ export default function DashboardScreen() {
             totalExpense={totalExpense}
             totalIncome={totalIncome}
             month={month}
-            onSegmentPress={(segment, mode) => setDetailState({ segment, mode })}
+            onSegmentPress={openSegment}
             feed={feed}
             categoryById={categoryById}
             accounts={accounts.data ?? []}
@@ -459,28 +332,23 @@ export default function DashboardScreen() {
                 </View>
               </View>
 
-              {/* Each group of tiles under its own heading that folds it away — no totals, the top
-                  section and Cash Flow have them. */}
+              {/* Where the money went and came from, each a preview of its biggest categories; the card
+                  opens the full page of tiles. */}
               {expenseTiles.length > 0 ? (
-                <View className="gap-3">
-                  <View className="flex-row items-center justify-between">
-                    <SectionToggle title="Expenses" isOpen={expensesOpen} onToggle={() => setExpensesOpen((v) => !v)} />
-                  </View>
-                  {expensesOpen ? (
-                    <TileRows tiles={expenseTiles} tileWidth={tileWidth} tileHeight={TILE_HEIGHT} gap={TILE_GAP} />
-                  ) : null}
-                </View>
+                <CategorySummaryCard
+                  title="Expenses"
+                  total={totalExpense}
+                  tiles={expenseTiles}
+                  onPress={() => router.push({ pathname: '/(tabs)/(home)/categories', params: { mode: 'expense' } })}
+                />
               ) : null}
-
               {incomeTiles.length > 0 ? (
-                <View className="gap-3">
-                  <View className="flex-row items-center justify-between">
-                    <SectionToggle title="Income" isOpen={incomeOpen} onToggle={() => setIncomeOpen((v) => !v)} />
-                  </View>
-                  {incomeOpen ? (
-                    <TileRows tiles={incomeTiles} tileWidth={tileWidth} tileHeight={TILE_HEIGHT} gap={TILE_GAP} />
-                  ) : null}
-                </View>
+                <CategorySummaryCard
+                  title="Income"
+                  total={totalIncome}
+                  tiles={incomeTiles}
+                  onPress={() => router.push({ pathname: '/(tabs)/(home)/categories', params: { mode: 'income' } })}
+                />
               ) : null}
             </Animated.View>
           </Animated.ScrollView>
@@ -498,12 +366,8 @@ export default function DashboardScreen() {
       )}
 
       <CategoryDetailSheet
-        visible={detailState != null}
-        segment={detailState?.segment ?? null}
-        allSegments={detailSegments}
-        transactions={detailTransactions}
+        {...detail}
         feed={feed}
-        onClose={() => setDetailState(null)}
       />
     </SafeAreaView>
   )
@@ -529,21 +393,6 @@ function PillButton({ label, onPress }: { label: string; onPress: () => void }) 
           <Ionicons name="chevron-forward" size={14} color={colors.textPrimary} />
         </View>
       )}
-    </Pressable>
-  )
-}
-
-/** A group's heading, left-aligned like a section title, that folds the group away. */
-function SectionToggle({ title, isOpen, onToggle }: { title: string; isOpen: boolean; onToggle: () => void }) {
-  return (
-    <Pressable
-      onPress={onToggle}
-      accessibilityRole="button"
-      accessibilityState={{ expanded: isOpen }}
-      className="flex-row items-center gap-1.5 self-start pt-2"
-    >
-      <Text className="font-sansSemi text-md text-textPrimary">{title}</Text>
-      <Ionicons name={isOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textSecondary} />
     </Pressable>
   )
 }

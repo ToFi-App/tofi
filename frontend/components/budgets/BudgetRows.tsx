@@ -5,7 +5,6 @@ import { borderRadius, colors, hexToRgba, shadow } from '@/constants/theme'
 import { CategoryIcon } from '@/components/categories/CategoryIcon'
 
 const WELL = 40
-const ALLOCATION_BAR = 10
 
 /** Whole dollars: a budget is a round number, and cents on every row are noise. */
 export function budgetDollars(amount: number): string {
@@ -24,26 +23,6 @@ export function CategoryWell({ category, size = WELL }: { category: CategoryLike
   return (
     <View className="items-center justify-center rounded-full" style={{ width: size, height: size, backgroundColor: hexToRgba(category.color, 0.22) }}>
       <CategoryIcon icon={category.icon} size={Math.round(size * 0.45)} color={category.color} />
-    </View>
-  )
-}
-
-/**
- * The month's budgets summed, and how that total splits: one bar cut into each budget's share in
- * its category colour. The rows under it are the legend, in the same order.
- */
-export function BudgetTotal({ total, slices }: { total: number; slices: Array<{ id: string; color: string; amount: number }> }) {
-  return (
-    <View className="gap-4">
-      <View className="gap-1">
-        <Text className="font-sansSemi text-base text-textPrimary">Monthly budget</Text>
-        <Text className="font-display text-3xl text-textPrimary">{budgetDollars(total)}</Text>
-      </View>
-      <View className="flex-row overflow-hidden rounded-full" style={{ height: ALLOCATION_BAR, gap: 2, backgroundColor: colors.surfaceRaised }}>
-        {slices.map((slice) => (
-          <View key={slice.id} style={{ flex: slice.amount, backgroundColor: slice.color }} />
-        ))}
-      </View>
     </View>
   )
 }

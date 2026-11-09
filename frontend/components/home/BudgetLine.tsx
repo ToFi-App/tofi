@@ -116,6 +116,18 @@ export function BudgetLine({ budget, onPress }: { budget: MonthBudget | null; on
         {evenPace != null ? <Tick at={share(evenPace)} color={colors.textSecondary} /> : null}
         {isOver ? <Tick at={share(budget.budget)} color={colors.textPrimary} /> : null}
       </View>
+
+      {/* What the tick means, in words: how far under or over an even pace spending is by today.
+          Only while the month runs, and not once the budget is gone. */}
+      {evenPace != null && !isOver ? (
+        <Text
+          className="font-sansMed text-sm"
+          style={[TABULAR, { color: evenPace >= budget.spent ? colors.primary : colors.warning }]}
+          numberOfLines={1}
+        >
+          {dollars(Math.abs(evenPace - budget.spent), isMasked)} {evenPace >= budget.spent ? 'under' : 'over'} today&apos;s pace
+        </Text>
+      ) : null}
     </Card>
   )
 }
