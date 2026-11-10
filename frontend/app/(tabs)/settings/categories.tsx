@@ -6,6 +6,7 @@ import { useCategories } from '@/hooks/useCategories'
 import { ErrorBanner } from '@/components/ui/ErrorBanner'
 import { CategoryIcon } from '@/components/categories/CategoryIcon'
 import { SettingsGroup } from '@/components/settings/SettingsBlocks'
+import { TabBarSpacer } from '@/components/navigation/FloatingTabs'
 
 /**
  * Every category, one group card. The navigation bar names the screen and carries the add button, so
@@ -15,7 +16,7 @@ export default function CategoriesListScreen() {
   const categories = useCategories()
 
   return (
-    <ScrollView contentInsetAdjustmentBehavior="automatic" className="flex-1 bg-background" contentContainerClassName="gap-4 px-5 py-4">
+    <ScrollView contentInsetAdjustmentBehavior="automatic" className="flex-1" contentContainerClassName="gap-4 px-5 py-4">
       <Stack.Screen
         options={{
           headerRight: () => (
@@ -44,6 +45,7 @@ export default function CategoriesListScreen() {
           </Pressable>
         ))}
       </SettingsGroup>
+      <TabBarSpacer />
     </ScrollView>
   )
 }

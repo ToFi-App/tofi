@@ -85,8 +85,7 @@ describe('buildFlowGraph', () => {
 
   it('splits the net into parts that sum back to it', () => {
     const h = graph.headline
-    expect(h.saved + h.invested + h.debtPaid + h.checkingChange + h.unlinked + h.reimbursements).toBeCloseTo(h.net, 2)
-    expect(h.saved).toBe(300) // 500 in, 200 back out, netted
+    expect(h.cash + h.invested + h.debtPaid + h.unlinked + h.reimbursements).toBeCloseTo(h.net, 2)
     expect(h.invested).toBe(1000)
     // 250 paid + 20 refund - 40 net dinner - 200 groceries
     expect(h.debtPaid).toBe(30)
@@ -136,8 +135,12 @@ describe('buildFlowGraph', () => {
       item({ id: 'x-out', amount: 100, date: '2026-06-30', transferId: 'x', transferKind: 'account_transfer', transferRole: 'expense', links: [link('x-in')] }),
       item({ id: 'x-in', accountId: 'savings', amount: -100, date: '2026-07-01', transferId: 'x', transferKind: 'account_transfer', transferRole: 'income', links: [link('x-out')] }),
     ]
-    expect(buildFlowGraph({ feed: straddle, accounts, month }).headline.saved).toBe(100)
-    expect(buildFlowGraph({ feed: straddle, accounts, month: { year: 2026, month: 7 } }).headline.saved).toBe(0)
+    const june = buildFlowGraph({ feed: straddle, accounts, month })
+    const july = buildFlowGraph({ feed: straddle, accounts, month: { year: 2026, month: 7 } })
+    expect(june.edges.find((e) => e.to === 'account:savings')?.amount).toBe(100)
+    expect(july.edges.some((e) => e.to === 'account:savings')).toBe(false)
+    // Checking to savings is cash either way, so it doesn't move the cash part.
+    expect(june.headline.cash).toBe(0)
   })
 
   it('gives no savings rate for a month without income', () => {
@@ -172,9 +175,8 @@ describe('reimbursements', () => {
     expect(g.headline.income).toBe(0)
     expect(g.edges.find((e) => e.kind === 'covered')).toMatchObject({ from: 'account:checking', to: 'spend:travel', amount: 500 })
     expect(g.edges.find((e) => e.kind === 'paidBack')).toMatchObject({ to: 'account:savings', amount: 500 })
-    // Real movement: checking -500, savings +500.
-    expect(g.headline.checkingChange).toBe(-500)
-    expect(g.headline.saved).toBe(500)
+    // Real movement: checking -500, savings +500 — both cash, so cash is unchanged.
+    expect(g.headline.cash).toBe(0)
   })
 
   it('draws nothing extra when the repayment lands back in the paying account', () => {
@@ -212,7 +214,7 @@ describe('reimbursements', () => {
     expect(july.edges.find((e) => e.kind === 'paidBack')).toMatchObject({ to: 'account:checking', amount: 60 })
     expect(july.headline.reimbursements).toBe(-60)
     for (const h of [june.headline, july.headline]) {
-      expect(h.saved + h.invested + h.debtPaid + h.checkingChange + h.unlinked + h.reimbursements).toBeCloseTo(h.net, 2)
+      expect(h.cash + h.invested + h.debtPaid + h.unlinked + h.reimbursements).toBeCloseTo(h.net, 2)
     }
   })
 
@@ -224,9 +226,9 @@ describe('reimbursements', () => {
     const g = buildFlowGraph({ feed: rows, accounts, month })
     expect(g.headline.spending).toBe(40)
     expect(g.headline.debtPaid).toBe(-100) // the card was charged the full 100
-    expect(g.headline.checkingChange).toBe(60)
+    expect(g.headline.cash).toBe(60)
     const h = g.headline
-    expect(h.saved + h.invested + h.debtPaid + h.checkingChange + h.unlinked + h.reimbursements).toBeCloseTo(h.net, 2)
+    expect(h.cash + h.invested + h.debtPaid + h.unlinked + h.reimbursements).toBeCloseTo(h.net, 2)
   })
 })
 

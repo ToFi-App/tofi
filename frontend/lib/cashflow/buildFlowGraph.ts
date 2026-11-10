@@ -16,7 +16,7 @@ import { accountRole, type AccountRole } from './accountRole'
  *  1. Income and spending equal aggregateMonth's totalIncome/totalExpense for the same month. Both
  *     are decided row by row by countsTowardTotals and netAmount, exactly as aggregateMonth does,
  *     so this screen can never disagree with Home about how much came in or went out.
- *  2. income - spending = saved + invested + debtPaid + checkingChange + unlinked + reimbursements.
+ *  2. income - spending = cash + invested + debtPaid + unlinked + reimbursements.
  *     Every edge is booked out of one node and into another, so money only ever appears or
  *     disappears at the outside nodes; the reimbursement term is the one outside flow that isn't
  *     income or spending. That is what lets the headline show its own arithmetic.
@@ -78,13 +78,15 @@ export interface CashFlowHeadline {
   spending: number
   /** income - spending. */
   net: number
-  /** Net change across savings accounts from the month's flows. Negative when savings were drawn down. */
-  saved: number
   invested: number
   /** Reduction in what's owed on cards and loans. Negative when debt grew. */
   debtPaid: number
-  /** Net change across checking accounts and cash on hand. */
-  checkingChange: number
+  /**
+   * Net change across the money kept as cash: checking and savings accounts and cash on hand. Savings
+   * counts here rather than as a part of its own — moving money between checking and savings is
+   * still cash either way, and splitting them read as income spent when it was only shuffled.
+   */
+  cash: number
   /** Net money sent to accounts the app can't see. */
   unlinked: number
   /**
@@ -368,10 +370,9 @@ export function buildFlowGraph(input: { feed: FeedItem[]; accounts: FlowAccount[
     income,
     spending,
     net,
-    saved: round2(netByRole.savings),
     invested: round2(netByRole.invested),
     debtPaid: round2(netByRole.debt),
-    checkingChange: round2(netByRole.spending),
+    cash: round2(netByRole.spending + netByRole.savings),
     unlinked: round2(netByNode.get(UNLINKED_NODE) ?? 0),
     reimbursements: round2(
       edges.filter((e) => e.kind === 'covered').reduce((sum, e) => sum + e.amount, 0) -

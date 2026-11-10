@@ -4,6 +4,10 @@ import { Pressable, ScrollView, Text, View } from 'react-native'
 import { WalletCards } from 'lucide-react-native'
 import { colors } from '@/constants/theme'
 import { BottomSheet } from './BottomSheet'
+import { GlassButton } from './GlassButton'
+import { useHeroInk } from './HeroGlass'
+import { AccountIcon } from '@/components/accounts/AccountRow'
+import { isInvestmentAccount, isLiabilityAccount } from '@/lib/accounts/accountType'
 import type { Account } from '@/types/domain'
 
 interface AccountsFilterDropdownProps {
@@ -11,9 +15,11 @@ interface AccountsFilterDropdownProps {
   selectedAccountId: string | null
   onSelect: (accountId: string | null) => void
   /** 'icon' is a wallet-and-cards glyph for a crowded header — it picks which accounts are shown —
-   *  with a dot on it while one is picked, so a narrowed view never goes unnoticed. Defaults to the
-   *  account's name with a chevron. */
-  variant?: 'inline' | 'icon'
+   *  replaced by the picked account's own bank logo while one is picked, so a narrowed view never
+   *  goes unnoticed. Defaults to the
+   *  account's name with a chevron. 'glass' is the same glyph in a round glass button, for
+   *  Home's header on its mint top section. */
+  variant?: 'inline' | 'icon' | 'glass'
   /** 'inverse' draws the icon white, for a header on the brand colour. Icon variant only. */
   tone?: 'default' | 'inverse'
 }
@@ -26,39 +32,40 @@ export function AccountsFilterDropdown({
   tone = 'default',
 }: AccountsFilterDropdownProps) {
   const [isOpen, setIsOpen] = useState(false)
-  const selectedName = selectedAccountId
-    ? accounts.find((a) => a.account_id === selectedAccountId)?.name ?? 'All'
-    : 'All'
+  const selectedAccount = selectedAccountId ? accounts.find((a) => a.account_id === selectedAccountId) : undefined
+  const selectedName = selectedAccount?.name ?? 'All'
+
+  const triggerLabel = selectedAccountId ? `Showing ${selectedName}. Choose account` : 'Showing all accounts. Choose account'
+  const isInverse = tone === 'inverse'
+  const heroInk = useHeroInk()
+  // Ink for the glyph: white on the brand colour, the mint's deep teal on Home's glass button, dark
+  // text on a plain light header.
+  const ink = isInverse ? colors.textInverse : variant === 'glass' ? heroInk : colors.textPrimary
+  // Narrowed to one account, the button shows that account — its bank's logo, or its fallback glyph —
+  // so which account the screen is showing is plain at a glance. Showing everything, the
+  // wallet-and-cards glyph.
+  const glyph = selectedAccount ? (
+    <AccountIcon
+      logo={selectedAccount.institutionLogo}
+      variant={accountVariant(selectedAccount)}
+      itemId={selectedAccount.itemId}
+      size={variant === 'glass' ? 22 : 24}
+    />
+  ) : (
+    <View>
+      <WalletCards size={variant === 'glass' ? 18 : 22} strokeWidth={2} color={ink} />
+    </View>
+  )
 
   return (
     <>
-      {variant === 'icon' ? (
-        <Pressable
-          onPress={() => setIsOpen(true)}
-          hitSlop={8}
-          accessibilityRole="button"
-          accessibilityLabel={selectedAccountId ? `Showing ${selectedName}. Choose account` : 'Showing all accounts. Choose account'}
-        >
-          {/* Lucide draws outlines only, so a narrowed view is marked with a dot rather than a
-              filled glyph: brand teal on a light header, white ringed in teal on the teal one. */}
-          <View>
-            <WalletCards size={22} strokeWidth={2} color={tone === 'inverse' ? colors.textInverse : colors.textPrimary} />
-            {selectedAccountId ? (
-              <View
-                style={{
-                  position: 'absolute',
-                  top: -2,
-                  right: -3,
-                  width: 9,
-                  height: 9,
-                  borderRadius: 4.5,
-                  borderWidth: 1.5,
-                  borderColor: tone === 'inverse' ? colors.primary : colors.background,
-                  backgroundColor: tone === 'inverse' ? colors.textInverse : colors.primary,
-                }}
-              />
-            ) : null}
-          </View>
+      {variant === 'glass' ? (
+        <GlassButton onPress={() => setIsOpen(true)} accessibilityLabel={triggerLabel}>
+          {glyph}
+        </GlassButton>
+      ) : variant === 'icon' ? (
+        <Pressable onPress={() => setIsOpen(true)} hitSlop={8} accessibilityRole="button" accessibilityLabel={triggerLabel}>
+          {glyph}
         </Pressable>
       ) : (
         <Pressable onPress={() => setIsOpen(true)} className="flex-row items-center gap-1">
@@ -85,7 +92,13 @@ export function AccountsFilterDropdown({
             className="flex-row items-center justify-between py-4 border-b"
             style={{ borderColor: colors.border }}
           >
-            <Text className="font-sansMed text-base text-textPrimary">All</Text>
+            <View className="flex-row items-center gap-3">
+              {/* Every account at once: a stack of cards in the same tile the fallback glyphs use. */}
+              <View className="items-center justify-center rounded-sm" style={{ width: 28, height: 28, backgroundColor: colors.primaryMuted }}>
+                <Ionicons name="albums" size={15} color={colors.primary} />
+              </View>
+              <Text className="font-sansMed text-base text-textPrimary">All</Text>
+            </View>
             {selectedAccountId === null ? <Ionicons name="checkmark-circle" size={20} color={colors.primary} /> : null}
           </Pressable>
           {accounts.map((account) => (
@@ -98,7 +111,13 @@ export function AccountsFilterDropdown({
               className="flex-row items-center justify-between py-4 border-b"
               style={{ borderColor: colors.border }}
             >
-              <Text className="font-sansMed text-base text-textPrimary">{account.name}</Text>
+              {/* The account's bank logo, or its fallback glyph — the same mark it has in the accounts list. */}
+              <View className="flex-1 flex-row items-center gap-3">
+                <AccountIcon logo={account.institutionLogo} variant={accountVariant(account)} itemId={account.itemId} />
+                <Text className="flex-1 font-sansMed text-base text-textPrimary" numberOfLines={1}>
+                  {account.name}
+                </Text>
+              </View>
               {selectedAccountId === account.account_id ? (
                 <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
               ) : null}
@@ -108,4 +127,11 @@ export function AccountsFilterDropdown({
       </BottomSheet>
     </>
   )
+}
+
+/** Which fallback glyph an account takes when it has no logo — the accounts list's own grouping. */
+function accountVariant(account: Account): 'credit' | 'investment' | 'cash' {
+  if (isLiabilityAccount(account)) return 'credit'
+  if (isInvestmentAccount(account)) return 'investment'
+  return 'cash'
 }

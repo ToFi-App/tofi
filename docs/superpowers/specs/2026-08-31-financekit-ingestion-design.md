@@ -3,7 +3,7 @@
 > Adds Apple Card, Apple Cash, and Apple Savings as a second account source alongside Plaid.
 > Data is read on-device through Apple's FinanceKit framework and never leaves the device.
 
-Pairs with `docs/product.md`, `docs/architecture.md`, `docs/app-store-readiness.md`. Read those
+Pairs with `docs/product.md` and `docs/architecture.md`. Read those
 first — this spec doesn't restate their contents, only how this codebase implements them.
 
 ## Context

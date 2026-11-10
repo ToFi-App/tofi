@@ -10,6 +10,7 @@ import { TransactionEditorProvider } from '@/components/transactions/Transaction
 import { useTransactionFeed } from '@/hooks/useTransactionFeed'
 import { LoadingScreen } from '@/components/ui/LoadingScreen'
 import { colors } from '@/constants/theme'
+import { FloatingTabs } from '@/components/navigation/FloatingTabs'
 import { requestHomeTop } from '@/hooks/useHomeTabReselect'
 
 // Rendered (not called) inside the authed layout so its data hooks never run logged-out.
@@ -41,20 +42,11 @@ function AuthedShell({ children }: { children: React.ReactNode }) {
 const { Trigger } = NativeTabs
 
 /**
- * Without Liquid Glass — iOS 17/18, and Android — the bar keeps the look the JS tab bar had: solid
- * white with a hairline on top, unselected tabs in the muted grey. With it, the system glass is
- * left alone: a fill would paint over it. Fixed for the life of the process, since it depends on
- * the OS and the SDK the binary was built with.
+ * Whether the system tab bar is the floating Liquid Glass one (iOS 26 and later). Before that the
+ * system bar is a solid strip that can't float, so FloatingTabs draws a capsule to match instead.
+ * Fixed for the life of the process, since it depends on the OS and the SDK the binary was built with.
  */
-const PRE_GLASS_BAR = isLiquidGlassAvailable()
-  ? {}
-  : ({
-      backgroundColor: colors.surface,
-      blurEffect: 'none',
-      shadowColor: colors.border,
-      iconColor: { default: colors.textMuted, selected: colors.primary },
-      labelStyle: { default: { color: colors.textMuted }, selected: { color: colors.primary } },
-    } as const)
+const HAS_LIQUID_GLASS = isLiquidGlassAvailable()
 
 /**
  * Ionicons rather than SF Symbols, tinted by the bar itself: teal when selected, grey otherwise.
@@ -76,6 +68,10 @@ export default function TabsLayout() {
   if (isLoading) return <LoadingScreen />
   if (!session) return <Redirect href="/(auth)/login" />
 
+  const onHomeReselect = () => {
+    if (HOME_PATHS.has(pathname)) requestHomeTop()
+  }
+
   // The provider wraps the watcher as well as the screens: it is a feed consumer too, and one
   // of the six independent copies of the feed this replaced.
   // Outermost, above the feed and therefore above the sheet host: sheet layers render inside the
@@ -86,22 +82,19 @@ export default function TabsLayout() {
     <TransactionFeedProvider>
       <BudgetAlertWatcher />
       <AuthedShell>
-      {/* NativeTabs is the system UITabBarController, not a JS-drawn bar: built against the iOS 26
-          SDK it is the floating Liquid Glass bar; on older iOS it is styled to match the old JS
-          bar (PRE_GLASS_BAR). The bar sits over screen content, so each tab's main ScrollView sets
-          contentInsetAdjustmentBehavior to inset for it, and anything pinned to the bottom offsets
-          by useSafeAreaInsets().bottom. Cash flow hides it, as it did when it was a hidden tab.
+      {/* On iOS 26 and later, NativeTabs: the system UITabBarController, built against the iOS 26
+          SDK the floating Liquid Glass bar. The bar sits over screen content, so each tab's main
+          ScrollView sets contentInsetAdjustmentBehavior to inset for it, and anything pinned to the
+          bottom offsets by useSafeAreaInsets().bottom. Before iOS 26 the system bar can't float, so
+          FloatingTabs draws a matching capsule instead, with the screens ending above it.
 
-          disableTransparentOnScrollEdge is for iOS 17/18. There the bar goes fully transparent —
-          no background, no divider — whenever it believes its screen's list is scrolled to the
-          bottom, and it only tracks a ScrollView that is first in the screen. A screen that puts a
-          header first leaves the bar unable to find its list, transparent with rows showing through
-          it. This keeps the same bar at the edge too; iOS 26's glass bar has no transparent edge
-          state, so it is unaffected. */}
+          disableTransparentOnScrollEdge stays as a guard: on iOS 17/18 the system bar goes fully
+          transparent whenever it believes its screen's list is scrolled to the bottom; iOS 26's
+          glass bar has no transparent edge state, so it is unaffected. */}
+      {HAS_LIQUID_GLASS ? (
       <NativeTabs
         tintColor={colors.primary}
         disableTransparentOnScrollEdge
-        {...PRE_GLASS_BAR}
       >
         {/* Home is where the money goes (with budgets inside it), Calendar the same month day by day,
             Net Worth what there is — the overview, and the invested part of it, behind one switch. */}
@@ -109,11 +102,7 @@ export default function TabsLayout() {
             returns to Home as it was left — that tap's path is the other tab's, not Home's. */}
         <Trigger
           name="(home)"
-          listeners={{
-            tabPress: () => {
-              if (HOME_PATHS.has(pathname)) requestHomeTop()
-            },
-          }}
+          listeners={{ tabPress: onHomeReselect }}
         >
           <Trigger.Label>Home</Trigger.Label>
           {tabIcon('home')}
@@ -131,6 +120,18 @@ export default function TabsLayout() {
           {tabIcon('settings')}
         </Trigger>
       </NativeTabs>
+      ) : (
+        // Before iOS 26: the same four tabs in a floating capsule of our own, with the screens
+        // running under it as they do under the system bar on iOS 26.
+        <FloatingTabs
+          tabs={[
+            { name: '(home)', href: '/', label: 'Home', icon: 'home', onReselect: onHomeReselect },
+            { name: 'calendar', href: '/calendar', label: 'Calendar', icon: 'calendar' },
+            { name: 'net-worth', href: '/net-worth', label: 'Net Worth', icon: 'wallet' },
+            { name: 'settings', href: '/settings', label: 'Settings', icon: 'settings' },
+          ]}
+        />
+      )}
       </AuthedShell>
     </TransactionFeedProvider>
     </AccountMarksProvider>

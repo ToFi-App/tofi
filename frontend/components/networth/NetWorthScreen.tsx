@@ -3,7 +3,7 @@ import { router } from 'expo-router'
 import { Linking, Pressable, ScrollView, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { colors } from '@/constants/theme'
+import { colors, pageBackdrop } from '@/constants/theme'
 import { useAccountOrder } from '@/hooks/useAccountOrder'
 import { useAmountsMasked } from '@/hooks/useAmountsMasked'
 import { useTransactionFeed } from '@/hooks/useTransactionFeed'
@@ -24,6 +24,8 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { computeNetWorthTotals, isInvestmentAccount, isLiabilityAccount } from '@/lib/accounts/netWorth'
 import { CASH_ON_HAND_KEY } from '@/lib/accounts/composition'
 import type { Account } from '@/types/domain'
+import { TabBarSpacer } from '@/components/navigation/FloatingTabs'
+import { PageBackdrop } from '@/components/ui/PageBackdrop'
 
 const EMPTY_ACCOUNTS: Account[] = []
 
@@ -109,7 +111,8 @@ export function NetWorthScreen() {
     !credentials.isLoading
   ) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: pageBackdrop.stops[0] }} edges={['top']}>
+        <PageBackdrop />
         <View className="px-5 pt-4">{error ? <ErrorBanner message={error} onDismiss={() => setError(null)} /> : null}</View>
         {!credentials.data ? (
           <EmptyState
@@ -129,7 +132,8 @@ export function NetWorthScreen() {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: pageBackdrop.stops[0] }} edges={['top']}>
+      <PageBackdrop />
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         contentContainerClassName="gap-5 px-5 py-4"
@@ -310,6 +314,7 @@ export function NetWorthScreen() {
             </AccountSection>
           ) : null}
         </AccountConsole>
+        <TabBarSpacer />
       </ScrollView>
 
       <AddAccountSheet

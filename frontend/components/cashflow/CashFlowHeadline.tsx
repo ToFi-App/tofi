@@ -29,7 +29,7 @@ function FlowChip({ icon, iconColor, label, amount }: { icon: IconName; iconColo
 
 /**
  * One part of the net, on a tile tinted in its own colour with its own glyph — the colour the flow
- * chart below gives the same money. A dot on a grey tile left saved, invested and checking reading
+ * chart below gives the same money. A dot on a grey tile left cash, invested and debt reading
  * as the same thing; the tint and the icon make each one findable at a glance.
  */
 function Part({ label, icon, amount, color, isMasked }: { label: string; icon: IconName; amount: number; color: string; isMasked: boolean }) {
@@ -97,10 +97,9 @@ export function CashFlowHeadline({ headline, isMasked }: { headline: Headline; i
       <View style={{ height: 1, backgroundColor: colors.border }} />
 
       <View className="flex-row flex-wrap justify-between" style={{ rowGap: 8 }}>
-        <Part label="Saved" icon="shield-checkmark-outline" amount={headline.saved} color={flowColors.saved} isMasked={isMasked} />
         <Part label="Invested" icon="trending-up" amount={headline.invested} color={flowColors.invested} isMasked={isMasked} />
         <Part label={debtLabel} icon="card-outline" amount={headline.debtPaid} color={flowColors.debtPaid} isMasked={isMasked} />
-        <Part label="Checking & cash" icon="wallet-outline" amount={headline.checkingChange} color={colors.transfer} isMasked={isMasked} />
+        <Part label="Cash" icon="wallet-outline" amount={headline.cash} color={colors.transfer} isMasked={isMasked} />
         {headline.unlinked !== 0 ? (
           <Part label="To unlinked accounts" icon="link-outline" amount={headline.unlinked} color={flowColors.unlinked} isMasked={isMasked} />
         ) : null}

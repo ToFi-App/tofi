@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { Ionicons } from '@expo/vector-icons'
 import { Dimensions, Modal, Pressable, Text, View } from 'react-native'
 import { colors, hexToRgba, shadow } from '@/constants/theme'
+import { HeroGlass, useHeroInk } from '@/components/ui/HeroGlass'
 import { currentMonth, monthLabel, type YearMonth } from '@/lib/transactions/filterByMonth'
 
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -19,8 +20,10 @@ interface MonthNavigatorProps {
    *  right — for a screen whose whole subject is the month. The title still opens the picker, but
    *  carries no chevron of its own: beside the arrows it was one mark too many. Defaults to the
    *  compact centred control. 'header' is that control left-aligned and a step larger, arrows hugging
-   *  the month, to lead a header row as the screen's heading. */
-  variant?: 'inline' | 'title' | 'header'
+   *  the month, to lead a header row as the screen's heading. 'pill' is the month alone, short ("Nov 2026"), in a frosted
+   *  capsule with a chevron, for the centre of Home's header on its mint top section: it only opens the
+   *  picker, and steps by month from the collapsed bar's arrows. */
+  variant?: 'inline' | 'title' | 'header' | 'pill'
   /** 'inverse' draws the title and arrows white, for a header on the brand colour. */
   tone?: 'default' | 'inverse'
 }
@@ -34,6 +37,7 @@ export function MonthNavigator({
   tone = 'default',
 }: MonthNavigatorProps) {
   const labelRef = useRef<View>(null)
+  const heroInk = useHeroInk()
   // Popover position in window coordinates, null while closed. A small anchored card keeps a
   // quick month hop lightweight — a bottom sheet reads as a whole task, this reads as a menu.
   const [anchor, setAnchor] = useState<{ left: number; top: number } | null>(null)
@@ -72,7 +76,36 @@ export function MonthNavigator({
 
   return (
     <>
-      {isTitle ? (
+      {variant === 'pill' ? (
+        <Pressable
+          ref={labelRef}
+          onPress={openPicker}
+          hitSlop={4}
+          accessibilityRole="button"
+          accessibilityLabel={`${monthLabel(month)}. Select month and year`}
+        >
+          {({ pressed }) => (
+            <HeroGlass
+              interactive
+              style={{
+                height: 36,
+                borderRadius: 18,
+                paddingLeft: 16,
+                paddingRight: 12,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 6,
+                opacity: pressed ? 0.7 : 1,
+              }}
+            >
+              <Text className="font-sansSemi text-sm" style={{ color: heroInk }} numberOfLines={1}>
+                {`${MONTH_SHORT[month.month - 1]} ${month.year}`}
+              </Text>
+              <Ionicons name="chevron-down" size={15} color={heroInk} />
+            </HeroGlass>
+          )}
+        </Pressable>
+      ) : isTitle ? (
         <View className="flex-row items-center justify-between">
           <Pressable
             ref={labelRef}

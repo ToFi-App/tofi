@@ -1,11 +1,19 @@
 import { Stack } from 'expo-router'
-import { colors } from '@/constants/theme'
+import { colors, pageBackdrop } from '@/constants/theme'
 
+/**
+ * Settings and its pages, on the app's page colour (pageBackdrop's top), header and screens alike so
+ * the two meet seamlessly.
+ *
+ * A flat colour rather than the PageBackdrop component: the stack paints React Navigation's own grey
+ * page colour behind any screen left transparent, so a backdrop laid under the stack never shows.
+ */
 export default function SettingsLayout() {
   return (
     <Stack
       screenOptions={{
-        headerStyle: { backgroundColor: colors.background },
+        contentStyle: { backgroundColor: pageBackdrop.stops[0] },
+        headerStyle: { backgroundColor: pageBackdrop.stops[0] },
         headerTintColor: colors.textPrimary,
         headerShadowVisible: false,
         headerTitleStyle: { fontFamily: 'Inter_600SemiBold' },

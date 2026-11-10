@@ -7,6 +7,7 @@ import { SettingsGroup } from '@/components/settings/SettingsBlocks'
 import { ErrorBanner } from '@/components/ui/ErrorBanner'
 import { DeleteAccountSheet } from '@/components/settings/DeleteAccountSheet'
 import { LOGO_DEV_URL, PRIVACY_POLICY_URL, SUPPORT_URL, TERMS_URL } from '@/constants/links'
+import { TabBarSpacer } from '@/components/navigation/FloatingTabs'
 
 export default function SettingsIndexScreen() {
   const [error, setError] = useState<string | null>(null)
@@ -21,7 +22,7 @@ export default function SettingsIndexScreen() {
   }
 
   return (
-    <ScrollView contentInsetAdjustmentBehavior="automatic" className="flex-1 bg-background" contentContainerClassName="gap-6 px-5 py-6">
+    <ScrollView contentInsetAdjustmentBehavior="automatic" className="flex-1" contentContainerClassName="gap-6 px-5 py-6">
       {error ? <ErrorBanner message={error} onDismiss={() => setError(null)} /> : null}
 
       <SettingsGroup title="Accounts">
@@ -48,6 +49,7 @@ export default function SettingsIndexScreen() {
       </SettingsGroup>
 
       <DeleteAccountSheet visible={isDeleteOpen} onClose={() => setIsDeleteOpen(false)} />
+      <TabBarSpacer />
     </ScrollView>
   )
 }

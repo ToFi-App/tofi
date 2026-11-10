@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/Button'
 import { SettingsBody, SettingsCard, SettingsTitle, StatusPill } from '@/components/settings/SettingsBlocks'
 import { useAppleAccountSettings } from '@/hooks/useAppleAccountSettings'
 import type { AppleAccountStatus } from '@/lib/financekit/status'
+import { TabBarSpacer } from '@/components/navigation/FloatingTabs'
 
 // One line per state, saying what is true now rather than what to do about it — the controls
 // underneath offer the action. Same convention as the notifications screen.
@@ -28,7 +29,7 @@ export default function AppleAccountsSettingsScreen() {
   const { status } = apple
 
   return (
-    <ScrollView contentInsetAdjustmentBehavior="automatic" className="flex-1 bg-background" contentContainerClassName="gap-4 px-5 py-4">
+    <ScrollView contentInsetAdjustmentBehavior="automatic" className="flex-1" contentContainerClassName="gap-4 px-5 py-4">
       {status === 'loading' ? (
         <View className="items-center py-8">
           <ActivityIndicator color={colors.primary} />
@@ -71,6 +72,7 @@ export default function AppleAccountsSettingsScreen() {
           ) : null}
         </>
       )}
+      <TabBarSpacer />
     </ScrollView>
   )
 }

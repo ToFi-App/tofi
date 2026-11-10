@@ -3,6 +3,7 @@ import { hexToRgba, shadow } from '@/constants/theme'
 import { pfcLabel } from '@/constants/plaid'
 import { CategoryIcon } from './CategoryIcon'
 import type { Category, PlaidCategoryMapping } from '@/types/domain'
+import { TabBarSpacer } from '@/components/navigation/FloatingTabs'
 
 interface CategoryDetailsProps {
   category: Category
@@ -21,7 +22,7 @@ export function CategoryDetails({ category, mappings }: CategoryDetailsProps) {
     .sort((a, b) => a.label.localeCompare(b.label))
 
   return (
-    <ScrollView contentInsetAdjustmentBehavior="automatic" className="flex-1 bg-background" contentContainerClassName="gap-6 px-5 py-6">
+    <ScrollView contentInsetAdjustmentBehavior="automatic" className="flex-1" contentContainerClassName="gap-6 px-5 py-6">
       <View className="items-center gap-3 rounded-xl bg-surface p-6" style={shadow.sm}>
         <View
           className="h-16 w-16 items-center justify-center rounded-full"
@@ -50,6 +51,7 @@ export function CategoryDetails({ category, mappings }: CategoryDetailsProps) {
           )}
         </View>
       </View>
+      <TabBarSpacer />
     </ScrollView>
   )
 }

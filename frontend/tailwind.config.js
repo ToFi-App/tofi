@@ -16,6 +16,7 @@ module.exports = {
         surface: '#FFFFFF',
         surfaceRaised: '#F3F3EF',
         border: '#E8E8E2',
+        borderCard: '#ECECE6',
         borderStrong: '#D3D3CA',
 
         primary: '#0F766E',

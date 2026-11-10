@@ -3,6 +3,7 @@ import { colors } from '@/constants/theme'
 import { Button } from '@/components/ui/Button'
 import { SettingsBody, SettingsCard, SettingsTitle, StatusPill } from '@/components/settings/SettingsBlocks'
 import { useNotificationSettings } from '@/hooks/useNotificationSettings'
+import { TabBarSpacer } from '@/components/navigation/FloatingTabs'
 
 // One line per state, saying what is true now rather than what to do about it — the control
 // underneath is what offers the action, and a blocked row is the only one that needs directions.
@@ -19,7 +20,7 @@ export default function NotificationSettingsScreen() {
   const { status } = notifications
 
   return (
-    <ScrollView contentInsetAdjustmentBehavior="automatic" className="flex-1 bg-background" contentContainerClassName="gap-4 px-5 py-4">
+    <ScrollView contentInsetAdjustmentBehavior="automatic" className="flex-1" contentContainerClassName="gap-4 px-5 py-4">
       {status === 'loading' ? (
         <View className="items-center py-8">
           <ActivityIndicator color={colors.primary} />
@@ -49,6 +50,7 @@ export default function NotificationSettingsScreen() {
           {status === 'blocked' ? <Button label="Open Settings" variant="secondary" onPress={notifications.openSystemSettings} /> : null}
         </SettingsCard>
       )}
+      <TabBarSpacer />
     </ScrollView>
   )
 }

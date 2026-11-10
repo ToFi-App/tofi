@@ -2,7 +2,7 @@ import { memo } from 'react'
 import { View } from 'react-native'
 import { DayGroupHeader } from './DayGroupHeader'
 import { TransactionRow } from './TransactionRow'
-import { colors } from '@/constants/theme'
+import { colors, shadow } from '@/constants/theme'
 import { groupByDay } from '@/lib/transactions/groupByDay'
 import type { FeedItem } from '@/lib/transactions/resolveFeed'
 
@@ -57,13 +57,7 @@ function DayGroupedTransactionsComponent({
         <View
           key={day.date}
           className={cardClassName}
-          style={{
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 2 },
-            shadowOpacity: 0.06,
-            shadowRadius: 6,
-            elevation: 2,
-          }}
+          style={shadow.sm}
           onLayout={onDayLayout ? (event) => onDayLayout(day.date, event.nativeEvent.layout.y) : undefined}
         >
           <DayGroupHeader date={day.date} items={day.items} />

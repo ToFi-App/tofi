@@ -12,6 +12,7 @@ import { LoadingScreen } from '@/components/ui/LoadingScreen'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { StatusPill } from '@/components/settings/SettingsBlocks'
 import type { Account } from '@/types/domain'
+import { TabBarSpacer } from '@/components/navigation/FloatingTabs'
 
 // One card per institution — guaranteed by clean-slate linking: relinking an institution
 // replaces its previous connection, so duplicates can't accumulate here.
@@ -96,7 +97,7 @@ export default function InstitutionsScreen() {
   }
 
   return (
-    <ScrollView contentInsetAdjustmentBehavior="automatic" className="flex-1 bg-background" contentContainerClassName="gap-3 px-5 py-4">
+    <ScrollView contentInsetAdjustmentBehavior="automatic" className="flex-1" contentContainerClassName="gap-3 px-5 py-4">
       {error ? <ErrorBanner message={error} onDismiss={() => setError(null)} /> : null}
       {linkError ? <ErrorBanner message={linkError} onDismiss={() => setLinkError(null)} /> : null}
 
@@ -183,6 +184,7 @@ export default function InstitutionsScreen() {
           </View>
         )
       })}
+      <TabBarSpacer />
     </ScrollView>
   )
 }

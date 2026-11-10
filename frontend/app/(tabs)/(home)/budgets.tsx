@@ -9,8 +9,10 @@ import { useBudgets } from '@/hooks/useBudgets'
 import { useCategories } from '@/hooks/useCategories'
 import { AmountInput } from '@/components/budgets/AmountInput'
 import { AlertLevelPicker, AlertLine, type AlertLevel } from '@/components/budgets/AlertLevelPicker'
-import { AmountChip, BudgetRow, BudgetTotal, CategoryWell, RowGroup, SuggestionChip } from '@/components/budgets/BudgetRows'
+import { AmountChip, BudgetRow, CategoryWell, RowGroup, SuggestionChip } from '@/components/budgets/BudgetRows'
 import { MonthNavigator } from '@/components/transactions/MonthNavigator'
+import { GlassButton } from '@/components/ui/GlassButton'
+import { HeroSurfaceContext } from '@/components/ui/HeroGlass'
 import { BottomSheet, useSheetScroll } from '@/components/ui/BottomSheet'
 import { TextField } from '@/components/ui/TextField'
 import { Button } from '@/components/ui/Button'
@@ -19,8 +21,11 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { LoadingScreen } from '@/components/ui/LoadingScreen'
 import { ensureNotificationPermission } from '@/lib/notifications/permission'
 import { formatAmount } from '@/lib/format/money'
-import { monthFromParams, shiftMonth, type YearMonth } from '@/lib/transactions/filterByMonth'
-import { monthKey, resolveBudgetsForMonth, suggestBudgetAmount } from '@/lib/budgets/budgetMath'
+import { filterByMonth, monthFromParams, shiftMonth, type YearMonth } from '@/lib/transactions/filterByMonth'
+import { dailyAllowance, monthElapsedFraction, monthKey, resolveBudgetsForMonth, suggestBudgetAmount } from '@/lib/budgets/budgetMath'
+import { aggregateMonth } from '@/lib/transactions/aggregateMonth'
+import { BudgetPaceRing } from '@/components/budgets/BudgetPaceRing'
+import { TabBarSpacer } from '@/components/navigation/FloatingTabs'
 
 const ALERT_PRESETS = [50, 75, 90, 100]
 const DEFAULT_ALERT_PRESET = 90
@@ -78,7 +83,7 @@ export default function BudgetsScreen() {
   // browsing back never rewrites history with today's numbers.
   const resolved = useMemo(() => resolveBudgetsForMonth(budgets.data ?? [], month), [budgets.data, month])
 
-  // Largest first, so the list reads in the same order as the allocation bar above it. A budget
+  // Largest first, so the biggest budgets lead the list. A budget
   // whose category has since been deleted has nothing to show or edit, so it's left out.
   const budgetedRows = useMemo(
     () =>
@@ -91,6 +96,14 @@ export default function BudgetsScreen() {
     [resolved, categoryById],
   )
   const totalBudget = budgetedRows.reduce((sum, row) => sum + row.budget.amount, 0)
+
+  // How the month is tracking against those budgets, counted the way Home's Budget card counts it:
+  // each budgeted category's own spending.
+  const { spendByCategory } = useMemo(() => aggregateMonth(filterByMonth(feed, month)), [feed, month])
+  const totalSpent = budgetedRows.reduce((sum, row) => sum + (spendByCategory.get(row.budget.categoryId) ?? 0), 0)
+  const elapsed = monthElapsedFraction(month)
+  const isCurrentMonth = elapsed > 0 && elapsed < 1
+  const daysLeft = isCurrentMonth ? new Date(month.year, month.month, 0).getDate() - new Date().getDate() + 1 : null
 
   // Categories with real spending history float to the top with their typical month shown —
   // that's where a budget is actually useful. Income-ish categories naturally sink to the
@@ -211,22 +224,46 @@ export default function BudgetsScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerClassName="gap-8 px-5 pb-6 pt-3">
-        <View className="flex-row items-center">
-          <View className="flex-1 flex-row">
-            <Pressable onPress={() => router.back()} hitSlop={10} accessibilityLabel="Back">
-              <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-            </Pressable>
+        {/* The same header as the Expenses / Income page: a round back button, the month as a pill
+            centred on the row. White chips here, on the plain page. */}
+        <HeroSurfaceContext.Provider value="plain">
+          <View className="flex-row items-center justify-between">
+            <View pointerEvents="box-none" className="absolute bottom-0 left-0 right-0 top-0 items-center justify-center">
+              <MonthNavigator
+                variant="pill"
+                month={month}
+                onPrevious={() => setMonth(shiftMonth(month, -1))}
+                onNext={() => setMonth(shiftMonth(month, 1))}
+                onSelect={setMonth}
+              />
+            </View>
+            <GlassButton onPress={() => router.back()} accessibilityLabel="Back">
+              <Ionicons name="chevron-back" size={20} color={colors.textPrimary} />
+            </GlassButton>
           </View>
-          <MonthNavigator month={month} onPrevious={() => setMonth(shiftMonth(month, -1))} onNext={() => setMonth(shiftMonth(month, 1))} onSelect={setMonth} />
-          <View className="flex-1" />
-        </View>
+        </HeroSurfaceContext.Provider>
 
         {error ? <ErrorBanner message="Something went wrong loading your budgets." /> : null}
 
-        <BudgetTotal
-          total={totalBudget}
-          slices={budgetedRows.map(({ budget, category }) => ({ id: budget.budgetId, color: category.color, amount: budget.amount }))}
-        />
+        {/* How the month is going against the plan, above the plan itself. */}
+        {budgetedRows.length > 0 ? (
+          <BudgetPaceRing
+            totalBudget={totalBudget}
+            totalSpent={totalSpent}
+            elapsed={elapsed}
+            daysLeft={daysLeft}
+            dailyAllowance={dailyAllowance(totalBudget - totalSpent, month)}
+            segments={budgetedRows
+              .map(({ budget, category }) => ({
+                id: budget.budgetId,
+                name: category.name,
+                color: category.color,
+                spent: spendByCategory.get(budget.categoryId) ?? 0,
+              }))
+              .sort((a, b) => b.spent - a.spent)}
+          />
+        ) : null}
+
 
         {budgetedRows.length > 0 ? (
           <RowGroup>
@@ -288,6 +325,7 @@ export default function BudgetsScreen() {
             </RowGroup>
           </View>
         ) : null}
+        <TabBarSpacer />
       </ScrollView>
 
       <BottomSheet visible={editingCategoryId != null} onClose={() => setEditingCategoryId(null)} contentScroll={sheetScroll}>

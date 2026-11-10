@@ -5,6 +5,7 @@ import { TextField } from '@/components/ui/TextField'
 import { Button } from '@/components/ui/Button'
 import { IconPicker } from './IconPicker'
 import type { Category, PlaidCategoryMapping } from '@/types/domain'
+import { TabBarSpacer } from '@/components/navigation/FloatingTabs'
 
 interface CategoryFormProps {
   category?: Category
@@ -32,7 +33,7 @@ export function CategoryForm({ category, mappings, isSaving, onSave, onDelete }:
   const canSave = name.trim().length > 0 && icon.trim().length > 0
 
   return (
-    <ScrollView contentInsetAdjustmentBehavior="automatic" className="flex-1 bg-background" contentContainerClassName="gap-6 px-5 py-6">
+    <ScrollView contentInsetAdjustmentBehavior="automatic" className="flex-1" contentContainerClassName="gap-6 px-5 py-6">
       <TextField label="Name" value={name} onChangeText={setName} placeholder="e.g. Groceries" />
 
       <View className="gap-2">
@@ -62,6 +63,7 @@ export function CategoryForm({ category, mappings, isSaving, onSave, onDelete }:
       />
 
       {onDelete ? <Button label="Delete Category" variant="ghost" onPress={onDelete} /> : null}
+      <TabBarSpacer />
     </ScrollView>
   )
 }
