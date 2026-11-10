@@ -45,6 +45,7 @@ import { HeroBackground } from '@/components/home/HeroBackground'
 import { GlassSwitch } from '@/components/ui/GlassSwitch'
 import { HeroSurfaceContext } from '@/components/ui/HeroGlass'
 import { PageBackdrop } from '@/components/ui/PageBackdrop'
+import { SwipeViews } from '@/components/ui/SwipeViews'
 import { useTransactionEditorActions } from '@/components/transactions/TransactionEditorProvider'
 import type { YearMonth } from '@/lib/transactions/filterByMonth'
 
@@ -254,10 +255,11 @@ export default function DashboardScreen() {
             categoryById={categoryById}
             accounts={accounts.data ?? []}
             initialPage={chartPage}
+            onSwipePastStart={() => changeView('grid')}
           />
         </View>
       ) : (
-        <View style={{ flex: 1 }}>
+        <SwipeViews onSwipeLeft={() => changeView('chart')}>
           <Animated.ScrollView
             ref={scrollRef}
             onScroll={onScroll}
@@ -362,7 +364,7 @@ export default function DashboardScreen() {
             isInteractive={isCollapsed}
             style={barStyle}
           />
-        </View>
+        </SwipeViews>
       )}
 
       <CategoryDetailSheet
