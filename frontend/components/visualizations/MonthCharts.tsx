@@ -1,9 +1,9 @@
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Pressable, ScrollView, Text, View, useWindowDimensions } from 'react-native'
-import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { colors, shadow } from '@/constants/theme'
 import { Card } from '@/components/ui/Card'
+import { SwipeViews } from '@/components/ui/SwipeViews'
 import { formatMaskableAmount } from '@/lib/format/money'
 import { useAmountsMasked } from '@/hooks/useAmountsMasked'
 import type { FeedItem } from '@/lib/transactions/resolveFeed'
@@ -35,14 +35,11 @@ interface MonthChartsProps {
   feed: FeedItem[]
   categoryById: Map<string, Category>
   accounts: Account[]
-  /** The page it opens on: 0 by category, 1 Cash Flow (Home's Cash flow button). */
-  initialPage?: number
-  /** A swipe right past the first page: back to the view before Charts in Home's switch. */
-  onSwipePastStart?: () => void
+  /** The page showing: 0 by category, 1 Cash Flow. Held by Home, whose Cash flow button opens page 1
+   *  and whose own swipe back to Summary only takes over on the first page. */
+  page: number
+  onPageChange: (page: number) => void
 }
-
-/** How far past the first page the pager has to be pulled, on letting go, to leave Charts. */
-const PAST_START = 56
 
 const PAGES = ['Categories', 'Cash flow'] as const
 
@@ -123,30 +120,15 @@ export function MonthCharts({
   feed,
   categoryById,
   accounts,
-  initialPage = 0,
-  onSwipePastStart,
+  page: pageIndex,
+  onPageChange: setPageIndex,
 }: MonthChartsProps) {
   const insets = useSafeAreaInsets()
   // Extra room at each page's end where the app draws its own floating tab bar (before iOS 26).
   const tabBarOverlap = useTabBarOverlap()
-  const pagerRef = useRef<ScrollView>(null)
   const { width } = useWindowDimensions()
   const [mode, setMode] = useState<Mode>('expense')
-  const [pageIndex, setPageIndex] = useState(initialPage)
   const { isMasked } = useAmountsMasked()
-
-  function goToPage(index: number) {
-    setPageIndex(index)
-    pagerRef.current?.scrollTo({ x: index * width, animated: true })
-  }
-
-  // Settled once a swipe comes to rest, not on every frame: a tap on the switch sets the page and then
-  // slides there, and reading the position mid-slide snapped the switch back to the page it was
-  // leaving before it caught up.
-  function handlePageSettle(e: NativeSyntheticEvent<NativeScrollEvent>) {
-    const index = Math.round(e.nativeEvent.contentOffset.x / width)
-    if (index !== pageIndex) setPageIndex(index)
-  }
 
   const amountByCategory = mode === 'expense' ? spendByCategory : incomeByCategory
   const total = mode === 'expense' ? totalExpense : totalIncome
@@ -171,24 +153,12 @@ export function MonthCharts({
 
   return (
     <View style={{ flex: 1, gap: 12 }}>
-      <PageSwitch index={pageIndex} onChange={goToPage} />
-      <ScrollView
-        ref={pagerRef}
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
-        onMomentumScrollEnd={handlePageSettle}
-        // The pager already owns sideways swipes, so leaving Charts is the same swipe carried on past
-        // its first page: the bounce there, pulled far enough.
-        onScrollEndDrag={(e) => {
-          if (e.nativeEvent.contentOffset.x < -PAST_START) onSwipePastStart?.()
-        }}
-        // Mounted fresh each time Charts opens, so the starting offset is all it takes to land on
-        // the page asked for.
-        contentOffset={{ x: initialPage * width, y: 0 }}
-      >
+      <PageSwitch index={pageIndex} onChange={setPageIndex} />
+      {/* Swiped between on the same pager as Home's Summary and Charts, so a swipe right here on the
+          first page carries on back to Summary. */}
+      <SwipeViews index={pageIndex} onIndexChange={setPageIndex}>
         {/* Page 1: by category. */}
-        <ScrollView style={{ width }} contentContainerStyle={pageContent} nestedScrollEnabled>
+        <ScrollView contentContainerStyle={pageContent} nestedScrollEnabled>
           <Card style={{ marginTop: 4, padding: CARD_PADDING }}>
             {/* The page's name is on the switch above, so the card leads with its own control. */}
             <View className="flex-row justify-center">
@@ -246,10 +216,10 @@ export function MonthCharts({
         </ScrollView>
 
         {/* Page 2: cash flow. */}
-        <ScrollView style={{ width }} contentContainerStyle={[pageContent, { paddingTop: 4 }]} nestedScrollEnabled>
+        <ScrollView contentContainerStyle={[pageContent, { paddingTop: 4 }]} nestedScrollEnabled>
           <CashFlowView month={month} feed={feed} categoryById={categoryById} accounts={accounts} />
         </ScrollView>
-      </ScrollView>
+      </SwipeViews>
 
     </View>
   )

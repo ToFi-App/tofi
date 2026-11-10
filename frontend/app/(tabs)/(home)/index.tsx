@@ -233,33 +233,14 @@ export default function DashboardScreen() {
           style={{ position: 'absolute', top: 0, left: 0, right: 0, height: insets.top }}
         />
       ) : null}
-      {view === 'chart' ? (
-        // On the app's page backdrop — the same faint near-white the Summary's sheet uses — with no sheet
-        // and no mint band. Only the header is shared, in the same place, so the way around stays the same.
+      {/* Summary first, Charts second, as in the switch. Charts pages sideways itself, so from there
+          only a swipe back on its first page is this pager's. */}
+      <SwipeViews
+        index={view === 'chart' ? 1 : 0}
+        onIndexChange={(next) => changeView(next === 1 ? 'chart' : 'grid')}
+        enabled={view === 'grid' || chartPage === 0}
+      >
         <View style={{ flex: 1 }}>
-          <PageBackdrop />
-          <View style={{ paddingHorizontal: SCREEN_PADDING, paddingTop: 16, paddingBottom: 16, gap: 12 }}>
-            <HeroSurfaceContext.Provider value="plain">{summaryHeader}</HeroSurfaceContext.Provider>
-            {errorBanner}
-          </View>
-          <MonthCharts
-            monthFeed={monthFeed}
-            categories={categories.data ?? []}
-            spendByCategory={spendByCategory}
-            incomeByCategory={incomeByCategory}
-            totalExpense={totalExpense}
-            totalIncome={totalIncome}
-            month={month}
-            onSegmentPress={openSegment}
-            feed={feed}
-            categoryById={categoryById}
-            accounts={accounts.data ?? []}
-            initialPage={chartPage}
-            onSwipePastStart={() => changeView('grid')}
-          />
-        </View>
-      ) : (
-        <SwipeViews onSwipeLeft={() => changeView('chart')}>
           <Animated.ScrollView
             ref={scrollRef}
             onScroll={onScroll}
@@ -364,8 +345,33 @@ export default function DashboardScreen() {
             isInteractive={isCollapsed}
             style={barStyle}
           />
-        </SwipeViews>
-      )}
+        </View>
+        {/* Charts: on the app's page backdrop — the same faint near-white the Summary's sheet uses — with
+            no sheet and no mint band. Only the header is shared, in the same place, so the way around
+            stays the same. */}
+        <View style={{ flex: 1 }}>
+          <PageBackdrop />
+          <View style={{ paddingHorizontal: SCREEN_PADDING, paddingTop: 16, paddingBottom: 16, gap: 12 }}>
+            <HeroSurfaceContext.Provider value="plain">{summaryHeader}</HeroSurfaceContext.Provider>
+            {errorBanner}
+          </View>
+          <MonthCharts
+            monthFeed={monthFeed}
+            categories={categories.data ?? []}
+            spendByCategory={spendByCategory}
+            incomeByCategory={incomeByCategory}
+            totalExpense={totalExpense}
+            totalIncome={totalIncome}
+            month={month}
+            onSegmentPress={openSegment}
+            feed={feed}
+            categoryById={categoryById}
+            accounts={accounts.data ?? []}
+            page={chartPage}
+            onPageChange={setChartPage}
+          />
+        </View>
+      </SwipeViews>
 
       <CategoryDetailSheet
         {...detail}
