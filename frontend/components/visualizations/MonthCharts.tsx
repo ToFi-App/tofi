@@ -37,7 +37,12 @@ interface MonthChartsProps {
   accounts: Account[]
   /** The page it opens on: 0 by category, 1 Cash Flow (Home's Cash flow button). */
   initialPage?: number
+  /** A swipe right past the first page: back to the view before Charts in Home's switch. */
+  onSwipePastStart?: () => void
 }
+
+/** How far past the first page the pager has to be pulled, on letting go, to leave Charts. */
+const PAST_START = 56
 
 const PAGES = ['Categories', 'Cash flow'] as const
 
@@ -119,6 +124,7 @@ export function MonthCharts({
   categoryById,
   accounts,
   initialPage = 0,
+  onSwipePastStart,
 }: MonthChartsProps) {
   const insets = useSafeAreaInsets()
   // Extra room at each page's end where the app draws its own floating tab bar (before iOS 26).
@@ -172,6 +178,11 @@ export function MonthCharts({
         pagingEnabled
         showsHorizontalScrollIndicator={false}
         onMomentumScrollEnd={handlePageSettle}
+        // The pager already owns sideways swipes, so leaving Charts is the same swipe carried on past
+        // its first page: the bounce there, pulled far enough.
+        onScrollEndDrag={(e) => {
+          if (e.nativeEvent.contentOffset.x < -PAST_START) onSwipePastStart?.()
+        }}
         // Mounted fresh each time Charts opens, so the starting offset is all it takes to land on
         // the page asked for.
         contentOffset={{ x: initialPage * width, y: 0 }}

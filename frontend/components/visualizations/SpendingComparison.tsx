@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Text, View } from 'react-native'
+import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import { Ionicons } from '@expo/vector-icons'
 import Svg, { Circle, ClipPath, Defs, Line, LinearGradient, Path, Rect, Stop } from 'react-native-svg'
 import { colors, hexToRgba } from '@/constants/theme'
@@ -114,6 +115,18 @@ export function SpendingComparison({ month, comparison }: SpendingComparisonProp
     setScrubDay(Math.min(throughDay, Math.max(1, Math.round((locationX / plotWidth) * daysInMonth))))
   }
 
+  // A touch reads a day and a sideways drag scrubs. It claims sideways movement sooner than a swipe
+  // between Home's views does, so a scrub stays a scrub; vertical movement lets go of it, so a swipe
+  // that starts on the chart still scrolls Home.
+  const scrub = Gesture.Pan()
+    .maxPointers(1)
+    .activeOffsetX([-4, 4])
+    .failOffsetY([-10, 10])
+    .onBegin((e) => scrubAt(e.x))
+    .onUpdate((e) => scrubAt(e.x))
+    .onFinalize(() => setScrubDay(null))
+    .runOnJS(true)
+
   // Headed like the cards round it: its mark, tinted with where the month stands, then its title.
   const labelRow = (
     <View className="flex-row items-center gap-2">
@@ -162,19 +175,8 @@ export function SpendingComparison({ month, comparison }: SpendingComparisonProp
       </View>
 
       <View className="flex-1 justify-end">
-        <View
-          onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
-          style={{ height: CHART_HEIGHT }}
-          // The responder rather than a gesture handler: a touch reads a day and a drag scrubs. It lets
-          // go when the page asks, so a vertical swipe that starts on the chart still scrolls Home.
-          onStartShouldSetResponder={() => true}
-          onMoveShouldSetResponder={() => true}
-          onResponderTerminationRequest={() => true}
-          onResponderTerminate={() => setScrubDay(null)}
-          onResponderGrant={(e) => scrubAt(e.nativeEvent.locationX)}
-          onResponderMove={(e) => scrubAt(e.nativeEvent.locationX)}
-          onResponderRelease={() => setScrubDay(null)}
-        >
+        <GestureDetector gesture={scrub}>
+          <View onLayout={(e) => setWidth(e.nativeEvent.layout.width)} style={{ height: CHART_HEIGHT }}>
           {/* Drawn in the trend charts' own language (TrendLine): a thin line in its direction's
               colour, a fill that fades away from it, a pulsing dot at today, and the same ringed
               marker under a finger. */}
@@ -235,7 +237,8 @@ export function SpendingComparison({ month, comparison }: SpendingComparisonProp
               )}
             </Svg>
           ) : null}
-        </View>
+          </View>
+        </GestureDetector>
       </View>
     </Card>
   )
