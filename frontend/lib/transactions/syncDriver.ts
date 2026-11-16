@@ -3,8 +3,11 @@ import {
   appendPendingRemovedTransactionIds,
   getCachedTransactions,
   getCursor,
+  getPendingIdMigrations,
   setCachedTransactions,
   setCursor,
+  setPendingIdMigrations,
+  type IdMigration,
 } from '@/lib/storage/mmkv'
 import { planSyncMerge, type SyncResultShape } from './planSyncMerge'
 import { reportError } from '@/lib/observability/log'
@@ -21,7 +24,10 @@ export type SyncResponse = SyncResultShape & { itemErrors?: SyncItemError[] }
  *  own authed client — never depend on how the default one is constructed. */
 export type SyncCaller = (input: { cursors: Record<string, string> }) => Promise<SyncResponse>
 
-export type MigrateIdsCaller = (input: { migrations: Array<{ oldId: string; newId: string }> }) => Promise<void>
+export type MigrateIdsCaller = (input: { migrations: IdMigration[] }) => Promise<void>
+
+/** The server's migrateIds accepts at most this many entries per call. */
+const MIGRATE_BATCH_MAX = 500
 
 export interface SyncSnapshot {
   /** Bumped after every round's MMKV writes land, and by notifyCacheMutated. Consumers key
@@ -103,6 +109,7 @@ let lastAttemptKey: string | null = null
 let lastAttemptAt = 0
 let defaultCaller: SyncCaller | null = null
 let defaultMigrateCaller: MigrateIdsCaller | null = null
+const migrationListeners = new Set<(migrations: IdMigration[]) => void>()
 
 function publish(patch: Partial<SyncSnapshot>): void {
   snapshot = { ...snapshot, ...patch }
@@ -133,6 +140,36 @@ function resolveMigrateCaller(explicit?: MigrateIdsCaller): MigrateIdsCaller {
     defaultMigrateCaller = (input) => client.transactions.migrateIds.mutate(input)
   }
   return defaultMigrateCaller
+}
+
+/**
+ * Sends every durably queued pending-to-posted migration and drops the ones the server
+ * confirmed. A failure keeps them queued for the next round or session — never handed to the
+ * orphan sweep, which would delete a transfer that only needed repointing.
+ */
+async function flushIdMigrations(explicit?: MigrateIdsCaller): Promise<void> {
+  const queued = getPendingIdMigrations()
+  if (queued.length === 0) return
+  const batch = queued.slice(0, MIGRATE_BATCH_MAX)
+  try {
+    await resolveMigrateCaller(explicit)({ migrations: batch })
+  } catch (err) {
+    reportError('transaction-id-migration', err, { count: batch.length })
+    return
+  }
+  const sent = new Set(batch.map((m) => m.oldId))
+  // Re-read: nothing else writes this key mid-flush today, but dropping only what was sent
+  // keeps a concurrent append from being erased.
+  setPendingIdMigrations(getPendingIdMigrations().filter((m) => !sent.has(m.oldId)))
+  // Server rows now carry the posted ids; any cached copy of overrides or transfers is keyed on
+  // the pending ones and must be refetched, or edits look lost until the next cold start.
+  for (const listener of migrationListeners) {
+    try {
+      listener(batch)
+    } catch (err) {
+      reportError('transaction-id-migration-listener', err)
+    }
+  }
 }
 
 function backoffFor(consecutiveThrottles: number): number {
@@ -174,17 +211,22 @@ async function drain(options: SyncNowOptions): Promise<void> {
       for (const [itemId, merged] of plan.mergedByItem) setCachedTransactions(itemId, merged)
       for (const [itemId, cursor] of Object.entries(plan.cursors)) setCursor(itemId, cursor)
       // Queued durably BEFORE announcing the round: Plaid emits each removal exactly once, and
-      // after the merge above the transaction is gone from the cache — this queue is the only
-      // remaining evidence a transfer referencing it must be dissolved (orphan sweep).
-      appendPendingRemovedTransactionIds(plan.removedIds)
-
+      // after the merge above the transaction is gone from the cache — these queues are the only
+      // remaining evidence of what happened to it.
+      //
+      // A pending id that settled into a posted one is NOT a retraction, so it goes to the
+      // migration queue instead of the removed queue. Were it in the removed queue, the orphan
+      // sweep — still holding a transfers list fetched before the migration — would see a
+      // transfer on a "retracted" leg and delete it, even though the server had just repointed
+      // that same row to the posted id. That is how reimbursements vanished on settlement.
+      const settledIds = new Set(plan.pendingToPosted.map((m) => m.oldId))
       if (plan.pendingToPosted.length > 0) {
-        try {
-          await resolveMigrateCaller(options.callMigrateIds)({ migrations: plan.pendingToPosted })
-        } catch (err) {
-          reportError('transaction-id-migration', err, { count: plan.pendingToPosted.length })
-        }
+        setPendingIdMigrations([...getPendingIdMigrations(), ...plan.pendingToPosted])
       }
+      appendPendingRemovedTransactionIds(plan.removedIds.filter((id) => !settledIds.has(id)))
+
+      // Also retries anything left over from a failed round or a killed session.
+      await flushIdMigrations(options.callMigrateIds)
 
       options.onRound?.(response)
 
@@ -238,6 +280,15 @@ export const syncDriver = {
 
   getSnapshot(): SyncSnapshot {
     return snapshot
+  },
+
+  /**
+   * Called after the server confirms pending-to-posted id migrations, so holders of server data
+   * keyed by transaction id (overrides, transfers) can refetch. Returns an unsubscribe.
+   */
+  onIdsMigrated(listener: (migrations: IdMigration[]) => void): () => void {
+    migrationListeners.add(listener)
+    return () => void migrationListeners.delete(listener)
   },
 
   /** Announces MMKV writes made outside a sync (the cache prune) so consumers re-read. */
