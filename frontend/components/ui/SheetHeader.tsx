@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react'
-import { Pressable, Text, View } from 'react-native'
+import { Pressable, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { colors } from '@/constants/theme'
+import { ScrollingText } from './ScrollingText'
 
 const SLOT = 22
 
@@ -11,7 +12,8 @@ const SLOT = 22
  * sit at the same height with the same spacing.
  *
  * The right slot is always reserved at the close button's width, action or not — that is what
- * centres the title on the sheet rather than on the space left over.
+ * centres the title on the sheet rather than on the space left over. A title too long for the row
+ * scrolls sideways instead of being cut off, as account names do.
  */
 export function SheetHeader({
   title,
@@ -40,9 +42,11 @@ export function SheetHeader({
       >
         <Ionicons name={onBack ? 'chevron-back' : 'close'} size={SLOT} color={colors.textSecondary} />
       </Pressable>
-      <Text className="flex-1 text-center font-display text-md text-textPrimary" numberOfLines={1}>
-        {title}
-      </Text>
+      <View className="flex-1">
+        <ScrollingText align="center" className="font-display text-md text-textPrimary">
+          {title}
+        </ScrollingText>
+      </View>
       <View style={{ width: SLOT, alignItems: 'flex-end' }}>{right}</View>
     </View>
   )

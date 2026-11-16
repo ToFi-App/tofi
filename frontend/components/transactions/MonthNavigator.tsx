@@ -26,6 +26,11 @@ interface MonthNavigatorProps {
   variant?: 'inline' | 'title' | 'header' | 'pill'
   /** 'inverse' draws the title and arrows white, for a header on the brand colour. */
   tone?: 'default' | 'inverse'
+  /**
+   * When given, only these months can be picked ("2026-06"): the rest stay in the grid, so it keeps
+   * its shape, but fade and ignore taps. The Calendar passes the months its filter matches.
+   */
+  availableMonths?: Set<string>
 }
 
 export function MonthNavigator({
@@ -35,6 +40,7 @@ export function MonthNavigator({
   onSelect,
   variant = 'inline',
   tone = 'default',
+  availableMonths,
 }: MonthNavigatorProps) {
   const labelRef = useRef<View>(null)
   const heroInk = useHeroInk()
@@ -195,6 +201,8 @@ export function MonthNavigator({
                   const value = index + 1
                   const isSelected = pickerYear === month.year && value === month.month
                   const isCurrent = pickerYear === today.year && value === today.month
+                  const isAvailable =
+                    !availableMonths || availableMonths.has(`${pickerYear}-${String(value).padStart(2, '0')}`)
                   return (
                     <View key={name} style={{ width: '33.33%', padding: 3 }}>
                       <Pressable
@@ -202,9 +210,12 @@ export function MonthNavigator({
                           onSelect({ year: pickerYear, month: value })
                           close()
                         }}
+                        disabled={!isAvailable}
                         accessibilityLabel={`${name} ${pickerYear}`}
+                        accessibilityState={{ disabled: !isAvailable }}
                         className="items-center rounded-lg py-2"
                         style={{
+                          opacity: isAvailable || isSelected ? 1 : 0.3,
                           backgroundColor: isSelected ? colors.primary : 'transparent',
                           // The current calendar month stays findable while browsing other years.
                           borderWidth: 1,

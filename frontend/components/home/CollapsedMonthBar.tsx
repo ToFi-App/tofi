@@ -1,6 +1,7 @@
 import { Pressable, Text, View, type ViewStyle } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
-import Animated, { type AnimatedStyle } from 'react-native-reanimated'
+import type { AnimatedStyle } from 'react-native-reanimated'
+import { CollapsingBar } from '@/components/ui/CollapsingBar'
 import { heroGradient } from '@/constants/theme'
 import { MASKED_AMOUNT } from '@/lib/format/money'
 import { useAmountsMasked } from '@/hooks/useAmountsMasked'
@@ -36,14 +37,10 @@ export function CollapsedMonthBar({
 }) {
   const { isMasked } = useAmountsMasked()
   return (
-    <Animated.View
-      pointerEvents={isInteractive ? 'auto' : 'none'}
+    <CollapsingBar
+      isInteractive={isInteractive}
       style={[
         {
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
           height: COLLAPSED_BAR_HEIGHT,
           paddingHorizontal: 20,
           backgroundColor: heroGradient.stops[0],
@@ -80,6 +77,6 @@ export function CollapsedMonthBar({
           <Ionicons name="chevron-forward" size={20} color={HERO_INK} />
         </Pressable>
       </View>
-    </Animated.View>
+    </CollapsingBar>
   )
 }

@@ -22,7 +22,7 @@ interface DayGroupedTransactionsProps {
   reimbursementCategoryNameFor?: (item: FeedItem) => string | null
   onItemPress: (item: FeedItem) => void
   /** The Transactions tab measures each day card to scroll its calendar to a tapped date. */
-  onDayLayout?: (date: string, y: number) => void
+  onDayLayout?: (date: string, y: number, height: number) => void
   /**
    * Overrides the day card's own classes. Exists for onDayLayout's sake: onLayout reports y
    * relative to the immediate parent, so a caller that needs those offsets in scroll-content
@@ -58,7 +58,7 @@ function DayGroupedTransactionsComponent({
           key={day.date}
           className={cardClassName}
           style={shadow.sm}
-          onLayout={onDayLayout ? (event) => onDayLayout(day.date, event.nativeEvent.layout.y) : undefined}
+          onLayout={onDayLayout ? (event) => onDayLayout(day.date, event.nativeEvent.layout.y, event.nativeEvent.layout.height) : undefined}
         >
           <DayGroupHeader date={day.date} items={day.items} />
           {day.items.map((item) => {

@@ -1,15 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import { Pressable, Text, View, useWindowDimensions } from 'react-native'
-import Animated, {
-  Extrapolation,
-  interpolate,
-  runOnJS,
-  useAnimatedReaction,
-  useAnimatedRef,
-  useAnimatedScrollHandler,
-  useAnimatedStyle,
-  useSharedValue,
-} from 'react-native-reanimated'
+import Animated, { Extrapolation, interpolate, useAnimatedRef, useAnimatedStyle } from 'react-native-reanimated'
+import { useCollapseOnScroll } from '@/hooks/useCollapseOnScroll'
 import { Ionicons } from '@expo/vector-icons'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router, useFocusEffect } from 'expo-router'
@@ -127,18 +119,14 @@ export default function DashboardScreen() {
   // slim bar that keeps the month in view; the scroll snaps to fully open or fully collapsed, so the
   // page never sits half-way. Measured from the top section's own height, which changes with it.
   const scrollRef = useAnimatedRef<Animated.ScrollView>()
-  const scrollY = useSharedValue(0)
   const [heroHeight, setHeroHeight] = useState(0)
-  const [isCollapsed, setIsCollapsed] = useState(false)
   const collapseAt = Math.max(0, heroHeight - SHEET_OVERLAP - COLLAPSED_BAR_HEIGHT)
+  const { scrollY, onScroll, barStyle, isCollapsed } = useCollapseOnScroll(collapseAt)
   // Home's tab tapped again: back to the Summary view, scrolled to the top with the month showing.
   useHomeTabReselect(() => {
     setView('grid')
     setChartPage(0)
     scrollRef.current?.scrollTo({ y: 0, animated: true })
-  })
-  const onScroll = useAnimatedScrollHandler((event) => {
-    scrollY.value = event.contentOffset.y
   })
   const heroStyle = useAnimatedStyle(() => ({
     opacity: collapseAt > 0 ? interpolate(scrollY.value, [0, collapseAt], [1, 0.25], Extrapolation.CLAMP) : 1,
@@ -153,16 +141,6 @@ export default function DashboardScreen() {
         : SHEET_RADIUS
     return { borderTopLeftRadius: radius, borderTopRightRadius: radius }
   })
-  const barStyle = useAnimatedStyle(() => ({
-    opacity: collapseAt > 0 ? interpolate(scrollY.value, [collapseAt - 32, collapseAt], [0, 1], Extrapolation.CLAMP) : 0,
-  }))
-  useAnimatedReaction(
-    () => collapseAt > 0 && scrollY.value >= collapseAt - 16,
-    (collapsed, previous) => {
-      if (collapsed !== previous) runOnJS(setIsCollapsed)(collapsed)
-    },
-    [collapseAt],
-  )
 
   const hasNoAccounts = !accounts.isLoading && (accounts.data?.length ?? 0) === 0
   // The Summary's top section runs up under the clock, so the status bar takes its colour — and its
