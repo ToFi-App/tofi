@@ -37,6 +37,8 @@ interface ScrollingTextProps {
    * any other colour shows as a box at the end of the text.
    */
   fadeColor?: string
+  /** Where text that fits sits: at the start (the default), or centred, as in a sheet's title. */
+  align?: 'start' | 'center'
 }
 
 /**
@@ -51,7 +53,15 @@ interface ScrollingTextProps {
  * and the scroll view can't get it back. So the text carries its own Pressable, with the row's
  * handlers passed in, which hands the touch over as soon as the finger moves sideways.
  */
-export function ScrollingText({ children, className, textStyle, style, pressProps, fadeColor = colors.surface }: ScrollingTextProps) {
+export function ScrollingText({
+  children,
+  className,
+  textStyle,
+  style,
+  pressProps,
+  fadeColor = colors.surface,
+  align = 'start',
+}: ScrollingTextProps) {
   const [viewWidth, setViewWidth] = useState(0)
   const [contentWidth, setContentWidth] = useState(0)
   const [offset, setOffset] = useState(0)
@@ -70,7 +80,9 @@ export function ScrollingText({ children, className, textStyle, style, pressProp
         directionalLockEnabled
         nestedScrollEnabled
         style={[{ flexGrow: 0 }, style]}
-        contentContainerStyle={{ alignItems: 'center' }}
+        // Centred, the content is stretched to at least the view's width so it has room to centre in;
+        // text longer than that widens it as usual and scrolls.
+        contentContainerStyle={align === 'center' ? { alignItems: 'center', flexGrow: 1, justifyContent: 'center' } : { alignItems: 'center' }}
         onLayout={(e) => setViewWidth(e.nativeEvent.layout.width)}
         onContentSizeChange={(width) => setContentWidth(width)}
         onScroll={(e) => setOffset(e.nativeEvent.contentOffset.x)}

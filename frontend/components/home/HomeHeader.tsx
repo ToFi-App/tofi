@@ -17,6 +17,14 @@ interface HomeHeaderProps {
   onWrite: () => void
   /** The screen's own control, at the left of the row — Home's Summary/Charts switch. */
   leading?: ReactNode
+  /**
+   * A filter button for the left of the row — the Calendar's, which has no `leading` of its own.
+   * Three buttons don't fit right of the centred month pill on a narrow phone, so it takes the
+   * free left side and the account filter and write button keep their places.
+   */
+  filterButton?: ReactNode
+  /** Months the month picker lets you pick; see MonthNavigator. All of them when absent. */
+  availableMonths?: Set<string>
 }
 
 /**
@@ -27,11 +35,24 @@ interface HomeHeaderProps {
  * The pill is centred on the row itself rather than between its neighbours, which are of different
  * widths: it sits on the same centre line as the figure under it.
  */
-export function HomeHeader({ month, onMonthChange, accounts, selectedAccountId, onAccountChange, onWrite, leading }: HomeHeaderProps) {
+export function HomeHeader({
+  month,
+  onMonthChange,
+  accounts,
+  selectedAccountId,
+  onAccountChange,
+  onWrite,
+  leading,
+  filterButton,
+  availableMonths,
+}: HomeHeaderProps) {
   const ink = useHeroInk()
+  const accountFilter = (
+    <AccountsFilterDropdown variant="glass" accounts={accounts} selectedAccountId={selectedAccountId} onSelect={onAccountChange} />
+  )
   return (
     <View className="flex-row items-center justify-between">
-      {leading ?? <View />}
+      {leading ?? filterButton ?? <View />}
       <View pointerEvents="box-none" className="absolute bottom-0 left-0 right-0 top-0 items-center justify-center">
         <MonthNavigator
           variant="pill"
@@ -39,10 +60,11 @@ export function HomeHeader({ month, onMonthChange, accounts, selectedAccountId, 
           onPrevious={() => onMonthChange(shiftMonth(month, -1))}
           onNext={() => onMonthChange(shiftMonth(month, 1))}
           onSelect={onMonthChange}
+          availableMonths={availableMonths}
         />
       </View>
       <View className="flex-row items-center gap-2">
-        <AccountsFilterDropdown variant="glass" accounts={accounts} selectedAccountId={selectedAccountId} onSelect={onAccountChange} />
+        {accountFilter}
         <GlassButton onPress={onWrite} accessibilityLabel="Write a transaction">
           <SquarePen size={18} strokeWidth={2} color={ink} />
         </GlassButton>
