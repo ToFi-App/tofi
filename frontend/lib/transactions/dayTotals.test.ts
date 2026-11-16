@@ -41,6 +41,8 @@ describe('dayTotals', () => {
     expect(dayTotals([item({ id: 'a', amount: 15.15 }), item({ id: 'b', amount: -40 })])).toEqual({
       income: 40,
       expense: 15.15,
+      pendingIncome: 0,
+      pendingExpense: 0,
     })
   })
 
@@ -48,6 +50,8 @@ describe('dayTotals', () => {
     expect(dayTotals([item({ id: 'a', amount: 100, reimbursedAmount: 60, netAmount: 40 })])).toEqual({
       income: 0,
       expense: 40,
+      pendingIncome: 0,
+      pendingExpense: 0,
     })
   })
 
@@ -56,7 +60,7 @@ describe('dayTotals', () => {
   it('returns zero for a day whose only row is an excluded sweep', () => {
     expect(
       dayTotals([item({ id: 'sweep', amount: 286, isBrokerageCashAccount: true, isSweptOutflow: true })]),
-    ).toEqual({ income: 0, expense: 0 })
+    ).toEqual({ income: 0, expense: 0, pendingIncome: 0, pendingExpense: 0 })
   })
 
   it('leaves out a transfer leg and a reimbursement income leg', () => {
@@ -66,10 +70,37 @@ describe('dayTotals', () => {
         item({ id: 'reimb', amount: -60, isReimbursementIncome: true }),
         item({ id: 'real', amount: 12 }),
       ]),
-    ).toEqual({ income: 0, expense: 12 })
+    ).toEqual({ income: 0, expense: 12, pendingIncome: 0, pendingExpense: 0 })
   })
 
   it('returns zero for no rows', () => {
-    expect(dayTotals([])).toEqual({ income: 0, expense: 0 })
+    expect(dayTotals([])).toEqual({ income: 0, expense: 0, pendingIncome: 0, pendingExpense: 0 })
+  })
+
+  // A day of nothing but pending charges used to read $0.00 over a list of real spending.
+  it('sums pending rows apart from the settled ones', () => {
+    expect(
+      dayTotals([
+        item({ id: 'settled', amount: 45 }),
+        item({ id: 'p1', amount: 26.89, pending: true }),
+        item({ id: 'p2', amount: 9.49, pending: true }),
+        item({ id: 'refund', amount: -20, pending: true }),
+      ]),
+    ).toEqual({ income: 0, expense: 45, pendingIncome: 20, pendingExpense: 36.38 })
+  })
+
+  it('leaves a pending transfer leg out of the pending figure too', () => {
+    expect(
+      dayTotals([
+        item({
+          id: 'out',
+          amount: 500,
+          pending: true,
+          transferId: 't1',
+          transferKind: 'account_transfer',
+          transferRole: 'expense',
+        }),
+      ]),
+    ).toEqual({ income: 0, expense: 0, pendingIncome: 0, pendingExpense: 0 })
   })
 })

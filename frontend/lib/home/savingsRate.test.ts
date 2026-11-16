@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { savingsChange, savingsRate } from './savingsRate'
+import { formatSavingsRate, savingsChange, savingsRate } from './savingsRate'
 
 describe('savingsRate', () => {
   it('is the share of income not spent', () => {
@@ -34,5 +34,29 @@ describe('savingsChange', () => {
 
   it('is null with nothing last month to compare with', () => {
     expect(savingsChange(month(1000, 500), month(0, 0))).toBeNull()
+  })
+})
+
+describe('formatSavingsRate', () => {
+  it('writes a whole percent with a true minus sign', () => {
+    expect(formatSavingsRate(0.256)).toBe('26%')
+    expect(formatSavingsRate(-0.6)).toBe('−60%')
+    expect(formatSavingsRate(0)).toBe('0%')
+  })
+
+  it('shows −100% itself in full', () => {
+    expect(formatSavingsRate(-1)).toBe('−100%')
+    expect(formatSavingsRate(-1.004)).toBe('−100%')
+  })
+
+  // 2¢ of interest against $1,000 out: the raw rate is −4,999,900%.
+  it('caps anything below −100%', () => {
+    expect(formatSavingsRate(savingsRate(0.02, 1000)!)).toBe('< −100%')
+    expect(formatSavingsRate(-1.5)).toBe('< −100%')
+  })
+
+  it('words the cap for a screen reader', () => {
+    expect(formatSavingsRate(-1.5, { spoken: true })).toBe('below −100%')
+    expect(formatSavingsRate(-0.6, { spoken: true })).toBe('−60%')
   })
 })

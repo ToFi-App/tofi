@@ -21,10 +21,15 @@ interface DayGroupHeaderProps {
  *
  * A day where nothing counts shows a muted $0.00 rather than nothing at all: the rows are still
  * listed below (greyed, badged), and a blank header left it ambiguous whether they'd been counted.
+ *
+ * Pending money gets its own figure after the settled ones, never folded into them: OUT stays what
+ * the settled balances say, and a day of only pending charges reads "$131.16 pending" instead of
+ * $0.00. Each figure is its own Text in the row's gap (design.md: no dot separators), and the
+ * pending ones step back by weight and textSecondary rather than taking a money colour.
  */
 function DayGroupHeaderComponent({ date, items, className }: DayGroupHeaderProps) {
-  const { income, expense } = dayTotals(items)
-  const hasTotals = income > 0 || expense > 0
+  const { income, expense, pendingIncome, pendingExpense } = dayTotals(items)
+  const hasTotals = income > 0 || expense > 0 || pendingIncome > 0 || pendingExpense > 0
 
   return (
     <View className={className ?? 'flex-row items-center justify-between py-3'}>
@@ -35,6 +40,12 @@ function DayGroupHeaderComponent({ date, items, className }: DayGroupHeaderProps
       <View className="flex-row gap-3">
         {income > 0 ? <Text className="font-sans text-xs text-income">IN {formatAmount(income)}</Text> : null}
         {expense > 0 ? <Text className="font-sans text-xs text-expense">OUT {formatAmount(expense)}</Text> : null}
+        {pendingIncome > 0 ? (
+          <Text className="font-sansMed text-xs text-textSecondary">{formatAmount(pendingIncome)} pending in</Text>
+        ) : null}
+        {pendingExpense > 0 ? (
+          <Text className="font-sansMed text-xs text-textSecondary">{formatAmount(pendingExpense)} pending</Text>
+        ) : null}
         {hasTotals ? null : <Text className="font-sans text-xs text-textMuted">{formatAmount(0)}</Text>}
       </View>
     </View>

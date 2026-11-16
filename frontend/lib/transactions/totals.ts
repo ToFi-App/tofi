@@ -140,8 +140,17 @@ export function hasReimbursementSurplus(item: FeedItem): boolean {
 // always household money: it counts when nothing pairs it, and is excluded by isInternalMovement
 // when something does.
 export function countsTowardTotals(item: FeedItem): boolean {
+  return !item.pending && countsOncePosted(item)
+}
+
+/**
+ * Every countsTowardTotals rule except the pending one: whether this row will count once the bank
+ * settles it. A pending row that passes is spending or income on its way, which is what the
+ * "pending" figure beside a total sums. One that fails (a pending transfer leg, say) won't count
+ * even after posting, so it belongs in neither figure.
+ */
+export function countsOncePosted(item: FeedItem): boolean {
   return (
-    !item.pending &&
     (!item.isReimbursementIncome || hasReimbursementSurplus(item)) &&
     !isInternalMovement(item) &&
     !item.isSweptOutflow

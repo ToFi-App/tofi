@@ -1,9 +1,12 @@
-import { countsTowardTotals } from './totals'
+import { countsOncePosted, countsTowardTotals } from './totals'
 import type { FeedItem } from './resolveFeed'
 
 export interface DayTotals {
   income: number
   expense: number
+  /** Pending rows that will count once they post, kept apart from the settled figures. */
+  pendingIncome: number
+  pendingExpense: number
 }
 
 /**
@@ -15,17 +18,22 @@ export interface DayTotals {
  * only rows are excluded comes back {0, 0}, which is what lets the header say so plainly instead
  * of claiming spend the greyed rows below it don't have.
  *
- * Both figures are positive magnitudes; the sign lives in which field the money landed in.
+ * Pending rows are summed separately rather than dropped: a day of nothing but pending charges
+ * otherwise reads $0.00 over a list of real spending. They stay out of income/expense, which
+ * match the settled balances and every other total in the app.
+ *
+ * All four figures are positive magnitudes; the sign lives in which field the money landed in.
  */
 export function dayTotals(items: FeedItem[]): DayTotals {
-  let income = 0
-  let expense = 0
+  const totals: DayTotals = { income: 0, expense: 0, pendingIncome: 0, pendingExpense: 0 }
   for (const item of items) {
-    if (!countsTowardTotals(item)) continue
+    const settled = countsTowardTotals(item)
+    if (!settled && !(item.pending && countsOncePosted(item))) continue
     // Sign off the raw amount, magnitude off the net: a reimbursed expense is still an expense,
     // and it's the netted figure the user actually paid.
-    if (item.amount < 0) income += Math.abs(item.netAmount ?? item.amount)
-    else expense += item.netAmount ?? item.amount
+    const net = item.netAmount ?? item.amount
+    if (item.amount < 0) totals[settled ? 'income' : 'pendingIncome'] += Math.abs(net)
+    else totals[settled ? 'expense' : 'pendingExpense'] += net
   }
-  return { income, expense }
+  return totals
 }

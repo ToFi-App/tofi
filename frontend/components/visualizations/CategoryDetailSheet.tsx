@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 import { ScrollView, Text, View } from 'react-native'
 import { BottomSheet, useSheetScroll } from '@/components/ui/BottomSheet'
 import type { SheetScroll } from '@/components/ui/BottomSheet'
@@ -9,6 +9,7 @@ import {
 import { CategoryIcon } from '@/components/categories/CategoryIcon'
 import { hexToRgba } from '@/constants/theme'
 import { formatAmount } from '@/lib/format/money'
+import { dayTotals } from '@/lib/transactions/dayTotals'
 import type { FeedItem } from '@/lib/transactions/resolveFeed'
 import type { DonutSegment } from '@/lib/transactions/visualizationData'
 import { CategoryDonut } from './CategoryDonut'
@@ -17,6 +18,8 @@ import { SheetHeader } from '@/components/ui/SheetHeader'
 interface CategoryDetailSheetProps {
   visible: boolean
   segment: DonutSegment | null
+  /** Which side of the ledger the segment is from, which decides which pending money is its own. */
+  mode: 'expense' | 'income'
   allSegments: DonutSegment[]
   /** The rows to display — this segment's slice of the feed. */
   transactions: FeedItem[]
@@ -34,11 +37,13 @@ interface CategoryDetailSheetProps {
  */
 function CategoryDetailSheetBody({
   segment,
+  mode,
   allSegments,
   transactions,
   sheetScroll,
 }: {
   segment: DonutSegment
+  mode: 'expense' | 'income'
   allSegments: DonutSegment[]
   transactions: FeedItem[]
   sheetScroll: SheetScroll
@@ -54,21 +59,46 @@ function CategoryDetailSheetBody({
     [segment.name, segment.color, segment.icon],
   )
 
+  // Pending rows don't count toward segment.amount (settled only, matching the donut and budgets),
+  // but they are listed below, so their sum is shown beside it rather than leaving the header at
+  // $0.00 over a list of real spending. Summed with dayTotals so it agrees with the day headers.
+  const pending = useMemo(() => {
+    const totals = dayTotals(transactions)
+    return mode === 'expense' ? totals.pendingExpense : totals.pendingIncome
+  }, [transactions, mode])
+  const onlyPending = segment.amount === 0 && pending > 0
+
   return (
     <ScrollView {...sheetScroll.scrollProps} showsVerticalScrollIndicator={false} className="px-5">
       <CategoryDonut segments={allSegments} highlightedCategoryId={segment.categoryId} size={180} />
 
-      <View className="flex-row items-center justify-center gap-2" style={{ marginTop: 8, marginBottom: 12 }}>
-        <View
-          className="items-center justify-center rounded-full"
-          style={{ width: 28, height: 28, backgroundColor: hexToRgba(segment.color, 0.2) }}
-        >
-          <CategoryIcon icon={segment.icon} size={14} color={segment.color} />
+      <View className="items-center gap-1" style={{ marginTop: 8, marginBottom: 12 }}>
+        <View className="flex-row items-center justify-center gap-2">
+          <View
+            className="items-center justify-center rounded-full"
+            style={{ width: 28, height: 28, backgroundColor: hexToRgba(segment.color, 0.2) }}
+          >
+            <CategoryIcon icon={segment.icon} size={14} color={segment.color} />
+          </View>
+          <Text className="font-sansSemi text-md text-textPrimary">{segment.name}</Text>
+          {onlyPending ? (
+            // Nothing settled yet: the pending sum leads, in textPrimary rather than the category
+            // colour, which means a counted total. Its word is a Text of its own (design.md: no
+            // dot separators), set back by weight and colour.
+            <>
+              <Text className="font-display text-md text-textPrimary">{formatAmount(pending)}</Text>
+              <Text className="font-sansMed text-sm text-textSecondary">pending</Text>
+            </>
+          ) : (
+            <Text className="font-display text-md" style={{ color: segment.color }}>
+              {formatAmount(segment.amount)}
+            </Text>
+          )}
         </View>
-        <Text className="font-sansSemi text-md text-textPrimary">{segment.name}</Text>
-        <Text className="font-display text-md" style={{ color: segment.color }}>
-          {formatAmount(segment.amount)}
-        </Text>
+        {/* Settled and pending together: pending gets its own line under the total, never joined to it. */}
+        {!onlyPending && pending > 0 ? (
+          <Text className="font-sansMed text-sm text-textSecondary">{formatAmount(pending)} pending</Text>
+        ) : null}
       </View>
 
       {transactions.length === 0 ? (
@@ -84,7 +114,7 @@ function CategoryDetailSheetBody({
   )
 }
 
-export function CategoryDetailSheet({ visible, segment, allSegments, transactions, feed, onClose }: CategoryDetailSheetProps) {
+export function CategoryDetailSheet({ visible, segment, mode, allSegments, transactions, feed, onClose }: CategoryDetailSheetProps) {
   const sheetScroll = useSheetScroll()
 
   if (!segment) return null
@@ -95,6 +125,7 @@ export function CategoryDetailSheet({ visible, segment, allSegments, transaction
       {/* No provider here: it is mounted once in the tabs layout. See AuthedShell there. */}
       <CategoryDetailSheetBody
           segment={segment}
+          mode={mode}
           allSegments={allSegments}
           transactions={transactions}
           sheetScroll={sheetScroll}

@@ -3,7 +3,7 @@ import { Pressable, Text, View } from 'react-native'
 import Animated, { Easing, useAnimatedProps, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated'
 import Svg, { Circle, Path } from 'react-native-svg'
 import { colors, hexToRgba } from '@/constants/theme'
-import { savingsChange, savingsRate } from '@/lib/home/savingsRate'
+import { formatSavingsRate, savingsChange, savingsRate } from '@/lib/home/savingsRate'
 import { MASKED_AMOUNT } from '@/lib/format/money'
 import { useAmountsMasked } from '@/hooks/useAmountsMasked'
 import { Card } from '@/components/ui/Card'
@@ -27,12 +27,6 @@ const FIGURE_WIDTH = RING_SIZE - RING_STROKE * 2 - 10
 /** How long a press is held before the comparison shows — long enough that a scroll passing over the
  *  tile doesn't flash it. */
 const REVEAL_DELAY_MS = 250
-
-/** A rate as a whole percent, with a true minus sign when it's negative. */
-function percent(rate: number): string {
-  const rounded = Math.round(rate * 100)
-  return rounded < 0 ? `−${-rounded}%` : `${rounded}%`
-}
 
 /**
  * The month's savings rate, as a tile beside Spending on Home: how much of what came in wasn't spent,
@@ -129,7 +123,7 @@ export function SavingsRate({
       }}
       onPressOut={() => setIsRevealed(false)}
       accessibilityLabel={
-        rate == null ? 'Savings rate. No income yet this month' : `Savings rate ${percent(rate)} of income. ${comparison}`
+        rate == null ? 'Savings rate. No income yet this month' : `Savings rate ${formatSavingsRate(rate, { spoken: true })} of income. ${comparison}`
       }
     >
       <Card grow style={{ padding: 14, gap: 8 }}>
@@ -199,7 +193,7 @@ export function SavingsRate({
                   adjustsFontSizeToFit
                   minimumFontScale={0.5}
                 >
-                  {percent(rate)}
+                  {formatSavingsRate(rate)}
                 </Text>
               )}
             </View>

@@ -47,7 +47,7 @@ describe('a reimbursement larger than its expense', () => {
   })
 
   it("shows the surplus in the income day's header", () => {
-    expect(dayTotals([find('payout')])).toEqual({ income: 3000, expense: 0 })
+    expect(dayTotals([find('payout')])).toEqual({ income: 3000, expense: 0, pendingIncome: 0, pendingExpense: 0 })
   })
 
   it('still counts nothing for an income that only covers its expense', () => {
