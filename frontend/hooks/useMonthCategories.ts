@@ -179,6 +179,7 @@ export function useMonthCategories() {
     detail: {
       visible: detailState != null,
       segment: detailState?.segment ?? null,
+      mode: detailState?.mode ?? 'expense',
       allSegments: detailSegments,
       transactions: detailTransactions,
       onClose: () => setDetailState(null),
