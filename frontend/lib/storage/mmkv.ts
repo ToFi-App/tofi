@@ -84,6 +84,34 @@ export function appendPendingRemovedTransactionIds(ids: string[]): void {
   setPendingRemovedTransactionIds(Array.from(merged))
 }
 
+// Pending-to-posted id migrations not yet confirmed by the server (transactions.migrateIds).
+// A settled pending id is deliberately kept OUT of the removed queue above: settling is not a
+// retraction, and the orphan sweep would otherwise delete the very transfer the migration just
+// repointed. Durable for the same reason as that queue: Plaid reports the pair exactly once, so
+// if the app dies before the server confirms, this list is the only way to retry.
+const PENDING_ID_MIGRATIONS_KEY = 'pending-id-migrations'
+
+export interface IdMigration {
+  oldId: string
+  newId: string
+}
+
+export function getPendingIdMigrations(): IdMigration[] {
+  const raw = storage.getString(PENDING_ID_MIGRATIONS_KEY)
+  if (!raw) return []
+  try {
+    return JSON.parse(raw) as IdMigration[]
+  } catch (err) {
+    reportError('pending-id-migrations', err)
+    return []
+  }
+}
+
+export function setPendingIdMigrations(migrations: IdMigration[]): void {
+  if (migrations.length === 0) storage.delete(PENDING_ID_MIGRATIONS_KEY)
+  else storage.set(PENDING_ID_MIGRATIONS_KEY, JSON.stringify(migrations.slice(-PENDING_REMOVED_CAP)))
+}
+
 /**
  * Namespace for the investment cache, versioned.
  *

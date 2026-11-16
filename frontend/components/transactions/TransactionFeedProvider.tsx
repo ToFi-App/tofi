@@ -21,6 +21,7 @@ import { applyInvestmentTradeLabels, applySweepExclusion } from '@/lib/transacti
 import { aggregateMonth } from '@/lib/transactions/aggregateMonth'
 import { syncDriver } from '@/lib/transactions/syncDriver'
 import { reportError } from '@/lib/observability/log'
+import { api } from '@/lib/api/client'
 import { detectPendingPreviews, detectTransfers } from '@/lib/transfers/autoMatch'
 import { findOrphanedTransfers } from '@/lib/transfers/orphanCleanup'
 import type { AutoMatchResult, TransferDraft } from '@/lib/transfers/autoMatch'
@@ -121,6 +122,19 @@ export function TransactionFeedProvider({ children }: { children: ReactNode }) {
     for (const [itemId, kept] of plan) setCachedTransactions(itemId, kept)
     syncDriver.notifyCacheMutated()
   }, [accounts.isLoading, accounts.data, itemIds, liveAccountIdsByItem, failedItemIds])
+
+  // When a pending transaction settles, the server repoints its overrides (category, note) and
+  // transfer legs (reimbursements) to the posted id. Our cached copies are still keyed on the
+  // pending id, so without a refetch the settled row shows none of the user's edits.
+  const utils = api.useUtils()
+  useEffect(
+    () =>
+      syncDriver.onIdsMigrated(() => {
+        void utils.transactionOverrides.list.invalidate()
+        void utils.transfers.list.invalidate()
+      }),
+    [utils],
+  )
 
   // Cursor discipline, pacing, dedupe and rate-limit backoff all live in the driver; this is
   // only the trigger. An unforced call inside the cooldown is a no-op, so remounts are free.

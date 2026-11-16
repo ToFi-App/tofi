@@ -8,6 +8,7 @@ vi.mock('@/lib/api/client', () => ({ createHeadlessApiClient: () => { throw new 
 const cursors = new Map<string, string>()
 const cached = new Map<string, PlaidTransaction[]>()
 let removedQueue: string[] = []
+let migrationQueue: Array<{ oldId: string; newId: string }> = []
 
 vi.mock('@/lib/storage/mmkv', () => ({
   getCursor: (itemId: string) => cursors.get(itemId),
@@ -15,6 +16,8 @@ vi.mock('@/lib/storage/mmkv', () => ({
   getCachedTransactions: (itemId: string) => cached.get(itemId) ?? [],
   setCachedTransactions: (itemId: string, txns: PlaidTransaction[]) => void cached.set(itemId, txns),
   appendPendingRemovedTransactionIds: (ids: string[]) => void (removedQueue = [...removedQueue, ...ids]),
+  getPendingIdMigrations: () => migrationQueue,
+  setPendingIdMigrations: (m: Array<{ oldId: string; newId: string }>) => void (migrationQueue = m),
 }))
 
 const ACCOUNT_TO_ITEM = new Map([['acc-1', 'item-1']])
@@ -47,6 +50,7 @@ describe('syncDriver', () => {
     cursors.clear()
     cached.clear()
     removedQueue = []
+    migrationQueue = []
     const { syncDriver } = await importDriver()
     syncDriver.reset()
   })
@@ -333,4 +337,75 @@ describe('syncDriver', () => {
     expect(call).toHaveBeenCalledTimes(2)
   })
 
+  describe('pending transactions that settle', () => {
+    const settled = () =>
+      response({
+        added: [{ ...txn('posted-1'), pending_transaction_id: 'pending-1' } as PlaidTransaction],
+        removed: [{ transaction_id: 'pending-1' }, { transaction_id: 'gone-1' }],
+        cursors: { 'item-1': 'c1' },
+        hasMore: { 'item-1': false },
+      })
+
+    it('keeps a settled pending id out of the orphan sweep queue and migrates it instead', async () => {
+      const { syncDriver } = await importDriver()
+      cached.set('item-1', [{ ...txn('pending-1'), pending: true } as PlaidTransaction, txn('gone-1')])
+      const callMigrateIds = vi.fn().mockResolvedValue(undefined)
+      const migrated = vi.fn()
+      const unsubscribe = syncDriver.onIdsMigrated(migrated)
+
+      await syncDriver.syncNow({ itemIds: ITEMS, accountIdToItemId: ACCOUNT_TO_ITEM, call: vi.fn().mockResolvedValue(settled()), callMigrateIds })
+      await vi.advanceTimersByTimeAsync(0)
+      unsubscribe()
+
+      // Only the genuine retraction may reach the sweep; the settled id would get its
+      // freshly repointed transfer deleted.
+      expect(removedQueue).toEqual(['gone-1'])
+      expect(callMigrateIds).toHaveBeenCalledWith({ migrations: [{ oldId: 'pending-1', newId: 'posted-1' }] })
+      expect(migrationQueue).toEqual([])
+      expect(migrated).toHaveBeenCalledWith([{ oldId: 'pending-1', newId: 'posted-1' }])
+    })
+
+    it('tells listeners before announcing the round, so caches refetch before the feed re-renders', async () => {
+      const { syncDriver } = await importDriver()
+      const order: string[] = []
+      const unMigrated = syncDriver.onIdsMigrated(() => order.push('migrated'))
+      const unsubscribe = syncDriver.subscribe(() => {
+        if (syncDriver.getSnapshot().completedAt > 0 && !order.includes('round')) order.push('round')
+      })
+
+      await syncDriver.syncNow({
+        itemIds: ITEMS,
+        accountIdToItemId: ACCOUNT_TO_ITEM,
+        call: vi.fn().mockResolvedValue(settled()),
+        callMigrateIds: vi.fn().mockResolvedValue(undefined),
+      })
+      await vi.advanceTimersByTimeAsync(0)
+      unMigrated()
+      unsubscribe()
+
+      expect(order).toEqual(['migrated', 'round'])
+    })
+
+    it('keeps a failed migration queued and retries it on the next sync, never sweeping it', async () => {
+      const { syncDriver } = await importDriver()
+      const callMigrateIds = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue(undefined)
+      const migrated = vi.fn()
+      const unsubscribe = syncDriver.onIdsMigrated(migrated)
+
+      await syncDriver.syncNow({ itemIds: ITEMS, accountIdToItemId: ACCOUNT_TO_ITEM, call: vi.fn().mockResolvedValue(settled()), callMigrateIds })
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(migrationQueue).toEqual([{ oldId: 'pending-1', newId: 'posted-1' }])
+      expect(removedQueue).toEqual(['gone-1'])
+      expect(migrated).not.toHaveBeenCalled()
+
+      await syncDriver.syncNow({ itemIds: ITEMS, accountIdToItemId: ACCOUNT_TO_ITEM, force: true, call: vi.fn().mockResolvedValue(response()), callMigrateIds })
+      await vi.advanceTimersByTimeAsync(0)
+      unsubscribe()
+
+      expect(callMigrateIds).toHaveBeenCalledTimes(2)
+      expect(migrationQueue).toEqual([])
+      expect(migrated).toHaveBeenCalledTimes(1)
+    })
+  })
 })
