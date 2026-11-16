@@ -3,6 +3,7 @@ import { Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { colors, flowColors, hexToRgba, shadow } from '@/constants/theme'
 import { formatMaskableAmount } from '@/lib/format/money'
+import { formatSavingsRate } from '@/lib/home/savingsRate'
 import type { CashFlowHeadline as Headline } from '@/lib/cashflow/buildFlowGraph'
 
 /** Inter's tabular figures: digits all one width, so amounts line up without a monospace face. */
@@ -80,7 +81,7 @@ export function CashFlowHeadline({ headline, isMasked }: { headline: Headline; i
             <>
               <Text className="font-sansMed text-sm text-textPrimary">Savings rate</Text>
               <Text className="font-sansSemi text-sm" style={[TABULAR, { color: rateColor }]}>
-                {Math.round(rate * 100)}%
+                {formatSavingsRate(rate)}
               </Text>
             </>
           )}

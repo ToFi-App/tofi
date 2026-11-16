@@ -31,3 +31,17 @@ export function savingsChange(
   if (kept < 0 && previousKept < 0) return { kind: 'overspent', change: Math.round(previousKept - kept) }
   return { kind: 'saved', change: Math.round(Math.max(kept, 0) - Math.max(previousKept, 0)) }
 }
+
+/**
+ * A rate as a whole percent, with a true minus sign, for every screen that shows one. Below −100%
+ * (spending more than twice what came in) it reads "< −100%": past there the figure measures how
+ * small income was rather than anything about spending. 2¢ of interest against $1,000 out is
+ * −4,999,900%, which says nothing the Out total and the net don't, and doesn't fit the ring. The
+ * ring is already full at −100%, so the label stops where it does. `spoken` words the cap for a
+ * screen reader, which reads "<" badly.
+ */
+export function formatSavingsRate(rate: number, { spoken = false }: { spoken?: boolean } = {}): string {
+  const rounded = Math.round(rate * 100)
+  if (rounded < -100) return spoken ? 'below −100%' : '< −100%'
+  return rounded < 0 ? `−${-rounded}%` : `${rounded}%`
+}
