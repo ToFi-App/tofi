@@ -62,6 +62,18 @@ const INTERNAL_MOVEMENT_PFC = new Set([
 ])
 
 /**
+ * The brokerage's own wording on a check clearing against the cash account, e.g. "Check Paid # 1234
+ * (Cash)". A check always pays someone else, but Plaid gives it no merchant, only a generic or even
+ * an investment transfer code, and the redemption that funds it posts beside it at the same amount.
+ * Every brokerage-cash rule reading PFC or amount alone would hide it, so only the raw name tells.
+ */
+const PAID_CHECK_DESCRIPTION = /^CHECK PAID\b/i
+
+export function isPaidCheck(item: FeedItem): boolean {
+  return item.source === 'plaid' && item.amount > 0 && PAID_CHECK_DESCRIPTION.test(item.plaidName ?? '')
+}
+
+/**
  * Money that moved between the user's own accounts or holdings rather than being spent or
  * earned — whether that was established by pairing two legs into a Transfer record, or by
  * Plaid's own PFC on a movement whose counterpart the feed can't see.
@@ -70,6 +82,7 @@ export function isInternalMovement(item: FeedItem): boolean {
   if (isTransfer(item)) return true
   if (item.isInvestmentTrade) return true
   if (!item.isBrokerageCashAccount) return false
+  if (isPaidCheck(item)) return false
   return item.pfcDetailed !== null && INTERNAL_MOVEMENT_PFC.has(item.pfcDetailed)
 }
 

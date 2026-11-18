@@ -104,6 +104,23 @@ function find(feed: FeedItem[], id: string) {
 }
 
 describe('applySweepExclusion', () => {
+  // A check written from the cash account is funded by redeeming the core fund, so it posts beside
+  // an inflow of exactly its size: the sweep's shape. Plaid gives a check no merchant, only a
+  // generic transfer code, so the PFC gate alone lets it through. The raw wording is the tell.
+  it('never sweeps a paid check, whatever transfer code it carries', () => {
+    for (const pfcDetailed of ['TRANSFER_OUT_ACCOUNT_TRANSFER', 'TRANSFER_OUT_OTHER_TRANSFER_OUT']) {
+      const result = applySweepExclusion([
+        item({ id: 'redemption', amount: -250, pfcDetailed: 'TRANSFER_IN_INVESTMENT_AND_RETIREMENT_FUNDS' }),
+        item({ id: 'check', amount: 250, pfcDetailed, plaidName: 'Check Paid # 1234 (Cash)' }),
+      ])
+
+      expect(find(result, 'check').isSweptOutflow).toBe(false)
+      expect(countsTowardTotals(find(result, 'check'))).toBe(true)
+      // Its funding leg is still the user's own money moving, and stays out.
+      expect(countsTowardTotals(find(result, 'redemption'))).toBe(false)
+    }
+  })
+
   // The Fidelity CMA case: every inflow is immediately swept into the fund, and Plaid reports
   // both legs on the same account — which autoMatch's pairAllowed rejects, so no transfer record
   // ever forms. Matching on exact amount within the account is what catches it.

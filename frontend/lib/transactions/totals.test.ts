@@ -83,6 +83,14 @@ describe('countsTowardTotals', () => {
 // on the SAME account, which autoMatch's pairAllowed rejects. Hence the PFC route, and hence the
 // scope: only on accounts where that's true, never on ordinary checking.
 describe('isInternalMovement', () => {
+  // A paid check goes to someone else, so even a brokerage's own investment code on it cannot
+  // make it internal movement.
+  it('is false for a paid check on a brokerage cash account, even under an investment code', () => {
+    const check = sweepItem({ pfcDetailed: 'TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS', plaidName: 'CHECK PAID # 1234' })
+    expect(isInternalMovement(check)).toBe(false)
+    expect(countsTowardTotals(check)).toBe(true)
+  })
+
   it('is true for an investment or retirement sweep in either direction', () => {
     expect(isInternalMovement(sweepItem({ pfcDetailed: 'TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS' }))).toBe(true)
     expect(isInternalMovement(sweepItem({ pfcDetailed: 'TRANSFER_IN_INVESTMENT_AND_RETIREMENT_FUNDS', amount: -500 }))).toBe(true)

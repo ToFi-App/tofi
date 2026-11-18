@@ -1,5 +1,6 @@
 import { AUTO_MATCH_WINDOW_DAYS } from '@/lib/transfers/autoMatch'
 import type { FeedItem } from './resolveFeed'
+import { isPaidCheck } from './totals'
 
 /**
  * Deliberately tighter than autoMatch's 7 days. A sweep is automatic and settles same-day or
@@ -119,6 +120,8 @@ export function applySweepExclusion(feed: FeedItem[]): FeedItem[] {
     if (item.transferKind !== null) return item // autoMatch already decided this one
     // Before the amount match: a named purchase is spending whatever inflow it happens to mirror.
     if (item.pfcDetailed === null || !SWEEP_OUTFLOW_PFC.has(item.pfcDetailed)) return item
+    // A check pays someone else; the inflow it mirrors is the redemption that funded it.
+    if (isPaidCheck(item)) return item
     if (hasCrossAccountMatch(item)) return { ...item, hasCrossAccountCounterpart: true } // a transfer to pair, not a sweep
 
     const bucket = inflowsByAccountAmount.get(`${item.accountId}::${centsKey(item)}`) ?? []
