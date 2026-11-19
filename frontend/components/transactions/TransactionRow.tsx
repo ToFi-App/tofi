@@ -12,6 +12,9 @@ import { useAccountMarks } from '@/hooks/useAccountMarks'
 import { AccountMarkChip } from '@/components/accounts/AccountMarkChip'
 import type { FeedItem } from '@/lib/transactions/resolveFeed'
 
+/** Identity-compared below: pending renders as plain text rather than a pill. */
+const PENDING_BADGE = { label: 'Pending', color: colors.textMuted }
+
 interface TransactionRowProps {
   item: FeedItem
   categoryName: string
@@ -65,7 +68,7 @@ function TransactionRowComponent({ item, categoryName, categoryColor, categoryIc
             // reflect it — Plaid's `current` balance moves only when a transaction posts.
             // Labelling the row is what makes that mismatch read as "in progress" rather
             // than "wrong". Muted: it's a state, not a link the user made.
-            { label: 'Pending', color: colors.textMuted }
+            PENDING_BADGE
           : null
   const iconColor = transferType ? transferType.color : item.isReimbursementIncome ? colors.reimbursed : categoryColor
   const iconBg = hexToRgba(iconColor, 0.18)
@@ -123,7 +126,15 @@ function TransactionRowComponent({ item, categoryName, categoryColor, categoryIc
               like the reference tracker. */}
           <AccountMarkChip mark={accountMark} ringColor={amountColor} size={17} />
         </View>
-        {badge ? (
+        {badge === PENDING_BADGE ? (
+          // Pending is a state, not a link the user made, so it drops the pill: a day of
+          // unsettled charges stacked three grey capsules down the right edge and made the rows
+          // look heavier than the settled ones. A small clock and muted text say the same thing.
+          <View className="flex-row items-center gap-1">
+            <Ionicons name="time-outline" size={12} color={colors.textMuted} />
+            <Text className="font-sans text-xs text-textMuted">Pending</Text>
+          </View>
+        ) : badge ? (
           // Under the amount, not beside the title: the badge is the row's meaning ('Auto'
           // marks links made by auto-detection; unmarking is the one-tap undo) and here it
           // never competes with the category name for width.
