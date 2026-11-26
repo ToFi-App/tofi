@@ -1,70 +1,49 @@
 # Design: Transaction groups
 
-Status: proposal · Scope: let the user gather expenses and incomes into a named **group** (a trip, a
-night out, a shared dinner), see them together, and track whether the money friends owe for it has
-come back. Lives in the Calendar tab.
+Status: proposal · Scope: let the user put expenses and incomes (Venmo, Zelle, cash) under a named
+**group** (a trip, a night out, a shared dinner), see them together, and mark the group resolved
+once everyone has paid them back. Lives in the Calendar tab.
 
-Mockups: the "Transaction Groups" design canvas (6 screens). Screen numbers below refer to it.
+Mockups: the "Transaction Groups" design canvas (4 screens). Screen numbers below refer to it.
 
 ## Problem
 
-Shared spending is spread across days, accounts and categories, and so are the paybacks that follow
-it. Today ToFi can link a reimbursement to an expense one pair at a time, but nothing answers the
-questions the user actually has after a trip:
+Shared spending is spread across days, accounts and categories, and so are the Venmos and Zelles
+that pay it back. Nothing in ToFi today shows a trip as one thing, so the user can't easily see:
 
-- What did the whole thing cost me, once everyone paid me back?
-- Who still owes me, and for what?
-- Which past trips are settled, and which are still waiting?
+- what the whole trip cost them once friends paid them back;
+- which trips are still waiting on money.
 
 ## Concepts
 
 | Term | Meaning |
 |---|---|
 | **Group** | A named set of transactions. Name, colour, icon. |
-| **Member** | A transaction in a group. A transaction belongs to **at most one** group. |
-| **Expected back** | Per member expense: how much of it the user expects other people to repay. `0` = "just mine". |
-| **Received** | Per member expense: the sum of `transfers` rows of kind `reimbursement` whose expense leg is that member. |
-| **Owed** | `max(0, Σ expected − Σ received)` over the group's expenses. |
-| **Your share** | `Σ expense amounts − Σ expected` — what the group costs the user once fully paid back. |
-| **Group dates** | First to last **expense** date. Paybacks never stretch the range. |
-| **Calendar date** | Where a resolved group's single row sits on the Calendar: its **last expense date** (last member date if it has no expenses). Paybacks never move it, so a trip stays in the month it happened. |
+| **Member** | A transaction in a group: an expense or an income. A transaction belongs to **at most one** group. |
+| **Out / In / Net** | Sum of member expenses / sum of member incomes / `In − Out`. Net is what the group cost the user. |
+| **Group dates** | First to last **expense** date. Incomes never stretch the range. |
+| **Active** | Default for a new group. Shown in the Groups card, its transactions kept out of the day cards. |
+| **Resolved** | The user tapped "Mark resolved". Shown as one row on the Calendar, worth Net, on the group's **last expense date** (last member date if it has no expenses). |
 
-### Status: Active and Resolved
-
-Status is **derived on the client, never stored**, the same way totals are
-(`docs/credit-card-payment-auto-transfer.md`, "totals are derived"):
-
-| Condition | Status |
-|---|---|
-| `owed > 0` and not settled | **Active** |
-| `owed = 0` (everything expected has come back) | **Resolved** |
-| `settled_at` is set (the user tapped "Settle anyway") | **Resolved** (shows "$X written off") |
-| `Σ expected = 0` (nobody owes anything) | **Resolved** from the start |
-
-Because it is derived, unmatching a payback or raising an expected amount reopens a group with no
-extra bookkeeping. The only stored status input is `settled_at`; clearing it (the "Reopen" action)
-returns the group to whatever the numbers say.
-
-If someone overpays (`Σ received > Σ expected`), the group is Resolved and the detail page shows the
-surplus. Per-expense "waiting" rows use `max(0, expected − received)` for each expense, so one
-overpaid expense does not hide another's shortfall in the Paybacks view, but the group's status uses
-the group-level totals.
+Status is set **by hand**: the app does not try to work out whether everyone has paid. The group
+page shows Out / In / Net, which is enough for the user to judge. "Reopen" moves a resolved group
+back to Active.
 
 ## Data model
 
-Two new tables. Only IDs and amounts the user entered are stored, which keeps the
-"raw financial data never persists" rule (`docs/architecture.md`, constraints 4–5).
+Two new tables. Only IDs and names the user entered are stored, which keeps the
+"raw financial data never persists" rule (`docs/architecture.md`, constraint 4).
 
 ```sql
 CREATE TABLE transaction_groups (
-  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id     uuid NOT NULL REFERENCES auth.users(id),
-  name        text NOT NULL,
-  color       text NOT NULL,           -- hex, same convention as categories.color
-  icon        text,                    -- icon slug, same set as categories
-  settled_at  timestamptz,             -- "Settle anyway"; null = status follows the numbers
-  created_at  timestamptz NOT NULL DEFAULT now(),
-  updated_at  timestamptz NOT NULL DEFAULT now()
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id      uuid NOT NULL REFERENCES auth.users(id),
+  name         text NOT NULL,
+  color        text NOT NULL,          -- hex, same convention as categories.color
+  icon         text,                   -- icon slug, same set as categories
+  resolved_at  timestamptz,            -- null = Active
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  updated_at   timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE TABLE transaction_group_members (
@@ -73,10 +52,8 @@ CREATE TABLE transaction_group_members (
   group_id               uuid NOT NULL REFERENCES transaction_groups(id) ON DELETE CASCADE,
   plaid_transaction_id   text,         -- same id space transfers' *_plaid_transaction_id uses
   manual_transaction_id  uuid REFERENCES manual_transactions(id) ON DELETE CASCADE,
-  expected_back          numeric(12,2) NOT NULL DEFAULT 0,   -- ignored for income members
   created_at             timestamptz NOT NULL DEFAULT now(),
-  CHECK ((plaid_transaction_id IS NOT NULL) <> (manual_transaction_id IS NOT NULL)),
-  CHECK (expected_back >= 0)
+  CHECK ((plaid_transaction_id IS NOT NULL) <> (manual_transaction_id IS NOT NULL))
 );
 -- One group per transaction.
 CREATE UNIQUE INDEX ON transaction_group_members (user_id, plaid_transaction_id)  WHERE plaid_transaction_id IS NOT NULL;
@@ -85,51 +62,38 @@ CREATE UNIQUE INDEX ON transaction_group_members (user_id, manual_transaction_id
 
 Both tables get the user-scoped RLS policy every other table has (`auth.uid() = user_id`).
 
-### Which incomes are in a group
-
-- **Paybacks join automatically.** An income linked by a `reimbursement` transfer to a member
-  expense is shown as part of that group, with no member row of its own. Membership of paybacks is
-  derived from `transfers`, so there is one source of truth for "this Venmo paid back that
-  Airbnb".
-- **Other incomes can be added explicitly** (selling leftover lift tickets, a refund from the
-  Airbnb host). They get a member row with `expected_back = 0`. They count toward the group's
-  In/Out and net, not toward Received or Owed.
-- An income that is a payback for a member of group A cannot be an explicit member of group B.
+Whether a member is an expense or an income is not stored; it comes from the transaction's sign in
+the feed, like everywhere else.
 
 ### What cannot be a member
 
 - Transfer legs (`account_transfer`, `credit_card_payment`) and swept/excluded rows. They are not
-  spending, and putting them in a group would make its totals wrong. They are hidden from the
-  select-mode checkboxes.
-- `refund` transfers are allowed as explicit income members, since a refund is part of what a trip
-  cost.
+  spending or income, and putting them in a group would make its totals wrong. They get no
+  checkbox in select mode.
 
 ### Keeping IDs valid
 
 - **Pending to posted.** When a pending Plaid transaction settles, it gets a new ID.
   `transactions.migrateIds` already repoints `transaction_overrides` and `transfers`; it must also
-  repoint `transaction_group_members.plaid_transaction_id`. Without this, every expense added to a
-  group while still pending would drop out of the group on settlement.
+  repoint `transaction_group_members.plaid_transaction_id`. Without this, every transaction added
+  to a group while still pending would drop out of the group on settlement.
 - **Retraction.** A member whose Plaid transaction is explicitly `removed` (not merely absent from
   the cache) is deleted, following the event-driven rule in `lib/transfers/orphanCleanup.ts`.
   Absence alone is never evidence.
 - **Manual delete.** `ON DELETE CASCADE` removes the member row.
-- **Deleting a group** removes its member rows only. Transactions and reimbursement links are
-  untouched.
+- **Deleting a group** removes its member rows only. The transactions are untouched.
 
 ## Effect on existing totals
 
-- **Category and budget totals: unchanged.** Each member keeps its own category and date there.
-  Reimbursement netting already happens through `transfers` (`netAmount`, `isReimbursementIncome`
-  in `lib/transactions/totals.ts`), and matching a payback through a group creates exactly those
-  rows. A resolved group has no single category, so it cannot be one row in a budget.
-- **Calendar day totals and day shading follow the rows on screen.** Day IN/OUT, day shading
+- **Home, budgets and category totals: unchanged.** Each member keeps its own category and date
+  there. Groups do not net incomes against expenses for budgets; the existing reimbursement link is
+  still the way to do that, and it works the same whether or not the transactions are grouped.
+- **Calendar day totals and shading follow the rows on screen.** Day IN/OUT, day shading
   (`daySquares.ts`) and the Calendar's month total count only what the day cards show (UI §2):
   - **Active group:** its members are not in the day cards, so they count nowhere on the Calendar
-    yet. Its money is visible only in the Groups card.
-  - **Resolved group:** counts once, as its net (your share), on its calendar date (last expense
-    date). The trip stays in the month it happened.
-- Home and category screens are not affected: they use the plain feed.
+    yet. They are visible in the Groups card and on the group page.
+  - **Resolved group:** counts once, as its Net, on its last expense date. A trip stays in the
+    month it happened even if the last Venmo came in the next month.
 
 ## API
 
@@ -139,37 +103,33 @@ New tRPC router `transactionGroups` (`backend/src/routers/transactionGroups.ts`)
 | Procedure | Input | Notes |
 |---|---|---|
 | `list` | – | Groups plus their member rows. The client derives everything else. |
-| `create` | name, color, icon, members[] | members: `{ plaidTransactionId \| manualTransactionId, expectedBack }`. One transaction. |
+| `create` | name, color, icon, members[] | members: `{ plaidTransactionId \| manualTransactionId }`. One transaction. |
 | `update` | id, name?, color?, icon? | |
 | `delete` | id | |
 | `addMembers` | groupId, members[] | Fails with a clear error if any transaction is already in another group, naming it. |
 | `removeMembers` | groupId, member ids[] | |
-| `setExpectedBack` | member id, amount | |
-| `settle` / `reopen` | id | Sets / clears `settled_at`. |
-
-Matching a payback uses the existing `transfers.createMany` (kind `reimbursement`, one row per
-expense share, the split-income case already supported). No new endpoint is needed for it.
+| `resolve` / `reopen` | id | Sets / clears `resolved_at`. |
 
 ## Client derivation
 
 `frontend/lib/groups/groupSummary.ts`, pure and unit-tested like `aggregateMonth.ts`:
 
 ```ts
-groupSummary(group, members, feedById, transfers) => {
-  expenses: Array<{ item, expectedBack, paybacks: Array<{ item, amount }>, waiting }>,
-  otherIncome: FeedItem[],
-  out, in, net,                 // net = in − out
-  expected, received, owed, yourShare, surplus,
+groupSummary(group, members, feedById) => {
+  items: FeedItem[],            // members found in the feed, date-sorted
+  out, in, net,                 // from each item's own amount (see below)
   firstDate, lastDate,          // expense dates only
   status: 'active' | 'resolved',
   calendarRow,                  // { date: lastDate, amount: net } when resolved, else null
-  writtenOff,                   // owed at the moment of settling, when settled
 }
 ```
 
+Out and In use each transaction's **raw amount**, not `netAmount`. If a grouped expense also has a
+reimbursement link to a grouped Venmo, using `netAmount` would count the payback twice.
+
 Hook: `useTransactionGroups()` (query + mutations, same pattern as `useTransfers`). The feed
-resolver adds `groupId` to each `FeedItem` (direct member, or derived through a reimbursement link)
-so the Calendar can pull members out without a second lookup.
+resolver adds `groupId` to each `FeedItem` so the Calendar can pull members out without a second
+lookup.
 
 For the Calendar, a step after the feed is resolved (`lib/groups/calendarFeed.ts`):
 - drops every member of an **Active** group;
@@ -182,45 +142,37 @@ plain feed.
 
 ## UI
 
-### 1. Calendar tab: Groups card (screens 1, 6)
+### 1. Calendar tab: Groups card (screens 1, 4)
 
 A card above the first day card, scrolling with the list.
 
-- **Header:** "Groups" and "$X still owed to you" (sum of owed across Active groups).
-- **Active groups only, in every month, until resolved.** They are a to-do list. One from an
-  earlier month shows a "From November" tag next to its dates. Each row: icon, name, dates, number
-  of friends if split evenly, "$350 owed", "$490 of $840 back" and a progress bar. Tap opens the
-  group page, which opens on a list of all its transactions. That is the only place an active
-  group's transactions are listed.
-- **No Resolved list.** When a group resolves it leaves this card and becomes one row in the day
-  cards (§2).
-- **Totals on the card are always whole-group,** never the visible month's slice.
-- Hidden when there are no Active groups.
-- The Calendar filter keeps working: with a filter on, the card still shows (groups are not
-  filtered), but the day cards follow the filter as today.
+- **Active groups only, in every month, until resolved.** One from an earlier month shows a
+  "From November" tag next to its dates.
+- **Each row:** icon, name, dates, transaction count, Net (e.g. −$759), and "Out $1,249 · In $490"
+  under it. Tap opens the group page.
+- **Totals are always whole-group,** never the visible month's slice.
+- Hidden when there are no Active groups. No Resolved list: a resolved group leaves this card and
+  becomes one row in the day cards (§2).
+- The Calendar filter does not hide the card; the day cards follow the filter as today.
 
-### 2. Day cards (screens 1, 6)
+### 2. Day cards (screens 1, 4)
 
 **Active group: not in the day cards.**
-- Its transactions (expenses and paybacks) are left out of the day cards entirely. They live in
-  the Groups card and the group page until the group resolves.
+- Its transactions are left out of the day cards entirely, until it is resolved.
 - Adding a transaction to a group removes it from its day card at once; removing it from the
   group puts it back.
 
 **Resolved group: one row on its last expense day.**
-- In place of all its members is a single row on the group's last expense date, styled like a
-  transaction: group icon with a small green check, the group name, "Resolved · 3 transactions",
-  and the net amount (your share after everyone paid you back, e.g. Tahoe ski trip −$409 on
-  Nov 16). No nested rows, no breakdown.
-- Tapping it opens the group page (Transactions view).
-- Reopening a group (unmatching a payback, raising an expected amount, clearing "Settle anyway")
-  takes the row away and the group goes back to the Groups card.
+- In place of all its members, a single row styled like a transaction: group icon with a small
+  green check, the group name, "Resolved · 3 transactions", and Net (e.g. Holiday party −$40).
+  No breakdown.
+- Tapping it opens the group page.
+- Reopening the group takes the row away and the group goes back to the Groups card.
 
 ### 3. Calendar grid
 
 - Active groups: a 3px underline in the group colour under each cell from the group's first to
-  last expense date. This is the only mark an active group leaves on the grid, since its
-  transactions are not counted in the day shading.
+  last expense date. This is the only mark an active group leaves on the grid.
 - Resolved groups: no underline. Their only mark is the row (and its shading) on their last
   expense day.
 - Two active groups on one day: the underline splits into two segments.
@@ -228,96 +180,56 @@ A card above the first day card, scrolling with the list.
 ### 4. Creating a group and adding to one (screen 2)
 
 - **Long-press** any eligible row on the Calendar to enter select mode. Header becomes
-  "Cancel · N selected · All". Rows get checkboxes; ineligible rows (transfers, already in a group)
-  are dimmed with no checkbox.
+  "Cancel · N selected · All". Rows get checkboxes, expenses and incomes alike; ineligible rows
+  (transfers, already in a group) are dimmed with no checkbox.
 - **Add to group** opens a sheet: chips for "New group" and each existing group, most recent first.
-- **New group** fields: Name, then "Expecting money back?"
-  - **No:** every expense gets `expected_back = 0`.
-  - **Split evenly** with an N-people stepper (default 2, you included): each expense gets
-    `amount × (N−1)/N`, rounded to cents. The sheet previews "You'll be owed $840 of $1,120".
-  - **Custom:** a list of the selected expenses with an amount field each.
-- Adding to an **existing** group: if it was created with Split evenly, new expenses default to the
-  same N; otherwise to `0`. Editable afterwards on the group page.
+  A line under the title sums the selection ("$1,120 out · $70 in").
+- **New group:** just a name (colour and icon picked automatically, changeable later). Create.
 - The transaction editor also gets a **Group** field (pick, change or remove), for one transaction
-  at a time.
+  at a time, which is the easy way to add a Venmo that arrives after the trip.
 
-### 5. Group page (screens 3, 4)
+### 5. Group page (screen 3)
 
-- **Header:** back, name, owed pill (amber "$350 owed" / green "Resolved"), dates, transaction
-  count, "$490 of $840 back".
-- **Transactions / Paybacks** switch. The page always opens on **Transactions**.
-  - **Transactions:** a list of every group transaction (expenses, paybacks, other income) in
-    day cards, rows as on the Calendar tab; tapping a row opens the transaction editor. No month
-    grid. This is where an active group's transactions are visible, since the Calendar tab leaves
-    them out until the group resolves. A floating bar shows Out / In / Net for the whole group.
-    Built with `DayGroupedTransactions` on the group's items.
-  - **Paybacks:** one card per expense with its paybacks nested under it ("Alice Chen · Venmo
-    +$210"). If one payment is split across expenses, each part shows "$24 of a $70 payment". A
-    dashed "Waiting on $210 · Match payment" row appears while that expense is short. Expenses
-    with `expected_back = 0` say "just yours". Explicit income members appear in an "Other income"
-    card at the end. A summary at the top: still owed, progress bar, Spent / Back so far / Your
-    share ("All paid back" or "$X written off" once resolved).
-- **Actions:** Add transactions (opens select mode scoped to the group's dates, ±3 days),
-  Settle anyway (confirm: "Write off $350? The group will be marked resolved."), and in the menu
-  Rename, Change colour, Reopen (if settled), Delete group.
-- Tapping an expense allows editing its expected-back amount.
-
-### 6. Matching a payback (screen 5)
-
-Entry points: the dashed "Match payment" row on the group page, and a suggestion on an incoming
-transaction.
-
-- **Suggestion:** an income that is not yet linked, dated on or after an Active group's first date,
-  shows "Looks like a payback" in its detail sheet, with chips for Active groups ("Tahoe ski trip ·
-  $350 owed"). Candidates are found with the existing reimbursement-candidate rules
-  (`lib/transfers/candidates.ts`). P2P incomes (Venmo, Zelle, Cash App) rank first.
-- **Allocation:** picking a group lists its expenses that are still waiting, pre-filled oldest
-  first until the payment runs out. Each amount is editable. A counter shows "$350 of $350
-  assigned"; Match is disabled while it is over the payment amount.
-- **Preview:** if the match brings owed to $0, a green note says "Tahoe ski trip will be resolved"
-  and that it becomes one row on the trip's last expense day with the final share.
-- **Match** creates one `reimbursement` transfer per allocated expense. "Not a payback" hides the
-  suggestion for that transaction.
-- From "Match payment" on the group page, the flow runs the other way: pick the incoming payment
-  from candidates, then the same allocation screen.
+- **Header:** back, name, status pill (amber "Active" / green "Resolved"), dates, transaction count.
+- **List:** every member in day cards, expenses and incomes together, rows as on the Calendar tab
+  (built with `DayGroupedTransactions` on the group's items). Tapping a row opens the transaction
+  editor.
+- **Bottom bar:** Out / In / Net for the whole group.
+- **Actions:** "Add transactions" (opens select mode around the group's dates, ±7 days) and
+  "Mark resolved" (or "Reopen" once resolved). Menu: Rename, Change colour, Delete group.
 
 ## Edge cases
 
 | Case | Behaviour |
 |---|---|
-| Expense in a group is later marked as a transfer | Not allowed: the transfer sheet asks to remove it from the group first. |
-| Payback is unlinked | Group recomputes; may return to Active. |
-| Expected back > expense amount | Rejected in the UI (max = amount). |
-| Pending expense | Can be added; the amount updates when it posts; ID migrates (see above). |
-| Group with only incomes | Allowed (e.g. collecting money for a gift). Status follows the rules: no expected → Resolved. |
-| Masked amounts | All group amounts respect the existing `$****` masking. |
-| Account filter on Calendar | Day cards follow it. Group totals and status always use every account: a group is about the money, not the account. A resolved group's row shows when any of its members matches the filter. |
-| Calendar category filter | A resolved group's row has no category; it shows when any member matches the filter, with the full group net. |
-| Last payback lands in a later month | The row stays on the last expense day in the earlier month. Nothing appears in the later month. |
+| Grouped transaction is later marked as a transfer | Not allowed: the transfer sheet asks to remove it from the group first. |
+| Pending transaction | Can be added; the amount updates when it posts; ID migrates (see above). |
+| Group with only incomes | Allowed (e.g. collecting money for a gift). Resolved row goes on its last member date and shows as income. |
+| Venmo arrives after the group is resolved | User adds it through the editor's Group field. The resolved row's Net updates; the row does not move. |
+| Net is positive (got back more than spent) | The resolved row shows as income (+$X). |
 | Trip spans two months (Oct 30 – Nov 2) | While active: underline in both months, Groups card in both. Once resolved: one row on Nov 2. |
-| Net is positive (paid back more than spent) | The row shows as income (+$X). |
+| Account filter on Calendar | Day cards follow it. Group totals always use every account. A resolved group's row shows when any of its members matches the filter. |
+| Calendar category filter | A resolved group's row has no category; it shows when any member matches the filter, with the full Net. |
+| Masked amounts | All group amounts respect the existing `$****` masking. |
 
 ## Build order
 
 1. Migration + repository + `transactionGroups` router + RLS, with router tests.
 2. Extend `transactions.migrateIds` and the orphan sweep to cover group members.
-3. `groupSummary.ts` + tests (status, owed, overpayment, settle, cross-month dates).
+3. `groupSummary.ts` + tests (totals, raw-amount rule, dates, cross-month).
 4. `useTransactionGroups`, `groupId` on `FeedItem`.
-5. Group page (Transactions + Paybacks), reachable from the transaction editor's Group field.
+5. Group page, reachable from the transaction editor's Group field.
 6. Select mode + Add to group sheet.
 7. Calendar: Groups card, `calendarFeed.ts` (hide active members, one row per resolved group),
    grid underline.
-8. Payback suggestion + allocation sheet.
 
 Each step ships on its own; 1–5 give a working feature with the editor as the only entry point.
 
 ## Not in this version
 
-- **Per-person tracking** ("Chris owes $280"). Expected back is per expense, not per person. If
-  added later, members would gain an optional list of `{ person, amount }` and status would not
-  change.
-- **Money the user owes others** (a friend paid the Airbnb). Needs a manual "IOU" entry; out of
-  scope.
+- **Tracking who owes what** or how much is expected back. Resolving is by hand.
+- **Matching paybacks to specific expenses** from the group. The existing reimbursement link
+  still exists for budget netting.
 - **Group budgets** ("Japan: $2,000").
 - **Automatic grouping** by date range or location.
 - **Nested groups.**
