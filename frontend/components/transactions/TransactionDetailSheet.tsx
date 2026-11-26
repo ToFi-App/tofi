@@ -18,6 +18,8 @@ import { TRANSFER_TYPES } from '@/lib/transfers/registry'
 import type { FeedItem, FeedLink } from '@/lib/transactions/resolveFeed'
 import type { Category, Subcategory, TransferKind } from '@/types/domain'
 import { SheetHeader } from '@/components/ui/SheetHeader'
+import { GroupField } from '@/components/groups/GroupField'
+import { canJoinGroup, memberRefFor } from '@/lib/groups/groups'
 
 interface TransactionDetailSheetProps {
   /** Owned by the single sheet host, so drag-to-dismiss tracks whichever content is showing. */
@@ -202,6 +204,8 @@ export function TransactionDetailSheet({ sheetScroll, item, categories, subcateg
           onChangeText={setNote}
           placeholder={item.merchantName}
         />
+
+        {canJoinGroup(item) ? <GroupField itemId={item.id} memberRef={memberRefFor(item)} /> : null}
 
         {/* Both sides can start a reimbursement: an income is "this money paid me back", an
             expense is "this cost got paid back" — the expense side is also where several

@@ -9,3 +9,5 @@ export const preferences = new MMKV({ id: 'ledge-preferences' })
 export const AMOUNTS_MASKED_KEY = 'amountsMasked'
 /** How Home draws spending against last month: 'gap' (ahead/behind) or 'total' (running totals). */
 export const SPENDING_CHART_VIEW_KEY = 'spendingChartView'
+/** Set once the user has opened the Calendar "+" menu, which clears its new-feature dot for good. */
+export const GROUPS_MENU_SEEN_KEY = 'groupsMenuSeen'

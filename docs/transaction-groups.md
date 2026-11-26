@@ -1,6 +1,6 @@
 # Design: Transaction groups
 
-Status: proposal · Scope: let the user put expenses and incomes (Venmo, Zelle, cash) under a named
+Status: implemented. Scope: let the user put expenses and incomes (Venmo, Zelle, cash) under a named
 **group** (a trip, a night out, a shared dinner), see them together, and mark the group resolved
 once everyone has paid them back. Lives in the Calendar tab.
 
@@ -77,9 +77,9 @@ the feed, like everywhere else.
   `transactions.migrateIds` already repoints `transaction_overrides` and `transfers`; it must also
   repoint `transaction_group_members.plaid_transaction_id`. Without this, every transaction added
   to a group while still pending would drop out of the group on settlement.
-- **Retraction.** A member whose Plaid transaction is explicitly `removed` (not merely absent from
-  the cache) is deleted, following the event-driven rule in `lib/transfers/orphanCleanup.ts`.
-  Absence alone is never evidence.
+- **Retraction.** No cleanup needed. A member whose transaction is gone from the feed is simply
+  skipped by `summarizeGroup`, so it counts nowhere and shows nowhere. (Unlike a transfer, an
+  orphan member can't hide real spending.)
 - **Manual delete.** `ON DELETE CASCADE` removes the member row.
 - **Deleting a group** removes its member rows only. The transactions are untouched.
 
@@ -102,7 +102,7 @@ New tRPC router `transactionGroups` (`backend/src/routers/transactionGroups.ts`)
 | Procedure | Input | Notes |
 |---|---|---|
 | `list` | – | Groups plus their member rows. The client derives everything else. |
-| `create` | name, color, icon, members[] | members: `{ plaidTransactionId \| manualTransactionId }`. One transaction. |
+| `create` | name, color, icon | Creates an empty group; transactions are added with `addMembers`. |
 | `update` | id, name?, color?, icon? | |
 | `delete` | id | |
 | `addMembers` | groupId, members[] | Fails with a clear error if any transaction is already in another group, naming it. |
@@ -180,14 +180,15 @@ A card above the first day card, scrolling with the list. While it shows, its he
 
 ### 4. Creating a group and adding to it (screens 2, 3, 5, 6, 7)
 
-- **"+" menu (screens 5, 6):** the header's "+" button, which today opens a new manual
-  transaction, opens a small menu instead: "New transaction" and "New group" (with a NEW tag
-  and the line "Bundle a trip's spending and Venmos").
-  - **New-feature dot:** a small purple dot on the "+" button until the user opens the menu once.
-    Opening the menu clears it for good (stored per device, like other one-time UI flags in
-    MMKV). The NEW tag on the menu item disappears at the same time.
-  - "New transaction" does what "+" did before.
-- **New group:** from the "+" menu (or the Groups card shortcut). It asks only for a name
+- **"+" menu (screens 5, 6):** on the Calendar tab the header's write button becomes a "+"
+  (Home keeps its pen) and opens a small anchored menu (`components/groups/CreateMenu.tsx`, built
+  like the month picker's popover): "New transaction" and "New group" (with a NEW tag and the
+  line "Keep a trip's spending and paybacks together").
+  - **New-feature dot:** a small teal dot on the "+" button until the user opens the menu once.
+    Opening the menu clears it for good (`useGroupsMenuSeen`, an MMKV preference). The NEW tag
+    shows on that first opening only.
+  - "New transaction" does what the pen did before.
+- **New group** (`NewGroupSheet`): from the "+" menu. It asks only for a name
   (colour and icon picked automatically, changeable later), then opens the new, empty group page
   (screen 7).
 - **Add transactions** (button on the group page, next to "Mark resolved") opens a full-height
@@ -198,14 +199,19 @@ A card above the first day card, scrolling with the list. While it shows, its he
     pages further back as you scroll.
   - Rows already in another group are dimmed, show "In <group name>" and can't be selected.
     Transfers are left out.
-  - A footer sums the selection ("$1,120 out · $70 in") above an "Add N transactions" button,
-    which returns to the group page.
-- The transaction editor also gets a **Group** field (pick, change or remove), for one transaction
-  at a time, which is the easy way to add a Venmo that arrives later.
-- Removing a transaction from a group: swipe or long-press its row on the group page, "Remove
-  from group".
+  - A footer sums the selection ("$1,120.00 out" and "$70.00 in" as two separate labels, per
+    design.md's no-dot-separator rule) above an "Add N transactions" button, which returns to the
+    group page. The list shows 60 rows at a time with "Show more".
+- The transaction sheets (`TransactionDetailSheet`, and `ManualTransactionSheet` when editing)
+  get a **Group** field (`GroupField`): chips for "None", each active group, and the
+  transaction's own group if resolved. Applied on tap, not with Save, since membership is its own
+  write. This is also how a transaction is removed from a group (pick "None").
 
 ### 5. Group page (screen 2)
+
+A bottom sheet over the Calendar (`components/groups/GroupSheet.tsx`), the way category and
+account details open, with the picker pushed inside it as a second view.
+
 
 - **Header:** back, name, status pill (amber "Active" / green "Resolved"), transaction count. No date range.
 - **List:** every member in day cards, expenses and incomes together, rows as on the Calendar tab

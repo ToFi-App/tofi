@@ -15,6 +15,13 @@ export interface RowCategory {
   icon: string | null
 }
 
+/** The group a row is in, for its pill. */
+export interface RowGroup {
+  id: string
+  name: string
+  color: string
+}
+
 interface DayGroupedTransactionsProps {
   items: FeedItem[]
   categoryFor: (item: FeedItem) => RowCategory
@@ -29,6 +36,9 @@ interface DayGroupedTransactionsProps {
    * coordinates cannot wrap this in a padding View and must inset the cards themselves.
    */
   cardClassName?: string
+  /** The group pill for a row, or null for none. Absent everywhere but the Calendar tab. */
+  groupFor?: (item: FeedItem) => RowGroup | null
+  onGroupPress?: (groupId: string) => void
 }
 
 /**
@@ -50,6 +60,8 @@ function DayGroupedTransactionsComponent({
   onItemPress,
   onDayLayout,
   cardClassName = 'mb-3 rounded-xl bg-surface px-4',
+  groupFor,
+  onGroupPress,
 }: DayGroupedTransactionsProps) {
   return (
     <>
@@ -63,6 +75,7 @@ function DayGroupedTransactionsComponent({
           <DayGroupHeader date={day.date} items={day.items} />
           {day.items.map((item) => {
             const category = categoryFor(item)
+            const group = groupFor?.(item) ?? null
             return (
               <View key={item.id} className="border-t" style={{ borderColor: colors.border }}>
                 <TransactionRow
@@ -72,6 +85,10 @@ function DayGroupedTransactionsComponent({
                   categoryIcon={category.icon}
                   reimbursementCategoryName={reimbursementCategoryNameFor?.(item) ?? null}
                   onPress={onItemPress}
+                  groupId={group?.id ?? null}
+                  groupName={group?.name ?? null}
+                  groupColor={group?.color ?? null}
+                  onGroupPress={onGroupPress}
                 />
               </View>
             )

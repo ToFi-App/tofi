@@ -15,6 +15,8 @@ export type ManualTransaction = RouterOutputs['manualTransactions']['list'][numb
 export type Budget = RouterOutputs['budgets']['list'][number]
 export type Transfer = RouterOutputs['transfers']['list'][number]
 export type TransferDismissal = RouterOutputs['transferDismissals']['list'][number]
+export type TransactionGroup = RouterOutputs['transactionGroups']['list']['groups'][number]
+export type TransactionGroupMember = RouterOutputs['transactionGroups']['list']['members'][number]
 // Inferred from the router input rather than redeclared, so the backend's TRANSFER_KINDS stays
 // the single source of truth for which kinds exist. TRANSFER_TYPES in lib/transfers/registry.ts
 // is a Record keyed by this union, so a new kind fails to compile until it's fully defined.
