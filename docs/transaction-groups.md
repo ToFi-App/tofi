@@ -149,7 +149,7 @@ A card above the first day card, scrolling with the list.
 - **Active groups only, in every month, until resolved.** One from an earlier month shows a
   "From November" tag next to its dates.
 - **Each row:** icon, name, dates, transaction count, Net (e.g. −$759), and "Out $1,249 · In $490"
-  under it. Tap opens the group page.
+  under it, and a `›` chevron at the right so it reads as tappable. Tap opens the group page.
 - **Totals are always whole-group,** never the visible month's slice.
 - Hidden when there are no Active groups. No Resolved list: a resolved group leaves this card and
   becomes one row in the day cards (§2).
