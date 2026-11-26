@@ -69,7 +69,7 @@ the feed, like everywhere else.
 
 - Transfer legs (`account_transfer`, `credit_card_payment`) and swept/excluded rows. They are not
   spending or income, and putting them in a group would make its totals wrong. They get no
-  checkbox in select mode.
+  checkbox in the Add transactions picker.
 
 ### Keeping IDs valid
 
@@ -144,7 +144,7 @@ plain feed.
 
 ### 1. Calendar tab: Groups card (screens 1, 4)
 
-A card above the first day card, scrolling with the list.
+A card above the first day card, scrolling with the list. Its header holds "+ New group" (§4).
 
 - **Active groups only, in every month, until resolved.** One from an earlier month shows a
   "From November" tag.
@@ -177,18 +177,26 @@ A card above the first day card, scrolling with the list.
   expense day.
 - Two active groups on one day: the underline splits into two segments.
 
-### 4. Creating a group and adding to one (screen 2)
+### 4. Creating a group and adding to it (screens 1, 2, 3)
 
-- **Long-press** any eligible row on the Calendar to enter select mode. Header becomes
-  "Cancel · N selected · All". Rows get checkboxes, expenses and incomes alike; ineligible rows
-  (transfers, already in a group) are dimmed with no checkbox.
-- **Add to group** opens a sheet: chips for "New group" and each existing group, most recent first.
-  A line under the title sums the selection ("$1,120 out · $70 in").
-- **New group:** just a name (colour and icon picked automatically, changeable later). Create.
+- **New group:** a "+ New group" button in the Groups card header. It asks only for a name
+  (colour and icon picked automatically, changeable later), then opens the new, empty group page.
+- **Add transactions** (button on the group page, next to "Mark resolved") opens a full-height
+  picker:
+  - Recent transactions, newest first, in day cards with a checkbox on each row. Expenses and
+    incomes (Venmo, Zelle, cash) alike. Tap rows to select several.
+  - A search field at the top (merchant name, note, amount) for older transactions; the list
+    pages further back as you scroll.
+  - Rows already in another group are dimmed, show "In <group name>" and can't be selected.
+    Transfers are left out.
+  - A footer sums the selection ("$1,120 out · $70 in") above an "Add N transactions" button,
+    which returns to the group page.
 - The transaction editor also gets a **Group** field (pick, change or remove), for one transaction
-  at a time, which is the easy way to add a Venmo that arrives after the trip.
+  at a time, which is the easy way to add a Venmo that arrives later.
+- Removing a transaction from a group: swipe or long-press its row on the group page, "Remove
+  from group".
 
-### 5. Group page (screen 3)
+### 5. Group page (screen 2)
 
 - **Header:** back, name, status pill (amber "Active" / green "Resolved"), transaction count. No date range.
 - **List:** every member in day cards, expenses and incomes together, rows as on the Calendar tab
@@ -199,9 +207,8 @@ A card above the first day card, scrolling with the list.
   Balance (right, `text-textPrimary`), labels in `font-sansMed text-xs`, amounts in
   `font-display text-md` through `formatAmount`, on a `rounded-xl bg-surface` card with
   `shadow.sm`.
-- **Actions:** one full-width "Mark resolved" button (or "Reopen" once resolved). Menu: Rename,
-  Change colour, Delete group. There is no "Add transactions" button: transactions are added from
-  the Calendar (long-press, select mode) or the transaction editor's Group field.
+- **Actions:** "Add transactions" (opens the picker, §4) and "Mark resolved" (or "Reopen" once
+  resolved). Menu: Rename, Change colour, Delete group.
 
 ## Edge cases
 
@@ -224,7 +231,7 @@ A card above the first day card, scrolling with the list.
 3. `groupSummary.ts` + tests (totals, raw-amount rule, dates, cross-month).
 4. `useTransactionGroups`, `groupId` on `FeedItem`.
 5. Group page, reachable from the transaction editor's Group field.
-6. Select mode + Add to group sheet.
+6. "+ New group" and the Add transactions picker.
 7. Calendar: Groups card, `calendarFeed.ts` (hide active members, one row per resolved group),
    grid underline.
 
