@@ -27,6 +27,7 @@ questions the user actually has after a trip:
 | **Owed** | `max(0, Σ expected − Σ received)` over the group's expenses. |
 | **Your share** | `Σ expense amounts − Σ expected` — what the group costs the user once fully paid back. |
 | **Group dates** | First to last **expense** date. Paybacks never stretch the range. |
+| **Resolved date** | The day a group became Resolved: the date of the last payback that brought owed to $0; for "Settle anyway", the day it was settled; for a group nobody owed anything for, its last expense date. Derived, except for settling (`settled_at`). |
 
 ### Status: Active and Resolved
 
@@ -118,12 +119,17 @@ Both tables get the user-scoped RLS policy every other table has (`auth.uid() = 
 
 ## Effect on existing totals
 
-None. Groups are a lens, not a classification:
-
-- Category, budget, day and month totals are unchanged. Reimbursement netting already happens
-  through `transfers` (`netAmount`, `isReimbursementIncome` in `lib/transactions/totals.ts`), and
-  matching a payback through a group creates exactly those rows.
-- A grouped transaction keeps its own category.
+- **Category and budget totals: unchanged.** Each member keeps its own category and date there.
+  Reimbursement netting already happens through `transfers` (`netAmount`, `isReimbursementIncome`
+  in `lib/transactions/totals.ts`), and matching a payback through a group creates exactly those
+  rows. A resolved group has no single category, so it cannot be one row in a budget.
+- **Calendar day totals and day shading: a resolved group moves to its resolved date.** On the
+  Calendar a resolved group is one row (see UI §2), so its members leave their own days and the
+  row's amount (your share, i.e. the group's net) counts on the resolved date instead. Day
+  IN/OUT, day shading (`daySquares.ts`) and the Calendar's month total follow the rows on screen.
+  Consequence: a November trip resolved on Dec 2 disappears from November's Calendar and shows as
+  one row in December. Home and category screens are not affected.
+- While a group is Active nothing moves: every member shows and counts on its own day.
 
 ## API
 
@@ -156,6 +162,8 @@ groupSummary(group, members, feedById, transfers) => {
   expected, received, owed, yourShare, surplus,
   firstDate, lastDate,          // expense dates only
   status: 'active' | 'resolved',
+  resolvedDate,                 // null while active
+  calendarRow,                  // { date: resolvedDate, amount: net } when resolved, else null
   writtenOff,                   // owed at the moment of settling, when settled
 }
 ```
@@ -164,6 +172,12 @@ Hook: `useTransactionGroups()` (query + mutations, same pattern as `useTransfers
 resolver adds `groupId` to each `FeedItem` (direct member, or derived through a reimbursement link)
 so day cards can nest rows without a second lookup.
 
+For the Calendar, a step after the feed is resolved replaces the members of each resolved group
+with one synthetic `FeedItem` (`source: 'group'`, `id: group:<groupId>`, `date: resolvedDate`,
+`amount: −net`, category none). Everything downstream (`groupByDay`, `dayTotals`, `daySquares`,
+the calendar filter) then works unchanged. Only the Calendar tab applies this step; Home, budgets
+and category screens use the plain feed.
+
 ## UI
 
 ### 1. Calendar tab: Groups card (screens 1, 6)
@@ -171,35 +185,43 @@ so day cards can nest rows without a second lookup.
 A card above the first day card, scrolling with the list.
 
 - **Header:** "Groups" and "$X still owed to you" (sum of owed across Active groups).
-- **Active groups, every month, until resolved.** They are a to-do list. One from an earlier month
-  shows a "From November" tag next to its dates. Each row: icon, name, dates, number of friends
-  if split evenly, "$350 owed", "$490 of $840 back" and a progress bar. Tap opens the group.
-- **Resolved groups, only in months where they have an expense,** folded into one
-  "Resolved · N groups" row that expands to a list (name, dates, "your share $X"). A trip that
-  spans Oct 30 – Nov 2 appears in both months. Paybacks do not count, so a November trip paid back
-  on Dec 2 is not in December's list.
+- **Active groups only, in every month, until resolved.** They are a to-do list. One from an
+  earlier month shows a "From November" tag next to its dates. Each row: icon, name, dates, number
+  of friends if split evenly, "$350 owed", "$490 of $840 back" and a progress bar. Tap opens the
+  group.
+- **No Resolved list.** When a group resolves it leaves this card and becomes one row in the day
+  cards (§2).
 - **Totals on the card are always whole-group,** never the visible month's slice.
-- Hidden when there are no Active groups and no Resolved groups for the month.
+- Hidden when there are no Active groups.
 - The Calendar filter keeps working: with a filter on, the card still shows (groups are not
   filtered), but the day cards follow the filter as today.
 
-### 2. Day cards: rows stay on their own day (screens 1, 6)
+### 2. Day cards (screens 1, 6)
 
+**Active group: rows stay on their own day, nested.**
 - A group's rows for a day sit together under a small header: group colour tint, name in caps
   and member count, then "Open ›" or that group's owed amount. A left rule in the group colour
   marks the nested rows.
 - On a day outside the group's dates (a later payback), the header shows the dates
   ("TAHOE SKI TRIP · NOV 14–16") so it's clear which earlier trip the money belongs to.
-- Resolved groups: grey header, check mark, "RESOLVED". Rows render as normal.
-- The day's IN/OUT header is unchanged: it counts everything on the day.
+- The day's IN/OUT header counts everything on the day, as today.
 - Tapping the group header opens the group; tapping a row opens the transaction editor as today.
+
+**Resolved group: one row on its resolved date.**
+- All its members (expenses, paybacks, other income) leave their own days. In their place is a
+  single row on the resolved date, styled like a transaction: group icon with a small green check,
+  the group name, "Resolved · Dec 5 · 3 transactions" (the group dates and member count), and
+  the net amount (your share, e.g. −$40). No nested rows, no breakdown.
+- Tapping it opens the group page (Timeline view).
+- Reopening a group (unmatching a payback, raising an expected amount, clearing "Settle anyway")
+  puts its members back on their own days.
 
 ### 3. Calendar grid
 
-- A 3px underline in the group colour under each cell from the group's first to last expense date.
-- Resolved groups' underlines are drawn at reduced opacity.
-- Payback days get no underline; their green shading already shows income.
-- Two groups on one day: the underline splits into two segments.
+- Active groups: a 3px underline in the group colour under each cell from the group's first to
+  last expense date. Payback days get no underline; their green shading already shows income.
+- Resolved groups: no underline. Their only mark is the row (and its shading) on the resolved date.
+- Two active groups on one day: the underline splits into two segments.
 
 ### 4. Creating a group and adding to one (screen 2)
 
@@ -249,7 +271,7 @@ transaction.
   first until the payment runs out. Each amount is editable. A counter shows "$350 of $350
   assigned"; Match is disabled while it is over the payment amount.
 - **Preview:** if the match brings owed to $0, a green note says "Tahoe ski trip will be resolved"
-  and shows the final share.
+  and that it becomes one row on the payback's date with the final share.
 - **Match** creates one `reimbursement` transfer per allocated expense. "Not a payback" hides the
   suggestion for that transaction.
 - From "Match payment" on the group page, the flow runs the other way: pick the incoming payment
@@ -265,7 +287,9 @@ transaction.
 | Pending expense | Can be added; the amount updates when it posts; ID migrates (see above). |
 | Group with only incomes | Allowed (e.g. collecting money for a gift). Status follows the rules: no expected → Resolved. |
 | Masked amounts | All group amounts respect the existing `$****` masking. |
-| Account filter on Calendar | Day cards follow it. Group totals and status always use every account: a group is about the money, not the account. |
+| Account filter on Calendar | Day cards follow it. Group totals and status always use every account: a group is about the money, not the account. A resolved group's row shows when any of its members matches the filter. |
+| Calendar category filter | A resolved group's row has no category; it shows when any member matches the filter, with the full group net. |
+| Resolved in a later month | The group leaves the earlier month's Calendar entirely and appears as one row in the month of its resolved date. |
 
 ## Build order
 
@@ -275,7 +299,8 @@ transaction.
 4. `useTransactionGroups`, `groupId` on `FeedItem`.
 5. Group page (Matched + Timeline), reachable from the transaction editor's Group field.
 6. Select mode + Add to group sheet.
-7. Calendar: Groups card, nested day-card rows, grid underline.
+7. Calendar: Groups card, nested day-card rows for active groups, the resolved-group row
+   (synthetic feed item), grid underline.
 8. Payback suggestion + allocation sheet.
 
 Each step ships on its own; 1–5 give a working feature with the editor as the only entry point.
