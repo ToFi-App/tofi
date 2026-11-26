@@ -4,7 +4,7 @@ Status: proposal · Scope: let the user put expenses and incomes (Venmo, Zelle, 
 **group** (a trip, a night out, a shared dinner), see them together, and mark the group resolved
 once everyone has paid them back. Lives in the Calendar tab.
 
-Mockups: the "Transaction Groups" design canvas (6 screens). Screen numbers below refer to it.
+Mockups: the "Transaction Groups" design canvas (7 screens, plus a row of alternatives considered for the entry point). Screen numbers below refer to it.
 
 ## Problem
 
@@ -141,17 +141,17 @@ plain feed.
 
 ### 1. Calendar tab: Groups card (screens 1, 4)
 
-A card above the first day card, scrolling with the list. Its header holds "+ New group" (§4).
+A card above the first day card, scrolling with the list. While it shows, its header also holds a
+"+ New group" shortcut (§4).
 
 - **Active groups only, in every month, until resolved.** No month label, even for a group from
   an earlier month.
 - **Each row:** icon, name, transaction count, Net (e.g. −$759)
   under it, and a `›` chevron at the right so it reads as tappable. Tap opens the group page.
 - **Totals are always whole-group,** never the visible month's slice.
-- **No active groups (screen 5):** the card shrinks to one line: "Groups", "Track a trip or a
-  night out", and the "+ New group" button. It is never hidden, so creating a group is always
-  one tap away. No Resolved list: a resolved group leaves this card and
-  its transactions go back into the day cards (§2).
+- **No active groups (screen 5):** the card is not shown at all; the list starts with the day
+  cards. Creating a group is always possible from the "+" menu (§4). No Resolved list: a resolved
+  group leaves this card and its transactions go back into the day cards (§2).
 - The Calendar filter does not hide the card; the day cards follow the filter as today.
 
 ### 2. Day cards (screens 1, 4)
@@ -178,10 +178,18 @@ A card above the first day card, scrolling with the list. Its header holds "+ Ne
 - Resolved groups: no underline. Their transactions shade their own days as normal.
 - Two active groups on one day: the underline splits into two segments.
 
-### 4. Creating a group and adding to it (screens 1, 2, 3)
+### 4. Creating a group and adding to it (screens 2, 3, 5, 6, 7)
 
-- **New group:** a "+ New group" button in the Groups card header. It asks only for a name
-  (colour and icon picked automatically, changeable later), then opens the new, empty group page.
+- **"+" menu (screens 5, 6):** the header's "+" button, which today opens a new manual
+  transaction, opens a small menu instead: "New transaction" and "New group" (with a NEW tag
+  and the line "Bundle a trip's spending and Venmos").
+  - **New-feature dot:** a small purple dot on the "+" button until the user opens the menu once.
+    Opening the menu clears it for good (stored per device, like other one-time UI flags in
+    MMKV). The NEW tag on the menu item disappears at the same time.
+  - "New transaction" does what "+" did before.
+- **New group:** from the "+" menu (or the Groups card shortcut). It asks only for a name
+  (colour and icon picked automatically, changeable later), then opens the new, empty group page
+  (screen 7).
 - **Add transactions** (button on the group page, next to "Mark resolved") opens a full-height
   picker:
   - Recent transactions, newest first, in day cards with a checkbox on each row. Expenses and
@@ -208,7 +216,7 @@ A card above the first day card, scrolling with the list. Its header holds "+ Ne
   Balance (right, `text-textPrimary`), labels in `font-sansMed text-xs`, amounts in
   `font-display text-md` through `formatAmount`, on a `rounded-xl bg-surface` card with
   `shadow.sm`.
-- **Empty group (screen 6),** right after "+ New group": the totals card at $0.00 and, instead
+- **Empty group (screen 7),** right after "+ New group": the totals card at $0.00 and, instead
   of day cards, an empty state ("No transactions yet. Add the expenses and Venmos from this
   trip.") with a large "Add transactions" button. "Mark resolved" is hidden until the group has
   at least one transaction.
@@ -234,7 +242,7 @@ A card above the first day card, scrolling with the list. Its header holds "+ Ne
 3. `groupSummary.ts` + tests (totals, raw-amount rule, dates, cross-month).
 4. `useTransactionGroups`, `groupId` on `FeedItem`.
 5. Group page, reachable from the transaction editor's Group field.
-6. "+ New group" and the Add transactions picker.
+6. "+" menu with the new-feature dot, "New group", and the Add transactions picker.
 7. Calendar: Groups card, `calendarFeed.ts` (hide active members), group pill on resolved
    members' rows, grid underline.
 
