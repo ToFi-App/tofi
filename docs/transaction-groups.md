@@ -21,9 +21,9 @@ that pay it back. Nothing in ToFi today shows a trip as one thing, so the user c
 | **Group** | A named set of transactions. Name, colour, icon. |
 | **Member** | A transaction in a group: an expense or an income. A transaction belongs to **at most one** group. |
 | **Out / In / Net** | Sum of member expenses / sum of member incomes / `In − Out`. Net is what the group cost the user. |
-| **Group dates** | First to last **expense** date, worked out from the members. Never shown to the user; used only for the calendar underline and to place the resolved row. Incomes never stretch the range. |
+| **Group dates** | First to last **expense** date, worked out from the members. Never shown to the user; used only for the calendar underline. Incomes never stretch the range. |
 | **Active** | Default for a new group. Shown in the Groups card, its transactions kept out of the day cards. |
-| **Resolved** | The user tapped "Mark resolved". Shown as one row on the Calendar, worth Net, on the group's **last expense date** (last member date if it has no expenses). |
+| **Resolved** | The user tapped "Mark resolved". Leaves the Groups card; its transactions go back to their own days on the Calendar, each with a pill naming the group. |
 
 Status is set **by hand**: the app does not try to work out whether everyone has paid. The group
 page shows Out / In / Net, which is enough for the user to judge. "Reopen" moves a resolved group
@@ -92,8 +92,7 @@ the feed, like everywhere else.
   (`daySquares.ts`) and the Calendar's month total count only what the day cards show (UI §2):
   - **Active group:** its members are not in the day cards, so they count nowhere on the Calendar
     yet. They are visible in the Groups card and on the group page.
-  - **Resolved group:** counts once, as its Net, on its last expense date. A trip stays in the
-    month it happened even if the last Venmo came in the next month.
+  - **Resolved group:** every member counts on its own day, exactly as if it were not grouped.
 
 ## API
 
@@ -120,7 +119,6 @@ groupSummary(group, members, feedById) => {
   out, in, net,                 // from each item's own amount (see below)
   firstDate, lastDate,          // expense dates only
   status: 'active' | 'resolved',
-  calendarRow,                  // { date: lastDate, amount: net } when resolved, else null
 }
 ```
 
@@ -131,10 +129,9 @@ Hook: `useTransactionGroups()` (query + mutations, same pattern as `useTransfers
 resolver adds `groupId` to each `FeedItem` so the Calendar can pull members out without a second
 lookup.
 
-For the Calendar, a step after the feed is resolved (`lib/groups/calendarFeed.ts`):
-- drops every member of an **Active** group;
-- replaces the members of each **Resolved** group with one synthetic `FeedItem`
-  (`source: 'group'`, `id: group:<groupId>`, `date: lastDate`, `amount: −net`, category none).
+For the Calendar, a step after the feed is resolved (`lib/groups/calendarFeed.ts`) drops every
+member of an **Active** group. Members of a **Resolved** group pass through unchanged; their
+`groupId` is what the row reads to draw the group pill.
 
 Everything downstream (`groupByDay`, `dayTotals`, `daySquares`, the calendar filter) then works
 unchanged. Only the Calendar tab applies this step; Home, budgets and category screens use the
@@ -146,13 +143,13 @@ plain feed.
 
 A card above the first day card, scrolling with the list. Its header holds "+ New group" (§4).
 
-- **Active groups only, in every month, until resolved.** One from an earlier month shows a
-  "From November" tag.
+- **Active groups only, in every month, until resolved.** No month label, even for a group from
+  an earlier month.
 - **Each row:** icon, name, transaction count, Net (e.g. −$759)
   under it, and a `›` chevron at the right so it reads as tappable. Tap opens the group page.
 - **Totals are always whole-group,** never the visible month's slice.
 - Hidden when there are no Active groups. No Resolved list: a resolved group leaves this card and
-  becomes one row in the day cards (§2).
+  its transactions go back into the day cards (§2).
 - The Calendar filter does not hide the card; the day cards follow the filter as today.
 
 ### 2. Day cards (screens 1, 4)
@@ -162,19 +159,21 @@ A card above the first day card, scrolling with the list. Its header holds "+ Ne
 - Adding a transaction to a group removes it from its day card at once; removing it from the
   group puts it back.
 
-**Resolved group: one row on its last expense day.**
-- In place of all its members, a single row styled like a transaction: group icon with a small
-  green check, the group name, "Resolved · 3 transactions", and Net (e.g. Holiday party −$40).
-  No breakdown.
-- Tapping it opens the group page.
-- Reopening the group takes the row away and the group goes back to the Groups card.
+**Resolved group: its transactions are back on their own days, each with a group pill.**
+- Every member shows as a normal row on its own date (Trader Joe's on Dec 5, Sam's Zelle on
+  Dec 6), with its own amount and category.
+- Next to the category on the row's second line, a small pill in the group colour with the
+  group name and a `›` ("Holiday party ›"). Tapping the pill opens the group page; tapping
+  the rest of the row opens the transaction editor as today.
+- Day IN/OUT and shading count these rows as normal.
+- Reopening the group takes its transactions out of the day cards again and puts it back in the
+  Groups card.
 
 ### 3. Calendar grid
 
 - Active groups: a 3px underline in the group colour under each cell from the group's first to
   last expense date. This is the only mark an active group leaves on the grid.
-- Resolved groups: no underline. Their only mark is the row (and its shading) on their last
-  expense day.
+- Resolved groups: no underline. Their transactions shade their own days as normal.
 - Two active groups on one day: the underline splits into two segments.
 
 ### 4. Creating a group and adding to it (screens 1, 2, 3)
@@ -216,12 +215,10 @@ A card above the first day card, scrolling with the list. Its header holds "+ Ne
 |---|---|
 | Grouped transaction is later marked as a transfer | Not allowed: the transfer sheet asks to remove it from the group first. |
 | Pending transaction | Can be added; the amount updates when it posts; ID migrates (see above). |
-| Group with only incomes | Allowed (e.g. collecting money for a gift). Resolved row goes on its last member date and shows as income. |
-| Venmo arrives after the group is resolved | User adds it through the editor's Group field. The resolved row's Net updates; the row does not move. |
-| Net is positive (got back more than spent) | The resolved row shows as income (+$X). |
-| Trip spans two months (Oct 30 – Nov 2) | While active: underline in both months, Groups card in both. Once resolved: one row on Nov 2. |
-| Account filter on Calendar | Day cards follow it. Group totals always use every account. A resolved group's row shows when any of its members matches the filter. |
-| Calendar category filter | A resolved group's row has no category; it shows when any member matches the filter, with the full Net. |
+| Group with only incomes | Allowed (e.g. collecting money for a gift). |
+| Venmo arrives after the group is resolved | User adds it through the editor's Group field. It shows on its own day with the group pill. |
+| Trip spans two months (Oct 30 – Nov 2) | While active: underline in both months, Groups card in both. Once resolved: each transaction back in its own month. |
+| Account filter on Calendar | Day cards follow it. Group totals always use every account. |
 | Masked amounts | All group amounts respect the existing `$****` masking. |
 
 ## Build order
@@ -232,8 +229,8 @@ A card above the first day card, scrolling with the list. Its header holds "+ Ne
 4. `useTransactionGroups`, `groupId` on `FeedItem`.
 5. Group page, reachable from the transaction editor's Group field.
 6. "+ New group" and the Add transactions picker.
-7. Calendar: Groups card, `calendarFeed.ts` (hide active members, one row per resolved group),
-   grid underline.
+7. Calendar: Groups card, `calendarFeed.ts` (hide active members), group pill on resolved
+   members' rows, grid underline.
 
 Each step ships on its own; 1–5 give a working feature with the editor as the only entry point.
 
