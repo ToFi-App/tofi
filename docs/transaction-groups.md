@@ -21,7 +21,7 @@ that pay it back. Nothing in ToFi today shows a trip as one thing, so the user c
 | **Group** | A named set of transactions. Name, colour, icon. |
 | **Member** | A transaction in a group: an expense or an income. A transaction belongs to **at most one** group. |
 | **Out / In / Net** | Sum of member expenses / sum of member incomes / `In − Out`. Net is what the group cost the user. |
-| **Group dates** | First to last **expense** date. Incomes never stretch the range. |
+| **Group dates** | First to last **expense** date, worked out from the members. Never shown to the user; used only for the calendar underline and to place the resolved row. Incomes never stretch the range. |
 | **Active** | Default for a new group. Shown in the Groups card, its transactions kept out of the day cards. |
 | **Resolved** | The user tapped "Mark resolved". Shown as one row on the Calendar, worth Net, on the group's **last expense date** (last member date if it has no expenses). |
 
@@ -147,8 +147,8 @@ plain feed.
 A card above the first day card, scrolling with the list.
 
 - **Active groups only, in every month, until resolved.** One from an earlier month shows a
-  "From November" tag next to its dates.
-- **Each row:** icon, name, dates and transaction count on one line, Net (e.g. −$759)
+  "From November" tag.
+- **Each row:** icon, name, transaction count, Net (e.g. −$759)
   under it, and a `›` chevron at the right so it reads as tappable. Tap opens the group page.
 - **Totals are always whole-group,** never the visible month's slice.
 - Hidden when there are no Active groups. No Resolved list: a resolved group leaves this card and
@@ -190,7 +190,7 @@ A card above the first day card, scrolling with the list.
 
 ### 5. Group page (screen 3)
 
-- **Header:** back, name, status pill (amber "Active" / green "Resolved"), dates, transaction count.
+- **Header:** back, name, status pill (amber "Active" / green "Resolved"), transaction count. No date range.
 - **List:** every member in day cards, expenses and incomes together, rows as on the Calendar tab
   (built with `DayGroupedTransactions` on the group's items). Tapping a row opens the transaction
   editor.
