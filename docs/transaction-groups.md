@@ -148,7 +148,7 @@ A card above the first day card, scrolling with the list.
 
 - **Active groups only, in every month, until resolved.** One from an earlier month shows a
   "From November" tag next to its dates.
-- **Each row:** icon, name, dates, transaction count, Net (e.g. −$759), and "Out $1,249 · In $490"
+- **Each row:** icon, name, dates and transaction count on one line, Net (e.g. −$759)
   under it, and a `›` chevron at the right so it reads as tappable. Tap opens the group page.
 - **Totals are always whole-group,** never the visible month's slice.
 - Hidden when there are no Active groups. No Resolved list: a resolved group leaves this card and
@@ -194,7 +194,11 @@ A card above the first day card, scrolling with the list.
 - **List:** every member in day cards, expenses and incomes together, rows as on the Calendar tab
   (built with `DayGroupedTransactions` on the group's items). Tapping a row opens the transaction
   editor.
-- **Bottom bar:** Out / In / Net for the whole group.
+- **Totals card** under the header, styled like the summary row under the Calendar tab's month
+  grid (`MonthCalendar`): Income (left, `text-income`), Expenses (centre, `text-expense`),
+  Balance (right, `text-textPrimary`), labels in `font-sansMed text-xs`, amounts in
+  `font-display text-md` through `formatAmount`, on a `rounded-xl bg-surface` card with
+  `shadow.sm`.
 - **Actions:** "Add transactions" (opens select mode around the group's dates, ±7 days) and
   "Mark resolved" (or "Reopen" once resolved). Menu: Rename, Change colour, Delete group.
 
