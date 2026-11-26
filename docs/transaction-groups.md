@@ -4,7 +4,7 @@ Status: proposal · Scope: let the user put expenses and incomes (Venmo, Zelle, 
 **group** (a trip, a night out, a shared dinner), see them together, and mark the group resolved
 once everyone has paid them back. Lives in the Calendar tab.
 
-Mockups: the "Transaction Groups" design canvas (4 screens). Screen numbers below refer to it.
+Mockups: the "Transaction Groups" design canvas (6 screens). Screen numbers below refer to it.
 
 ## Problem
 
@@ -148,7 +148,9 @@ A card above the first day card, scrolling with the list. Its header holds "+ Ne
 - **Each row:** icon, name, transaction count, Net (e.g. −$759)
   under it, and a `›` chevron at the right so it reads as tappable. Tap opens the group page.
 - **Totals are always whole-group,** never the visible month's slice.
-- Hidden when there are no Active groups. No Resolved list: a resolved group leaves this card and
+- **No active groups (screen 5):** the card shrinks to one line: "Groups", "Track a trip or a
+  night out", and the "+ New group" button. It is never hidden, so creating a group is always
+  one tap away. No Resolved list: a resolved group leaves this card and
   its transactions go back into the day cards (§2).
 - The Calendar filter does not hide the card; the day cards follow the filter as today.
 
@@ -206,6 +208,10 @@ A card above the first day card, scrolling with the list. Its header holds "+ Ne
   Balance (right, `text-textPrimary`), labels in `font-sansMed text-xs`, amounts in
   `font-display text-md` through `formatAmount`, on a `rounded-xl bg-surface` card with
   `shadow.sm`.
+- **Empty group (screen 6),** right after "+ New group": the totals card at $0.00 and, instead
+  of day cards, an empty state ("No transactions yet. Add the expenses and Venmos from this
+  trip.") with a large "Add transactions" button. "Mark resolved" is hidden until the group has
+  at least one transaction.
 - **Actions:** "Add transactions" (opens the picker, §4) and "Mark resolved" (or "Reopen" once
   resolved). Menu: Rename, Change colour, Delete group.
 
