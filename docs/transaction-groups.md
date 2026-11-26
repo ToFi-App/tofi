@@ -47,7 +47,7 @@ returns the group to whatever the numbers say.
 
 If someone overpays (`Σ received > Σ expected`), the group is Resolved and the detail page shows the
 surplus. Per-expense "waiting" rows use `max(0, expected − received)` for each expense, so one
-overpaid expense does not hide another's shortfall in the Matched view, but the group's status uses
+overpaid expense does not hide another's shortfall in the Paybacks view, but the group's status uses
 the group-level totals.
 
 ## Data model
@@ -190,7 +190,8 @@ A card above the first day card, scrolling with the list.
 - **Active groups only, in every month, until resolved.** They are a to-do list. One from an
   earlier month shows a "From November" tag next to its dates. Each row: icon, name, dates, number
   of friends if split evenly, "$350 owed", "$490 of $840 back" and a progress bar. Tap opens the
-  group page, which is the only place an active group's transactions are listed.
+  group page, which opens on a calendar of the group's own spending. That is the only place an
+  active group's transactions are listed.
 - **No Resolved list.** When a group resolves it leaves this card and becomes one row in the day
   cards (§2).
 - **Totals on the card are always whole-group,** never the visible month's slice.
@@ -211,7 +212,7 @@ A card above the first day card, scrolling with the list.
   transaction: group icon with a small green check, the group name, "Resolved · 3 transactions",
   and the net amount (your share after everyone paid you back, e.g. Tahoe ski trip −$409 on
   Nov 16). No nested rows, no breakdown.
-- Tapping it opens the group page (Timeline view).
+- Tapping it opens the group page (Calendar view).
 - Reopening a group (unmatching a payback, raising an expected amount, clearing "Settle anyway")
   takes the row away and the group goes back to the Groups card.
 
@@ -242,18 +243,30 @@ A card above the first day card, scrolling with the list.
 
 ### 5. Group page (screens 3, 4)
 
-- **Header:** back, name, status pill (amber "Active" / green "Resolved"), dates, transaction count.
-- **Summary card:** "Still owed to you $350" with a progress bar ($490 back of $840 expected), then
-  Spent, Back so far, Your share. Resolved shows "All paid back" (or "$X written off") instead.
-- **Matched / Timeline** switch. Default is Matched while Active, Timeline once Resolved.
-  - **Matched:** one card per expense with its paybacks nested under it ("Alice Chen · Venmo +$210").
-    If one payment is split across expenses, each part shows "$24 of a $70 payment". A dashed
-    "Waiting on $210 · Match payment" row appears while that expense is short. Expenses with
-    `expected_back = 0` say "just yours". Explicit income members appear in an "Other income" card
-    at the end.
-  - **Timeline:** every group transaction, expenses and incomes together, by day, using the same
-    day cards. Days after the last expense sit under an "After the trip" divider. A floating bar
-    shows Out / In / Net.
+- **Header:** back, name, owed pill (amber "$350 owed" / green "Resolved"), dates, transaction
+  count, "$490 of $840 back".
+- **Calendar / Paybacks** switch. The page always opens on **Calendar**.
+  - **Calendar:** the Calendar tab's own month grid and day cards, fed with only this group's
+    transactions (expenses and paybacks, plus other income). This is where an active group's
+    spending is visible, since the Calendar tab leaves it out until the group resolves.
+    - Day shading uses the existing `daySquares` logic on the group's items: red for spent, green
+      for paid back. The group's trip days (first to last expense) carry the group-colour
+      underline. A small legend sits under the grid.
+    - The grid opens on the month of the first expense. Month arrows are enabled only when the
+      group has transactions in other months (e.g. a payback in December); otherwise they are
+      dimmed.
+    - Tapping a day scrolls to its day card, as on the Calendar tab.
+    - Below the grid, one day card per day with group transactions, rows as on the Calendar tab;
+      tapping a row opens the transaction editor.
+    - A floating bar shows Out / In / Net for the whole group.
+    - Built by reusing `MonthCalendar`'s grid and `DayGroupedTransactions` with the group's items,
+      not a new calendar.
+  - **Paybacks:** one card per expense with its paybacks nested under it ("Alice Chen · Venmo
+    +$210"). If one payment is split across expenses, each part shows "$24 of a $70 payment". A
+    dashed "Waiting on $210 · Match payment" row appears while that expense is short. Expenses
+    with `expected_back = 0` say "just yours". Explicit income members appear in an "Other income"
+    card at the end. A summary at the top: still owed, progress bar, Spent / Back so far / Your
+    share ("All paid back" or "$X written off" once resolved).
 - **Actions:** Add transactions (opens select mode scoped to the group's dates, ±3 days),
   Settle anyway (confirm: "Write off $350? The group will be marked resolved."), and in the menu
   Rename, Change colour, Reopen (if settled), Delete group.
@@ -300,7 +313,7 @@ transaction.
 2. Extend `transactions.migrateIds` and the orphan sweep to cover group members.
 3. `groupSummary.ts` + tests (status, owed, overpayment, settle, cross-month dates).
 4. `useTransactionGroups`, `groupId` on `FeedItem`.
-5. Group page (Matched + Timeline), reachable from the transaction editor's Group field.
+5. Group page (Calendar + Paybacks), reachable from the transaction editor's Group field.
 6. Select mode + Add to group sheet.
 7. Calendar: Groups card, `calendarFeed.ts` (hide active members, one row per resolved group),
    grid underline.
