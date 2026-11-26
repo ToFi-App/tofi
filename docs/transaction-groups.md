@@ -141,8 +141,8 @@ plain feed.
 
 ### 1. Calendar tab: Groups card (screens 1, 4)
 
-A card above the first day card, scrolling with the list. While it shows, its header also holds a
-"+ New group" shortcut (§4).
+A card above the first day card, scrolling with the list. New groups are created from the "+"
+menu (§4), not from this card.
 
 - **Active groups only, in every month, until resolved.** No month label, even for a group from
   an earlier month.
@@ -227,7 +227,8 @@ account details open, with the picker pushed inside it as a second view.
   trip.") with a large "Add transactions" button. "Mark resolved" is hidden until the group has
   at least one transaction.
 - **Actions:** "Add transactions" (opens the picker, §4) and "Mark resolved" (or "Reopen" once
-  resolved). Menu: Rename, Change colour, Delete group.
+  resolved). The header's "…" button offers Rename (iOS) and Delete group. Changing a group's
+  colour or icon is not built yet; the API already accepts both.
 
 ## Edge cases
 
