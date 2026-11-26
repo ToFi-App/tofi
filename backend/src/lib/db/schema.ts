@@ -253,3 +253,45 @@ export const transferDismissals = pgTable('transfer_dismissals', {
 }, (table) => ({
   uniquePerUser: uniqueIndex('transfer_dismissals_unique').on(table.userId, table.expensePlaidTransactionId),
 }))
+
+// A user-named set of transactions — a trip, a night out — seen together on the Calendar tab
+// (docs/transaction-groups.md). Like `transfers`, only ids and user-entered metadata are stored:
+// a group's totals and dates are derived on the client from the feed. `resolved_at` is the only
+// status input; null means the group is still active.
+export const transactionGroups = pgTable('transaction_groups', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').notNull().references(() => authUsers.id),
+  name: text('name').notNull(),
+  /** Hex, same convention as categories.color. */
+  color: text('color').notNull(),
+  /** Icon slug from the category icon set; null falls back to the generic group icon. */
+  icon: text('icon'),
+  resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+// One row per transaction in a group. A transaction belongs to at most one group, enforced by the
+// partial uniques below (one per id column, mirroring transfers'). Expense vs income is never
+// stored — it comes from the transaction's sign in the feed. The Plaid column holds the same id
+// space as transfers' *_plaid_transaction_id, so FinanceKit-sourced rows go there too.
+export const transactionGroupMembers = pgTable('transaction_group_members', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').notNull().references(() => authUsers.id),
+  groupId: uuid('group_id').notNull().references(() => transactionGroups.id, { onDelete: 'cascade' }),
+  plaidTransactionId: text('plaid_transaction_id'),
+  // Cascade: deleting a manual transaction takes it out of its group rather than being blocked.
+  manualTransactionId: uuid('manual_transaction_id').references(() => manualTransactions.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  memberXor: check(
+    'group_member_xor',
+    sql`(${table.plaidTransactionId} IS NOT NULL) <> (${table.manualTransactionId} IS NOT NULL)`,
+  ),
+  plaidUnique: uniqueIndex('transaction_group_members_plaid_unique')
+    .on(table.userId, table.plaidTransactionId)
+    .where(sql`${table.plaidTransactionId} IS NOT NULL`),
+  manualUnique: uniqueIndex('transaction_group_members_manual_unique')
+    .on(table.userId, table.manualTransactionId)
+    .where(sql`${table.manualTransactionId} IS NOT NULL`),
+}))

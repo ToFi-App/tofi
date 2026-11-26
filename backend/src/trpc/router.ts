@@ -13,6 +13,7 @@ import { transactionOverridesRouter } from '../routers/transactionOverrides.js'
 import { budgetsRouter } from '../routers/budgets.js'
 import { transfersRouter } from '../routers/transfers.js'
 import { transferDismissalsRouter } from '../routers/transferDismissals.js'
+import { transactionGroupsRouter } from '../routers/transactionGroups.js'
 import { investmentsRouter } from '../routers/investments.js'
 import { onboardingRouter } from '../routers/onboarding.js'
 import { accountRouter } from '../routers/account.js'
@@ -32,6 +33,7 @@ export const appRouter = router({
   budgets: budgetsRouter,
   transfers: transfersRouter,
   transferDismissals: transferDismissalsRouter,
+  transactionGroups: transactionGroupsRouter,
   investments: investmentsRouter,
   onboarding: onboardingRouter,
   account: accountRouter,

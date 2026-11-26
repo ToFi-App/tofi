@@ -15,6 +15,8 @@ describe('schema', () => {
       'budgets',
       'transfers',
       'transferDismissals',
+      'transactionGroups',
+      'transactionGroupMembers',
     ] as const
     for (const name of tableNames) {
       expect(schema[name]).toBeDefined()
