@@ -199,8 +199,9 @@ A card above the first day card, scrolling with the list.
   Balance (right, `text-textPrimary`), labels in `font-sansMed text-xs`, amounts in
   `font-display text-md` through `formatAmount`, on a `rounded-xl bg-surface` card with
   `shadow.sm`.
-- **Actions:** "Add transactions" (opens select mode around the group's dates, ±7 days) and
-  "Mark resolved" (or "Reopen" once resolved). Menu: Rename, Change colour, Delete group.
+- **Actions:** one full-width "Mark resolved" button (or "Reopen" once resolved). Menu: Rename,
+  Change colour, Delete group. There is no "Add transactions" button: transactions are added from
+  the Calendar (long-press, select mode) or the transaction editor's Group field.
 
 ## Edge cases
 
