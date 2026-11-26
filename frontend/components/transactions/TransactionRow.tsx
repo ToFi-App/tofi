@@ -129,32 +129,11 @@ function TransactionRowComponent({
               : 'Reimbursement'
             : categoryName}
         </Text>
-        <View className="flex-row items-center gap-1.5">
-          <Text className="shrink font-sans text-sm text-textSecondary" numberOfLines={1}>
-            {/* A user-written note beats the raw merchant string — the same rule manual rows
-                follow, where the note IS the display name. */}
-            {item.note ?? item.merchantName}
-          </Text>
-          {groupId && groupName && groupColor ? (
-            // Its own Pressable inside the row's: a tap on the pill opens the group, a tap
-            // anywhere else still opens the transaction. Beside the merchant rather than in the
-            // badge slot, which already says what the row IS (a transfer, a reimbursement); the
-            // group says what it's PART OF.
-            <Pressable
-              onPress={() => onGroupPress?.(groupId)}
-              hitSlop={6}
-              accessibilityRole="button"
-              accessibilityLabel={`Open group ${groupName}`}
-              className="flex-row items-center gap-0.5 rounded-full px-2 py-0.5"
-              style={{ backgroundColor: hexToRgba(groupColor, 0.14), maxWidth: 150 }}
-            >
-              <Text className="shrink font-sansMed text-xs" numberOfLines={1} style={{ color: groupColor }}>
-                {groupName}
-              </Text>
-              <Ionicons name="chevron-forward" size={10} color={groupColor} />
-            </Pressable>
-          ) : null}
-        </View>
+        <Text className="font-sans text-sm text-textSecondary" numberOfLines={1}>
+          {/* A user-written note beats the raw merchant string — the same rule manual rows
+              follow, where the note IS the display name. */}
+          {item.note ?? item.merchantName}
+        </Text>
       </View>
 
       <View className="ml-3 items-end gap-0.5">
@@ -187,6 +166,24 @@ function TransactionRowComponent({
               {badge.label}
             </Text>
           </View>
+        ) : null}
+        {groupId && groupName && groupColor ? (
+          // Its own Pressable inside the row's: a tap on the pill opens the group, a tap anywhere
+          // else still opens the transaction. In the right column with the other badges rather
+          // than beside the merchant, where it squeezed the name the row is recognised by.
+          <Pressable
+            onPress={() => onGroupPress?.(groupId)}
+            hitSlop={6}
+            accessibilityRole="button"
+            accessibilityLabel={`Open group ${groupName}`}
+            className="flex-row items-center gap-0.5 rounded-full px-2 py-0.5"
+            style={{ backgroundColor: hexToRgba(groupColor, 0.14), maxWidth: 160 }}
+          >
+            <Text className="shrink font-sansMed text-xs" numberOfLines={1} style={{ color: groupColor }}>
+              {groupName}
+            </Text>
+            <Ionicons name="chevron-forward" size={10} color={groupColor} />
+          </Pressable>
         ) : null}
       </View>
     </Pressable>
