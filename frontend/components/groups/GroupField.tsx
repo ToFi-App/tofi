@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { reportError } from '@/lib/observability/log'
 import { Pressable, Text, View } from 'react-native'
 import { colors, hexToRgba } from '@/constants/theme'
 import { useTransactionGroups } from '@/hooks/useTransactionGroups'
@@ -29,7 +30,8 @@ export function GroupField({ itemId, memberRef }: { itemId: string; memberRef: M
         if (member) await groups.removeMembers({ groupId: currentGroupId, memberIds: [member.id] })
       }
       if (groupId) await groups.addMembers({ groupId, members: [memberRef] })
-    } catch {
+    } catch (err) {
+      reportError('group-field', err)
       setError("Couldn't update the group.")
     }
   }

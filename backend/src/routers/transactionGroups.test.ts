@@ -47,6 +47,14 @@ describe('transactionGroups router', () => {
     expect(repoMock.create).not.toHaveBeenCalled()
   })
 
+  it('says the migration is missing when the table does not exist, instead of a redacted 500', async () => {
+    repoMock.create.mockRejectedValue({ code: 'PGRST205', message: "Could not find the table 'public.transaction_groups'" })
+
+    await expect((await caller()).create({ name: 'Trip', color: '#8B5CF6', icon: null })).rejects.toMatchObject({
+      code: 'PRECONDITION_FAILED',
+    })
+  })
+
   it('resolve and reopen set and clear the resolved flag', async () => {
     await (await caller()).resolve({ id: GROUP_ID })
     await (await caller()).reopen({ id: GROUP_ID })

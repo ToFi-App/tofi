@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { reportError } from '@/lib/observability/log'
 import { View } from 'react-native'
 import { BottomSheet, useSheetScroll } from '@/components/ui/BottomSheet'
 import { SheetHeader } from '@/components/ui/SheetHeader'
@@ -35,7 +36,8 @@ export function NewGroupSheet({ visible, onClose, onCreated }: { visible: boolea
     try {
       const group = await groups.create({ name: trimmed, color: nextGroupColor(groups.groups), icon: null })
       onCreated(group.id)
-    } catch {
+    } catch (err) {
+      reportError('group-create', err)
       setError("Couldn't create the group. Try again.")
     }
   }
