@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { api } from '@/lib/api/client'
-import { groupIdByItemId } from '@/lib/groups/groups'
+import { effectiveGroupIdByItemId } from '@/lib/groups/groups'
+import { useTransactionFeed } from '@/hooks/useTransactionFeed'
 import type { TransactionGroup, TransactionGroupMember } from '@/types/domain'
 
 const NO_GROUPS: TransactionGroup[] = []
@@ -28,14 +29,19 @@ export function useTransactionGroups() {
   const groups = query.data?.groups ?? NO_GROUPS
   const members = query.data?.members ?? NO_MEMBERS
   const groupById = useMemo(() => new Map(groups.map((g) => [g.id, g])), [groups])
-  const groupIdByItem = useMemo(() => groupIdByItemId(members), [members])
+  // Includes paybacks linked to a member expense as reimbursements (effectiveGroupIdByItemId), so
+  // every surface — totals, the Calendar's hiding, pills, the picker — sees the same membership.
+  const { feed } = useTransactionFeed()
+  const feedById = useMemo(() => new Map(feed.map((item) => [item.id, item])), [feed])
+  const groupIdByItem = useMemo(() => effectiveGroupIdByItemId(members, feedById), [members, feedById])
 
   return {
     groups,
     members,
     groupById,
-    /** Feed id → group id, for the row pill and the editor's Group field. */
+    /** Feed id → group id, stored members plus linked paybacks. */
     groupIdByItem,
+    feedById,
     isLoading: query.isLoading,
     error: query.error,
     isSaving:

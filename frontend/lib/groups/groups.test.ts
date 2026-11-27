@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   canJoinGroup,
+  effectiveGroupIdByItemId,
   groupIdByItemId,
   hideActiveGroupMembers,
   memberItemId,
@@ -98,7 +99,7 @@ describe('summarizeGroup', () => {
   )
 
   it('sums out and in from the members found, newest first', () => {
-    const s = summarizeGroup(group('trip'), [member('trip', 'airbnb'), member('trip', 'gas'), member('trip', 'venmo'), member('x', 'other')], feed)
+    const s = summarizeGroup(group('trip'), groupIdByItemId([member('trip', 'airbnb'), member('trip', 'gas'), member('trip', 'venmo'), member('x', 'other')]), feed)
     expect(s.items.map((i) => i.id)).toEqual(['venmo', 'gas', 'airbnb'])
     expect(s.out).toBe(936)
     expect(s.in).toBe(70)
@@ -107,7 +108,7 @@ describe('summarizeGroup', () => {
   })
 
   it('skips members whose transaction is no longer in the feed', () => {
-    const s = summarizeGroup(group('trip'), [member('trip', 'airbnb'), member('trip', 'gone')], feed)
+    const s = summarizeGroup(group('trip'), groupIdByItemId([member('trip', 'airbnb'), member('trip', 'gone')]), feed)
     expect(s.items).toHaveLength(1)
     expect(s.out).toBe(840)
   })
@@ -118,7 +119,7 @@ describe('summarizeGroup', () => {
       ['airbnb', item('airbnb', 840, '2026-11-14', { reimbursedAmount: 210, netAmount: 630 })],
       ['venmo', item('venmo', -210, '2026-11-18', { isReimbursementIncome: true })],
     ])
-    const s = summarizeGroup(group('trip'), [member('trip', 'airbnb'), member('trip', 'venmo')], netted)
+    const s = summarizeGroup(group('trip'), groupIdByItemId([member('trip', 'airbnb'), member('trip', 'venmo')]), netted)
     expect(s.net).toBe(-630)
   })
 })
@@ -128,13 +129,51 @@ describe('hideActiveGroupMembers', () => {
 
   it('drops members of active groups and keeps resolved ones', () => {
     const groups = [group('active'), group('done', '2026-11-20T00:00:00Z')]
-    const out = hideActiveGroupMembers(items, groups, [member('active', 'a'), member('done', 'b')])
+    const out = hideActiveGroupMembers(items, groups, groupIdByItemId([member('active', 'a'), member('done', 'b')]))
     expect(out.map((i) => i.id)).toEqual(['b', 'c'])
   })
 
   it('returns the same array when nothing is hidden, so downstream memos hold', () => {
-    expect(hideActiveGroupMembers(items, [], [])).toBe(items)
-    expect(hideActiveGroupMembers(items, [group('done', '2026-11-20T00:00:00Z')], [member('done', 'a')])).toBe(items)
+    expect(hideActiveGroupMembers(items, [], groupIdByItemId([]))).toBe(items)
+    expect(hideActiveGroupMembers(items, [group('done', '2026-11-20T00:00:00Z')], groupIdByItemId([member('done', 'a')]))).toBe(items)
+  })
+})
+
+describe('effectiveGroupIdByItemId', () => {
+  const link = (itemId: string) => ({
+    recordId: `r-${itemId}`, kind: 'reimbursement' as const, itemId, merchantName: null, date: null,
+    accountId: null, amount: 30, counterpartAmount: -30,
+  })
+  const feed = new Map(
+    [
+      item('cafe', 100.76, '2026-11-06', { links: [link('venmo1'), link('venmo2')] }),
+      item('venmo1', -40, '2026-11-07', { isReimbursementIncome: true, links: [] }),
+      item('venmo2', -29.26, '2026-11-08', { isReimbursementIncome: true }),
+      item('lonely', 50, '2026-11-09', { links: [link('grouped-venmo')] }),
+      item('grouped-venmo', -50, '2026-11-09', { isReimbursementIncome: true }),
+    ].map((i) => [i.id, i]),
+  )
+
+  // The bug this exists for: a reimbursed expense charged in full inside its group.
+  it('pulls paybacks linked to a member expense into the group', () => {
+    const map = effectiveGroupIdByItemId([member('cafe-group', 'cafe')], feed)
+    expect(map.get('venmo1')).toBe('cafe-group')
+    expect(map.get('venmo2')).toBe('cafe-group')
+    const s = summarizeGroup(group('cafe-group'), map, feed)
+    expect(s.out).toBe(100.76)
+    expect(s.in).toBe(69.26)
+    expect(s.net).toBe(-31.5)
+  })
+
+  it('never moves a payback out of a group the user put it in', () => {
+    const map = effectiveGroupIdByItemId([member('trip', 'cafe'), member('other', 'venmo1')], feed)
+    expect(map.get('venmo1')).toBe('other')
+    expect(map.get('venmo2')).toBe('trip')
+  })
+
+  it('does not pull an expense in through a grouped payback', () => {
+    const map = effectiveGroupIdByItemId([member('trip', 'grouped-venmo')], feed)
+    expect(map.has('lonely')).toBe(false)
   })
 })
 
@@ -162,7 +201,7 @@ describe('pickerCandidates', () => {
   const members = [member('trip', 'mine'), member('dinner', 'elsewhere')]
 
   it('lists eligible rows not in this group, newest first, flagging ones in another group', () => {
-    const out = pickerCandidates(feed, 'trip', members, '')
+    const out = pickerCandidates(feed, 'trip', groupIdByItemId(members), '')
     expect(out.map((c) => [c.item.id, c.otherGroupId])).toEqual([
       ['elsewhere', 'dinner'],
       ['new', null],
@@ -171,8 +210,8 @@ describe('pickerCandidates', () => {
   })
 
   it('searches the shown name and the amount', () => {
-    expect(pickerCandidates(feed, 'trip', members, 'safe').map((c) => c.item.id)).toEqual(['new'])
-    expect(pickerCandidates(feed, 'trip', members, '$184').map((c) => c.item.id)).toEqual(['new'])
+    expect(pickerCandidates(feed, 'trip', groupIdByItemId(members), 'safe').map((c) => c.item.id)).toEqual(['new'])
+    expect(pickerCandidates(feed, 'trip', groupIdByItemId(members), '$184').map((c) => c.item.id)).toEqual(['new'])
   })
 })
 

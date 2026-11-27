@@ -63,10 +63,9 @@ function GroupDetail({ groupId, onClose, onAdd }: { groupId: string; onClose: ()
   const { openTransaction } = useTransactionEditorActions()
   const [error, setError] = useState<string | null>(null)
   const group = groups.groupById.get(groupId)
-  const feedById = useMemo(() => new Map(feed.map((item) => [item.id, item])), [feed])
   const summary = useMemo(
-    () => (group ? summarizeGroup(group, groups.members, feedById) : null),
-    [group, groups.members, feedById],
+    () => (group ? summarizeGroup(group, groups.groupIdByItem, groups.feedById) : null),
+    [group, groups.groupIdByItem, groups.feedById],
   )
 
   const categoryFor = useCallback(
@@ -238,7 +237,7 @@ function GroupPicker({ groupId, onClose, onBack }: { groupId: string; onClose: (
   const [limit, setLimit] = useState(PICKER_PAGE)
   const [error, setError] = useState<string | null>(null)
 
-  const candidates = useMemo(() => pickerCandidates(feed, groupId, groups.members, query), [feed, groupId, groups.members, query])
+  const candidates = useMemo(() => pickerCandidates(feed, groupId, groups.groupIdByItem, query), [feed, groupId, groups.groupIdByItem, query])
   const shown = useMemo(() => candidates.slice(0, limit), [candidates, limit])
   const days = useMemo(() => {
     const byItem = new Map(shown.map((c) => [c.item.id, c]))
