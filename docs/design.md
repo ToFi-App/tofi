@@ -51,6 +51,17 @@ warning          #B45309    Amber — approaching budget (70–90%)
 reimbursed       #7C3AED    Violet — reimbursement badge, partial reimbursement indicator
 ```
 
+### Gain / Loss (Net Worth tab)
+
+How net worth, an account or a position did over a window — the chart line, the headline change, row changes, mover chips. Market colours, kept apart from `income`/`expense`, which mean money into and out of the household:
+
+```
+gain             #00C805    Robinhood green — up over the window
+loss             #FF5000    Robinhood red — down over the window
+```
+
+Bright by design, so below AA as small text on white: every use pairs the colour with a caret, arrow or sign, so the colour is never the only cue. Deposits, withdrawals and trades are the user's own moves, not performance, so their chart dots take `primary` and `textSecondary` instead.
+
 ### Text
 
 ```

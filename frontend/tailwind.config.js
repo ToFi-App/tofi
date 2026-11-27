@@ -17,6 +17,7 @@ module.exports = {
         surfaceRaised: '#F3F3EF',
         border: '#E8E8E2',
         borderCard: '#ECECE6',
+        surfaceRow: '#FCFCFA',
         borderStrong: '#D3D3CA',
 
         primary: '#0F766E',
@@ -28,6 +29,8 @@ module.exports = {
         expense: '#E11D48',
         warning: '#B45309',
         reimbursed: '#7C3AED',
+        gain: '#00C805',
+        loss: '#FF5000',
 
         textPrimary: '#1C1C18',
         textSecondary: '#6E6E64',

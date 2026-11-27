@@ -4,7 +4,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import { runOnJS, useSharedValue } from 'react-native-reanimated'
 import Svg, { Circle, G, Line, Text as SvgText } from 'react-native-svg'
 import { colors, fontFamily, hexToRgba } from '@/constants/theme'
-import { fittedExtent, monotoneLine, slotX } from '@/lib/charts/lineChart'
+import { fittedExtent, slotX, straightLine } from '@/lib/charts/lineChart'
 import { formatTrendLabel, type Granularity, type TrendPoint } from '@/lib/accounts/netWorthHistory'
 
 /** What the chart reads of a point's position: its bucket for x, its first day for the label. */
@@ -79,9 +79,9 @@ const TAP_SLOP = 8
 const SCRUB_HOLD_MS = 250
 
 /**
- * Full-bleed, axis-free trend chart — net worth, an account's value: the line alone, smoothed and green when the period is
- * up (red when down), scaled to its own low and high the way a stock chart is, so its movement fills
- * the space. A day's size is read by tapping it — the headline shows its change — rather than drawn
+ * Full-bleed, axis-free trend chart — net worth, an account's value: the line alone, point to point
+ * like a market chart, in gain green when the period is up (loss red when down), scaled to its own
+ * low and high the way a stock chart is, so its movement fills the space. A day's size is read by tapping it — the headline shows its change — rather than drawn
  * as a bar beside the line that would only repeat its slope.
  */
 export function TrendChart({
@@ -127,10 +127,11 @@ export function TrendChart({
     const toLineY = (v: number) =>
       lineBottom - ((v - lineRange.min) / (lineRange.max - lineRange.min)) * (lineBottom - lineTop)
     const pts = points.map((p, i) => ({ x: toX(slots[i]), y: toLineY(p.value) }))
-    // Smoothed without overshoot: monotone, so no peak or dip appears that the data doesn't have.
-    // It ENDS at the latest point — the live dot — the way a stock chart's line ends at the last
-    // price; with the window ending today, that's the right edge.
-    const line = monotoneLine(pts)
+    // Straight from point to point, so each day's move is its own edge, as on a market chart; nothing
+    // is drawn between points that the data doesn't have. It ENDS at the latest point — the live
+    // dot — the way a stock chart's line ends at the last price; with the window ending today,
+    // that's the right edge.
+    const line = straightLine(pts)
     const area = pts.length < 2 ? '' : `${line} L ${pts[pts.length - 1].x} ${lineBottom} L ${pts[0].x} ${lineBottom} Z`
 
     return {
@@ -251,7 +252,7 @@ export function TrendChart({
   // Stock-chart convention: green when the period ended above where it opened, red below.
   const latest = pixelPts[pixelPts.length - 1]
   const isUp = isUpOverride ?? (points[points.length - 1]?.value ?? 0) >= baseline
-  const lineColor = isUp ? colors.income : colors.expense
+  const lineColor = isUp ? colors.gain : colors.loss
 
   return (
     <GestureDetector gesture={gesture}>

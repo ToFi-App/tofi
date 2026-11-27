@@ -1,39 +1,43 @@
-import { useEffect, useMemo, useState } from 'react'
-import { ActivityIndicator, ScrollView, Text, View } from 'react-native'
-import { Ionicons } from '@expo/vector-icons'
+import { useMemo, useState } from 'react'
+import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
-import { colors, spacing, pageBackdrop } from '@/constants/theme'
+import { colors, hexToRgba, pageBackdrop } from '@/constants/theme'
 import { useTransactionFeed } from '@/hooks/useTransactionFeed'
 import { usePullToRefresh } from '@/hooks/usePullToRefresh'
 import { useAmountsMasked } from '@/hooks/useAmountsMasked'
-import { MaskToggle } from '@/components/ui/MaskToggle'
 import { useHoldings } from '@/hooks/useHoldings'
 import { useInvestmentScope } from '@/hooks/useInvestmentScope'
 import { useInvestmentAccountFilter } from '@/hooks/useInvestmentAccountFilter'
 import { useTrendViewport } from '@/hooks/useTrendViewport'
-import { HoldingsHeatMap } from '@/components/accounts/HoldingsHeatMap'
 import { HoldingRows, type HoldingChange } from '@/components/accounts/HoldingRows'
 import { accountFallbackIcon } from '@/components/accounts/AccountRow'
-import { AccountList, AssetAllocation, type AccountSummaryRow } from '@/components/investments/PortfolioSummary'
+import { SecurityMark } from '@/components/accounts/SecurityMark'
+import { AccountList, AllocationDonut, type AccountSummaryRow } from '@/components/investments/PortfolioSummary'
 import { FreshnessInfo } from '@/components/investments/FreshnessInfo'
 import { InvestmentHistoryChart } from '@/components/accounts/InvestmentHistoryChart'
 import { AccountsFilterDropdown } from '@/components/ui/AccountsFilterDropdown'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { IconSwitch, type IconSwitchOption } from '@/components/ui/IconSwitch'
-import { NetWorthScopePills } from '@/components/networth/NetWorthScopePills'
+import { NetWorthHeader } from '@/components/networth/NetWorthHeader'
+import { BalanceHeadline } from '@/components/networth/BalanceHeadline'
+import { ChangeLabel } from '@/components/networth/ChangeLabel'
+import { SectionTitle } from '@/components/networth/ListCard'
+import { RANGE_LABELS } from '@/components/networth/RangeTabs'
 import { DayGroupHeader } from '@/components/transactions/DayGroupHeader'
 import { TransactionRow } from '@/components/transactions/TransactionRow'
 import {
   TransactionEditorErrorBanner,
   useTransactionEditorActions,
 } from '@/components/transactions/TransactionEditorProvider'
-import { formatGainPct, holdingsPricedAsOf, performanceColor } from '@/lib/accounts/holdings'
+import { assetClass, changeColor, formatGainPct, holdingLabel, holdingsPricedAsOf, monogramText } from '@/lib/accounts/holdings'
 import { investmentHeadlineGain, netPrincipal } from '@/lib/accounts/principal'
-import { bucketOf, type Granularity, type TrendRange } from '@/lib/accounts/netWorthHistory'
+import { computeNetWorthTotals } from '@/lib/accounts/netWorth'
+import { bucketOf, formatTrendLabel, type Granularity, type TrendRange } from '@/lib/accounts/netWorthHistory'
 import { dayOf, viewportBuckets, visiblePoints } from '@/lib/accounts/trendViewport'
 import { cashFlowMarkers, fillCalendarDays, rangeGain, windowReading } from '@/lib/investments/accountHistory'
 import { holdingRangeChange } from '@/lib/investments/portfolio'
+import { securityLogoUrl } from '@/lib/investments/securityLogo'
 import { markerRadius } from '@/lib/charts/markers'
 import { formatAmount, formatMaskableAmount } from '@/lib/format/money'
 import { groupByDay } from '@/lib/transactions/groupByDay'
@@ -47,14 +51,18 @@ import { PageBackdrop } from '@/components/ui/PageBackdrop'
 const TRANSFER_DAY_LIMIT = 12
 const DEFAULT_RANGE: TrendRange = '1W'
 const GRANULARITY: Granularity = 'day'
+/** How many of the window's biggest movers sit under the chart. */
+const MOVER_COUNT = 3
 
-/** Trend is the value over time; breakdown is what it's made of today, as the holdings map. */
+/** Trend is the value over time; breakdown is what it's made of today, as the allocation ring. */
 type InvestmentView = 'trend' | 'breakdown'
+
+type Mover = { holding: Holding; change: HoldingChange & { pct: number } }
 
 /**
  * How the investments are doing: the portfolio line, which holdings moved it, and what's held.
  *
- * One screen for every account and for each one alone. Opened from the tab bar it shows whatever
+ * One screen for every account and for each one alone. Opened from the switcher it shows whatever
  * was last picked; Net Worth's investment rows set the picker to their account before switching
  * here, so tapping an account lands straight on its performance with nothing in between.
  */
@@ -79,22 +87,27 @@ export function InvestmentsScreen() {
   const items = useMemo(() => feed.filter((item) => item.accountId != null && shownIds.has(item.accountId)), [feed, shownIds])
   const principal = useMemo(() => netPrincipal(items), [items])
   const totalGain = useMemo(() => investmentHeadlineGain(balance, principal, holdings), [balance, principal, holdings])
+  // The switcher's totals: net worth on the same live balances the Overview shows, and every
+  // investment account together whatever the filter here.
+  const switcherTotals = useMemo(() => {
+    const invested = investmentAccounts.reduce((sum, a) => sum + (a.balances?.current ?? 0), 0)
+    return {
+      overview: portfolio.liveAccounts ? computeNetWorthTotals(portfolio.liveAccounts, feed).netWorth : null,
+      investments: investmentAccounts.length > 0 ? invested : null,
+    }
+  }, [portfolio.liveAccounts, investmentAccounts, feed])
 
   const shownItemIds = useMemo(() => [...new Set(shownAccounts.map((a) => a.itemId))], [shownAccounts])
 
-  const [selectedId, setSelectedId] = useState<string | null>(null)
   const [view, setView] = useState<InvestmentView>('trend')
   const isTrend = view === 'trend'
-  useEffect(() => {
-    setSelectedId(null)
-  }, [filterId])
-  // A holding's own page, pushed on this tab's stack: it slides in, and swipes back. Opened from an
-  // account's card in the all-accounts list, it's scoped to that account, so a security held in two
-  // accounts shows only the tapped account's shares and trades.
-  const openHolding = (securityId: string, accountId?: string) =>
+  // A holding's own page, pushed on this tab's stack: it slides in, and swipes back. Opened with the
+  // picked account it's scoped to that account, so a security held in two accounts shows only that
+  // account's shares and trades; across every account, the security merged into one position.
+  const openHolding = (securityId: string) =>
     router.push({
       pathname: '/(tabs)/net-worth/holding',
-      params: { securityId, accountId: accountId ?? selectedAccount?.account_id ?? '' },
+      params: { securityId, accountId: selectedAccount?.account_id ?? '' },
     })
 
   const history = investmentHistory.history
@@ -112,7 +125,8 @@ export function InvestmentsScreen() {
   const visible = useMemo(() => visiblePoints(trendPoints, GRANULARITY, viewport), [trendPoints, viewport])
   const slots = useMemo(() => viewportBuckets(viewport, GRANULARITY), [viewport])
   const linePoints = useMemo(() => visible.map((p) => ({ value: p.value })), [visible])
-  // Deposits and withdrawals as dots on the line, read from each account's own activity. Across
+  // Deposits and withdrawals as dots on the line, read from each account's own activity. Money moved
+  // in or out isn't performance, so the dots take the brand teal and grey, not gain or loss. Across
   // several accounts each dot names its account — "to Individual", "from ROTH IRA" — so a transfer
   // between two of them reads as the pair it is rather than two unexplained dots.
   const flowMarkers = useMemo(() => {
@@ -128,7 +142,7 @@ export function InvestmentsScreen() {
       const where = named ? ` ${f.kind === 'deposit' ? 'TO' : 'FROM'} ${f.account.name.toUpperCase()}` : ''
       return {
         index: f.index,
-        color: f.kind === 'deposit' ? colors.income : colors.expense,
+        color: f.kind === 'deposit' ? colors.primary : colors.textSecondary,
         radius: markerRadius(f.amount, largest),
         label: `${word}${amount}${where}`,
       }
@@ -136,10 +150,10 @@ export function InvestmentsScreen() {
   }, [shownAccounts, histories, visible, isMasked])
   const reading = windowReading(visible, selectedIndex)
 
-  // Across every account the page lists the accounts — how each did, its share — each opening onto
-  // its own positions. Every gain on the page — headline, accounts, positions — is measured from one
-  // date: the chart's window in trend, and in breakdown the start of the history, so breakdown reads
-  // exactly what trend does on ALL.
+  // Across every account the page lists the accounts — how each did — each opening onto its own
+  // view. Every gain on the page — headline, accounts, positions — is measured from one date: the
+  // chart's window in trend, and in breakdown the start of the history, so breakdown reads exactly
+  // what trend does on ALL.
   const isAll = selectedAccount == null && investmentAccounts.length > 1
   const historyStart = trendPoints[0]?.date ?? null
   const windowStart = isTrend ? (visible[0]?.date ?? null) : historyStart
@@ -180,77 +194,107 @@ export function InvestmentsScreen() {
         : undefined,
     [windowStart, histories, investmentHistory.today],
   )
+  // The window's biggest moves, up or down, among the positions in view: each security once, read in
+  // the account holding most of it. Cash doesn't move.
+  const movers = useMemo<Mover[]>(() => {
+    if (!changeFor) return []
+    const best = new Map<string, Mover>()
+    for (const account of shownAccounts) {
+      for (const holding of holdingsByAccount.get(account.account_id) ?? []) {
+        if (holding.type === 'cash') continue
+        const change = changeFor(holding, account.account_id)
+        if (!change || change.pct == null) continue
+        const held = best.get(holding.securityId)
+        if (held && (held.holding.institutionValue ?? 0) >= (holding.institutionValue ?? 0)) continue
+        best.set(holding.securityId, { holding, change: { gain: change.gain, pct: change.pct } })
+      }
+    }
+    return [...best.values()].sort((a, b) => Math.abs(b.change.pct) - Math.abs(a.change.pct)).slice(0, MOVER_COUNT)
+  }, [changeFor, shownAccounts, holdingsByAccount])
   const windowUp = ((visible.length >= 2 ? rangeGain(visible, visible[0].date)?.gain : 0) ?? 0) >= 0
   // Trend reads the chart's window, like Net Worth; breakdown reads the whole history, what trend
   // shows on ALL. Both fall back to total return until the line exists.
   const shown = isTrend
     ? (reading?.gain ?? totalGain)
     : ((historyStart && trendPoints.length >= 2 ? rangeGain(trendPoints, historyStart) : null) ?? totalGain)
-  const shownColor = shown
-    ? shown.pct != null
-      ? performanceColor(shown.pct).base
-      : shown.gain >= 0
-        ? colors.income
-        : colors.expense
-    : colors.textMuted
+  const caption = !isTrend
+    ? RANGE_LABELS.ALL
+    : selectedIndex != null && visible[selectedIndex]
+      ? formatTrendLabel(visible[selectedIndex].date, GRANULARITY, 'long')
+      : activeRange
+        ? RANGE_LABELS[activeRange]
+        : undefined
+  const weightOf = useMemo(() => {
+    const total = holdings.reduce((sum, h) => sum + Math.max(0, h.institutionValue ?? 0), 0)
+    return (holding: Holding) => (total > 0 ? Math.max(0, holding.institutionValue ?? 0) / total : 0)
+  }, [holdings])
 
   const days = useMemo(() => groupByDay(items), [items])
   const shownDays = days.slice(0, TRANSFER_DAY_LIMIT)
   const hiddenCount = days.slice(TRANSFER_DAY_LIMIT).reduce((sum, day) => sum + day.items.length, 0)
 
+  const header = (
+    <NetWorthHeader
+      totals={switcherTotals}
+      isMasked={isMasked}
+      actions={
+        investmentAccounts.length > 0 ? (
+          <View className="items-center justify-center" style={{ width: 44, height: 44 }}>
+            <View
+              className="items-center justify-center rounded-full"
+              style={{ width: 36, height: 36, borderWidth: 1, borderColor: colors.borderCard }}
+            >
+              <AccountsFilterDropdown
+                accounts={investmentAccounts}
+                selectedAccountId={selectedAccount?.account_id ?? null}
+                onSelect={setFilterId}
+                variant="icon"
+              />
+            </View>
+          </View>
+        ) : null
+      }
+    />
+  )
+
   if (!portfolio.accounts.isLoading && investmentAccounts.length === 0) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: pageBackdrop.stops[0] }} edges={['top']}>
         <PageBackdrop />
-        {/* The switch stays reachable with nothing to show, or the tab would strand you here. */}
-        <View className="px-5 pt-3">
-          <NetWorthScopePills />
-        </View>
+        {/* The switcher stays reachable with nothing to show, or the tab would strand you here. */}
+        <View className="pt-3">{header}</View>
         <EmptyState message="Link a brokerage or retirement account to see your investments here." />
       </SafeAreaView>
     )
   }
 
-
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: pageBackdrop.stops[0] }} edges={['top']}>
       <PageBackdrop />
-      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerClassName="px-5 pb-10 pt-5" refreshControl={refreshControl}>
-        <View className="flex-row items-center justify-between">
-          <NetWorthScopePills />
-          <View className="rounded-full px-3 py-1.5" style={{ backgroundColor: colors.primaryMuted }}>
-            <AccountsFilterDropdown accounts={investmentAccounts} selectedAccountId={selectedAccount?.account_id ?? null} onSelect={setFilterId} />
-          </View>
+      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerClassName="pb-10 pt-3" refreshControl={refreshControl}>
+        {header}
+
+        <View className="px-5">
+          <TransactionEditorErrorBanner />
         </View>
 
-        <TransactionEditorErrorBanner />
+        <View className="mt-6">
+          <BalanceHeadline
+            label={selectedAccount ? selectedAccount.name : 'Your portfolio'}
+            value={isTrend && reading ? reading.value : balance}
+            change={shown ? { amount: shown.gain, pct: shown.pct } : null}
+            caption={shown ? caption : undefined}
+            isMasked={isMasked}
+            info={hasHoldings ? <FreshnessInfo itemIds={shownItemIds} pricedAsOf={holdingsPricedAsOf(holdings)} /> : undefined}
+          />
+        </View>
 
-        {/* Spaced as Overview's headline is (NetWorthPanel), so the two pages match from the chart up. */}
-        <View className="mt-5">
-          {/* Trend or Breakdown, as a small icon switch beside the figure: secondary to the
-              Net Worth | Investments pills above, so the screen doesn't stack two rows of pills. */}
-          <View className="flex-row items-center justify-between gap-3">
-            <MaskToggle>
-              <Text className="font-display text-2xl text-textPrimary">
-                {formatMaskableAmount(isTrend && reading ? reading.value : balance, isMasked)}
-              </Text>
-            </MaskToggle>
-            <IconSwitch options={VIEW_OPTIONS} value={view} onChange={setView} />
-          </View>
-          {shown || hasHoldings ? (
-            <View className="mt-1 flex-row items-center gap-1.5">
-              {shown ? (
-                <>
-                  {shown.gain !== 0 ? <Ionicons name={shown.gain > 0 ? 'caret-up' : 'caret-down'} size={12} color={shownColor} /> : null}
-                  <Text className="font-sansSemi text-sm" style={{ color: shownColor }}>
-                    {formatMaskableAmount(Math.abs(shown.gain), isMasked)}
-                    {shown.pct != null ? ` (${formatGainPct(shown.pct)})` : ''}
-                  </Text>
-                </>
-              ) : null}
-              <FreshnessInfo itemIds={shownItemIds} pricedAsOf={holdingsPricedAsOf(holdings)} />
-            </View>
-          ) : null}
+        {/* Trend or Allocation, as a small icon switch beside the section's name. */}
+        <View className="mt-7 px-5">
+          <SectionTitle
+            title={isTrend ? 'Trending' : 'Allocation'}
+            right={hasHoldings ? <IconSwitch options={VIEW_OPTIONS} value={view} onChange={setView} size="sm" /> : undefined}
+          />
         </View>
 
         {holdingsLoading && !hasHoldings ? (
@@ -258,7 +302,7 @@ export function InvestmentsScreen() {
             <ActivityIndicator color={colors.primary} />
           </View>
         ) : holdingsFailed ? (
-          <Text className="py-8 text-center font-sans text-sm text-textMuted">
+          <Text className="px-5 py-8 text-center font-sans text-sm text-textMuted">
             {needsRelink
               ? 'This institution needs to be reconnected to share holdings. Remove and relink it from Settings → Institutions.'
               : "Couldn't load holdings."}
@@ -268,8 +312,7 @@ export function InvestmentsScreen() {
         ) : (
           <>
             {isTrend ? (
-              // Edge to edge, like the net worth chart: the negative margin cancels the side padding.
-              <View className="mb-6 mt-3" style={{ marginHorizontal: -spacing[5] }}>
+              <View className="mt-2">
                 {history ? (
                   <InvestmentHistoryChart
                     history={history}
@@ -300,43 +343,63 @@ export function InvestmentsScreen() {
                 )}
               </View>
             ) : (
-              // Breakdown: what it's made of — the classes as one bar, then each holding sized.
-              <View className="mb-6 mt-2 gap-5">
-                <AssetAllocation holdings={holdings} />
-                <HoldingsHeatMap holdings={holdings} selectedId={selectedId} onSelect={setSelectedId} />
+              <View className="mt-5 px-5 pb-1">
+                <AllocationDonut holdings={holdings} />
               </View>
             )}
-            {/* A tile highlights its row; a row opens the holding's own page. */}
-            {isAll ? (
-              <AccountList
-                rows={accountSummaries}
-                isMasked={isMasked}
-                changeFor={changeFor}
-                selectedHoldingId={selectedId}
-                onSelectHolding={setSelectedId}
-                onOpenHolding={openHolding}
-                onOpenAccount={setFilterId}
-              />
-            ) : (
-              <HoldingRows
-                holdings={holdings}
-                isMasked={isMasked}
-                selectedId={selectedId}
-                onSelect={setSelectedId}
-                onOpen={openHolding}
-                // One account in view, picked or the only one: its own trades read its positions.
-                changeFor={changeFor && shownAccounts.length === 1 ? (holding) => changeFor(holding, shownAccounts[0].account_id) : undefined}
-              />
-            )}
+
+            <View className="mt-6 gap-7 px-5">
+              <SummaryStrip totalGain={totalGain} principal={principal} isMasked={isMasked} />
+
+              {isTrend && movers.length > 0 ? (
+                <View className="gap-3">
+                  <SectionTitle
+                    title="Top movers"
+                    right={caption ? <Text className="font-sans text-xs text-textSecondary">{caption}</Text> : undefined}
+                  />
+                  <View className="flex-row gap-2.5">
+                    {movers.map((mover) => (
+                      <MoverTile key={mover.holding.securityId} mover={mover} isMasked={isMasked} onPress={() => openHolding(mover.holding.securityId)} />
+                    ))}
+                  </View>
+                </View>
+              ) : null}
+
+              <View className="gap-3">
+                <SectionTitle
+                  title={isTrend ? 'Your positions' : 'Your assets'}
+                  right={
+                    <Text className="font-sans text-xs text-textSecondary">
+                      {!isTrend ? 'Share of portfolio' : changeFor && shownAccounts.length === 1 ? caption : 'Total return'}
+                    </Text>
+                  }
+                />
+                <HoldingRows
+                  holdings={holdings}
+                  isMasked={isMasked}
+                  onOpen={openHolding}
+                  // One account in view, picked or the only one: its own trades read its positions.
+                  changeFor={isTrend && changeFor && shownAccounts.length === 1 ? (holding) => changeFor(holding, shownAccounts[0].account_id) : undefined}
+                  weightOf={isTrend ? undefined : weightOf}
+                />
+              </View>
+
+              {isAll ? (
+                <View className="gap-3">
+                  <SectionTitle title="Accounts" />
+                  <AccountList rows={accountSummaries} isMasked={isMasked} onOpenAccount={setFilterId} />
+                </View>
+              ) : null}
+            </View>
           </>
         )}
 
         {/* Money moved in and out of the account. One account only: across all of them the list is
             mostly transfers between them, which say nothing about performance. */}
         {selectedAccount && items.length > 0 ? (
-          <>
+          <View className="px-5">
             <View className="mb-1 mt-8 flex-row items-baseline justify-between">
-              <Text className="font-sansSemi text-md text-textPrimary">Transfers</Text>
+              <SectionTitle title="Transfers" />
               {principal !== null ? (
                 <Text className="font-sansSemi text-base text-textSecondary">
                   {formatMaskableAmount(Math.abs(principal), isMasked)} {principal < 0 ? 'out' : 'in'}
@@ -349,11 +412,93 @@ export function InvestmentsScreen() {
                 {hiddenCount} older {hiddenCount === 1 ? 'transfer' : 'transfers'} not shown
               </Text>
             ) : null}
-          </>
+          </View>
         ) : null}
         <TabBarSpacer />
       </ScrollView>
     </SafeAreaView>
+  )
+}
+
+/**
+ * The portfolio's two lifetime figures side by side in one rimmed strip: what it has made — total
+ * return, in gain green or loss red — and what was put in, net of withdrawals.
+ */
+function SummaryStrip({
+  totalGain,
+  principal,
+  isMasked,
+}: {
+  totalGain: { gain: number; pct: number | null } | null
+  principal: number | null
+  isMasked: boolean
+}) {
+  if (!totalGain && principal == null) return null
+  return (
+    <View
+      className="flex-row"
+      style={{ borderRadius: 12, borderWidth: 1, borderColor: colors.borderCard, backgroundColor: colors.surfaceRow }}
+    >
+      <View className="flex-1 gap-1 px-3.5 py-3" style={{ borderRightWidth: 1, borderColor: colors.borderCard }}>
+        <Text className="font-sans text-xs text-textSecondary">Total return</Text>
+        {totalGain ? (
+          <>
+            <Text className="font-sansSemi text-base text-textPrimary" style={{ fontVariant: ['tabular-nums'] }}>
+              {`${totalGain.gain >= 0 ? '+' : '−'}${formatMaskableAmount(Math.abs(totalGain.gain), isMasked)}`}
+            </Text>
+            {totalGain.pct != null ? <ChangeLabel change={totalGain.gain} text={`${formatGainPct(totalGain.pct)} all time`} size="xs" /> : null}
+          </>
+        ) : (
+          <Text className="font-sansSemi text-base text-textMuted">—</Text>
+        )}
+      </View>
+      <View className="flex-1 gap-1 px-3.5 py-3">
+        <Text className="font-sans text-xs text-textSecondary">Put in</Text>
+        <Text className="font-sansSemi text-base text-textPrimary" style={{ fontVariant: ['tabular-nums'] }}>
+          {principal != null ? formatMaskableAmount(principal, isMasked) : '—'}
+        </Text>
+        <Text className="font-sans text-xs text-textSecondary">Net of withdrawals</Text>
+      </View>
+    </View>
+  )
+}
+
+/**
+ * One of the window's biggest movers: its mark, symbol and name, then its value and a chip with how
+ * far it moved, tinted gain green or loss red. Opens the holding's own page.
+ */
+function MoverTile({ mover, isMasked, onPress }: { mover: Mover; isMasked: boolean; onPress: () => void }) {
+  const { holding, change } = mover
+  const label = holdingLabel(holding)
+  const tone = changeColor(change.gain)
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${label}, ${formatGainPct(change.pct)}`}
+      className="flex-1 items-center"
+      style={{ borderRadius: 12, borderWidth: 1, borderColor: colors.borderCard, backgroundColor: colors.surfaceRow }}
+    >
+      <View className="items-center gap-1.5 px-2 pb-3 pt-3.5">
+        <SecurityMark uri={securityLogoUrl(holding)} monogram={monogramText(label)} color={assetClass(holding.type).color} size={36} />
+        <Text className="font-sansSemi text-amount text-textPrimary" numberOfLines={1}>
+          {label}
+        </Text>
+        {holding.name ? (
+          <Text className="font-sans text-xs text-textSecondary" numberOfLines={1}>
+            {holding.name}
+          </Text>
+        ) : null}
+      </View>
+      <View className="w-full items-center gap-1.5 pb-3 pt-2.5" style={{ borderTopWidth: 1, borderColor: colors.borderCard }}>
+        <Text className="font-sansSemi text-amount text-textPrimary" style={{ fontVariant: ['tabular-nums'] }} numberOfLines={1}>
+          {holding.institutionValue != null ? formatMaskableAmount(holding.institutionValue, isMasked) : '—'}
+        </Text>
+        <View className="rounded-full px-2 py-0.5" style={{ backgroundColor: hexToRgba(tone, 0.12) }}>
+          <ChangeLabel change={change.gain} text={formatGainPct(change.pct)} size="xs" />
+        </View>
+      </View>
+    </Pressable>
   )
 }
 
@@ -396,5 +541,5 @@ function InvestmentTransferDays({
 
 const VIEW_OPTIONS: Array<IconSwitchOption<InvestmentView>> = [
   { value: 'trend', icon: 'analytics-outline', label: 'Trend' },
-  { value: 'breakdown', icon: 'grid-outline', label: 'Breakdown' },
+  { value: 'breakdown', icon: 'pie-chart-outline', label: 'Allocation' },
 ]

@@ -1,17 +1,18 @@
-import { Image, Pressable, Text, View } from 'react-native'
+import { Image, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
-import { colors } from '@/constants/theme'
+import { colors, hexToRgba } from '@/constants/theme'
 import { FINANCEKIT_ITEM_ID } from '@/lib/financekit/mergeAccounts'
 import { formatAmount, formatMaskableAmount } from '@/lib/format/money'
-import { ScrollingText } from '@/components/ui/ScrollingText'
+import { AccountGlyph } from '@/components/accounts/AccountGlyph'
+import { ListCard, ListCardValue } from '@/components/networth/ListCard'
 
 interface AccountRowProps {
   name: string
+  /** The line under the name: the institution, or what the account is ("On hand"). */
+  subtitle?: string | null
   balance: number
   variant: 'cash' | 'credit' | 'investment' | 'cashOnHand'
   limit?: number | null
-  /** The first row in its section draws no rule above it: the section's header band sits there. */
-  isFirst?: boolean
   isMasked: boolean
   /** Base64 PNG institution logo; replaces the generic variant icon when present. */
   logo?: string | null
@@ -98,11 +99,11 @@ export function AccountIcon({
 // guideline, and the point where the bar turns from teal to red.
 const HIGH_UTILIZATION = 0.3
 
-// Sized so the rows read as a list under the hero card rather than competing with it.
+// The fallback glyph's box in the account picker and other compact lists.
 const ICON_SIZE = 28
 
-// The icon and name together take at most this share of the row; the rest belongs to the balance.
-const NAME_AREA_MAX_WIDTH = '62%'
+/** A row's mark on the Net Worth tab: a logo, or the fallback glyph in a circle. */
+const ROW_MARK_SIZE = 36
 
 function UtilizationLine({ balance, limit, isMasked }: { balance: number; limit: number; isMasked: boolean }) {
   const used = Math.max(0, balance) / limit
@@ -120,12 +121,16 @@ function UtilizationLine({ balance, limit, isMasked }: { balance: number; limit:
   )
 }
 
+/**
+ * One account on the Net Worth tab's Overview: its mark, its name over its institution, and its
+ * balance on the right — a credit card's with how much of its limit is used under it.
+ */
 export function AccountRow({
   name,
+  subtitle,
   balance,
   variant,
   limit,
-  isFirst,
   isMasked,
   logo,
   itemId,
@@ -134,38 +139,26 @@ export function AccountRow({
   onPressOut,
   delayLongPress,
 }: AccountRowProps) {
-  const balanceColor = variant === 'credit' ? colors.expense : colors.textPrimary
   // Charge cards report no preset limit as 0, which would read as "0% of $0.00".
   const hasLimit = variant === 'credit' && limit != null && limit > 0
+  const icon = accountFallbackIcon(variant, itemId)
 
   return (
-    <Pressable
+    <ListCard
+      mark={<AccountGlyph logo={logo} icon={icon} size={ROW_MARK_SIZE} background={hexToRgba(icon.color, 0.1)} />}
+      title={name}
+      subtitle={subtitle}
+      accessibilityLabel={`${name}, ${formatMaskableAmount(balance, isMasked)}`}
       onPress={onPress}
       onLongPress={onLongPress}
       onPressOut={onPressOut}
       delayLongPress={delayLongPress}
-      className="flex-row items-center justify-between py-3.5"
-      // A rule above every row but the first, splitting each account from the one before it.
-      style={isFirst ? undefined : { borderTopWidth: 1, borderColor: colors.primaryHairline }}
-    >
-      {/* Capped so the name stops well short of the balance, leaving a clear gap between them. */}
-      <View className="flex-1 flex-row items-center gap-3" style={{ maxWidth: NAME_AREA_MAX_WIDTH }}>
-        <AccountIcon logo={logo} variant={variant} itemId={itemId} />
-        <View className="flex-1 justify-center">
-          <ScrollingText
-            className="font-sansMed text-base text-textPrimary"
-            pressProps={{ onPress, onLongPress, onPressOut, delayLongPress }}
-          >
-            {name}
-          </ScrollingText>
-        </View>
-      </View>
-      <View className="ml-3 items-end gap-1">
-        <Text className="font-sansSemi text-base" style={{ color: balanceColor, fontVariant: ['tabular-nums'] }}>
-          {formatMaskableAmount(balance, isMasked)}
-        </Text>
-        {hasLimit ? <UtilizationLine balance={balance} limit={limit!} isMasked={isMasked} /> : null}
-      </View>
-    </Pressable>
+      right={
+        <>
+          <ListCardValue>{formatMaskableAmount(balance, isMasked)}</ListCardValue>
+          {hasLimit ? <UtilizationLine balance={balance} limit={limit!} isMasked={isMasked} /> : null}
+        </>
+      }
+    />
   )
 }

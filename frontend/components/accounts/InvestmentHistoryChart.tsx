@@ -1,7 +1,7 @@
 import { ActivityIndicator, Text, View, useWindowDimensions } from 'react-native'
 import { colors } from '@/constants/theme'
 import { TrendChart, type TrendSlot } from '@/components/visualizations/TrendChart'
-import { RangePills } from '@/components/ui/RangePills'
+import { RangeTabs } from '@/components/networth/RangeTabs'
 import type { Granularity, TrendRange } from '@/lib/accounts/netWorthHistory'
 import { formatMaskableAmount } from '@/lib/format/money'
 import type { AccountHistory } from '@/lib/investments/accountHistory'
@@ -44,7 +44,7 @@ interface InvestmentHistoryChartProps {
 
 /**
  * The account's value over a window, rebuilt from its trades, on the same zoomable chart as net
- * worth — tap or scrub a day, pinch to zoom, drag to pan — with its range pills and notes on what
+ * worth — tap or scrub a day, pinch to zoom, drag to pan — with its range tabs and notes on what
  * it can't see. The window's gain is the sheet's headline above it, so this draws no figure of its
  * own. Coloured by that gain rather than the change in value: a deposit lifts the line but isn't
  * performance.
@@ -102,9 +102,7 @@ export function InvestmentHistoryChart({
         )}
       </View>
 
-      <View className="px-4 pt-3">
-        <RangePills ranges={INVESTMENT_RANGES} value={activeRange} onChange={onRangeChange} />
-      </View>
+      <RangeTabs ranges={INVESTMENT_RANGES} value={activeRange} onChange={onRangeChange} />
 
       <View className="mt-3 px-5">
         {tradesUnavailable ? (

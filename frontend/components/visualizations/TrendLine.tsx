@@ -26,13 +26,13 @@ export const LineLayer = memo(function LineLayer({
     <G>
       <Defs>
         <LinearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-          <Stop offset="0" stopColor={lineColor} stopOpacity={0.2} />
+          <Stop offset="0" stopColor={lineColor} stopOpacity={0.22} />
           <Stop offset="1" stopColor={lineColor} stopOpacity={0} />
         </LinearGradient>
       </Defs>
       {areaPath ? <Path d={areaPath} fill={`url(#${gradientId})`} /> : null}
       {linePath ? (
-        <Path d={linePath} stroke={lineColor} strokeWidth={1.5} fill="none" strokeLinejoin="round" strokeLinecap="round" />
+        <Path d={linePath} stroke={lineColor} strokeWidth={2} fill="none" strokeLinejoin="round" strokeLinecap="round" />
       ) : null}
     </G>
   )

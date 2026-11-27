@@ -103,6 +103,16 @@ export function fittedExtent(values: number[], margin = 0.1, minSpan = 0): { min
 }
 
 /**
+ * Straight segments through `pts`, point to point: a market chart's line, where each day's move
+ * shows as its own edge rather than being rounded into its neighbours. Empty with fewer than two
+ * points, like monotoneLine, since one point draws no line.
+ */
+export function straightLine(pts: { x: number; y: number }[]): string {
+  if (pts.length < 2) return ''
+  return pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
+}
+
+/**
  * A smooth curve through `pts` (ascending x) that never overshoots: monotone cubic interpolation
  * (Fritsch–Carlson). Each segment stays between its own endpoints, so a flat stretch stays flat and
  * no peak or dip appears that the data doesn't have — the flaw of plain Catmull-Rom smoothing,

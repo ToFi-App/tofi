@@ -27,12 +27,23 @@ export const colors = {
   reimbursed: '#7C3AED',
   transfer: '#0E7490',
 
+  // How something did on the Net Worth tab — the change of net worth, an account or a position over
+  // a window: Robinhood's green and red, the colours a market chart is read in. Kept apart from
+  // `income`/`expense`, which mean money in and out of the household, not performance. Bright by
+  // design, so below AA as small text on white (about 2.2:1 and 2.9:1): a sign, arrow or
+  // caret always carries the direction too, so the colour is never the only cue.
+  gain: '#00C805',
+  loss: '#FF5000',
+
   textPrimary: '#1C1C18',
   textSecondary: '#6E6E64',
   textMuted: '#A8A89C',
   textInverse: '#FFFFFF',
   // A white card's own edge on a white page: lighter than `border`, which reads as a rule, not a rim.
   borderCard: '#E6E6DF',
+  // The Net Worth tab's list rows: a breath off white inside their `borderCard` rim, so a row reads
+  // as a tile on the page without the weight of a shadow.
+  surfaceRow: '#FCFCFA',
   // A control's fill on a plain white page: iOS's own neutral fill (the light grey of its segmented
   // controls and search fields) — cool and quiet, where a warm grey or a brand tint read as off.
   controlFill: 'rgba(118,118,128,0.12)',

@@ -12,7 +12,9 @@ import { usePlaidCredentials } from '@/hooks/usePlaidCredentials'
 import { useAddAccountFlow } from '@/hooks/useAddAccountFlow'
 import { AccountRow } from '@/components/accounts/AccountRow'
 import { NetWorthPanel } from '@/components/accounts/NetWorthPanel'
-import { AccountConsole, AccountSection } from '@/components/accounts/AccountSection'
+import { AccountGroup, RowGap } from '@/components/networth/AccountGroup'
+import { HeaderIconButton, NetWorthHeader } from '@/components/networth/NetWorthHeader'
+import { SectionTitle } from '@/components/networth/ListCard'
 import { ReorderableList } from '@/components/accounts/ReorderableList'
 import { AddAccountSheet } from '@/components/accounts/AddAccountSheet'
 import { AccountDetailSheet } from '@/components/accounts/AccountDetailSheet'
@@ -136,7 +138,7 @@ export function NetWorthScreen() {
       <PageBackdrop />
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
-        contentContainerClassName="gap-5 px-5 py-4"
+        contentContainerClassName="gap-6 px-5 pb-4 pt-3"
         refreshControl={refreshControl}
         scrollEnabled={!isDragging}
       >
@@ -194,63 +196,70 @@ export function NetWorthScreen() {
           accounts={liveAccounts ?? EMPTY_ACCOUNTS}
           feed={feed}
           netWorth={netWorth}
-          totalAssets={totalAssets}
-          totalLiabilities={totalLiabilities}
           isLoading={accounts.isLoading}
           isHistoryLoading={accounts.isLoading || feedIsLoading}
           isMasked={isMasked}
           investmentHistories={rebuiltSeries}
-          actions={
-            <Pressable onPress={addAccount.beginAddAccount} hitSlop={8} accessibilityLabel="Add account" disabled={isConnecting}>
-              <Ionicons name="add-circle-outline" size={24} color={colors.textPrimary} />
-            </Pressable>
+          header={
+            <NetWorthHeader
+              totals={{ overview: accounts.isLoading ? null : netWorth, investments: investmentAccounts.length > 0 ? investmentsValue : null }}
+              isMasked={isMasked}
+              actions={
+                <HeaderIconButton onPress={addAccount.beginAddAccount} accessibilityLabel="Add account" disabled={isConnecting}>
+                  <Ionicons name="add" size={19} color={colors.textPrimary} />
+                </HeaderIconButton>
+              }
+            />
           }
         />
 
-        {/* One console for every section. Cash is always rendered: its built-in Cash row is present
-            even with nothing linked. */}
-        <AccountConsole>
-          <AccountSection
-            title="Cash Accounts"
-            group="cash"
+        {/* Every account, grouped by the kind of money it holds. Cash is always rendered: its
+            built-in Cash row is present even with nothing linked. */}
+        <View className="gap-4">
+          <SectionTitle title="Your accounts" />
+          <AccountGroup
+            title="Cash"
             total={totalAssets - investmentsValue}
             isMasked={isMasked}
             isOpen={cashOpen}
             onToggle={() => setCashOpen((v) => !v)}
           >
-            <ReorderableList
-              items={cashAccounts}
-              keyExtractor={(account) => account.account_id}
-              onDragStateChange={setIsDragging}
-              onReorder={(next) => accountOrder.setOrder(next.map((a) => a.account_id))}
-              renderItem={(account, { handlers }) => (
-                <AccountRow
-                  isFirst={account === cashAccounts[0]}
-                  name={account.name}
-                  balance={account.balances?.current ?? 0}
-                  variant="cash"
-                  logo={account.institutionLogo}
-                  itemId={account.itemId}
-                  isMasked={isMasked}
-                  onPress={() => setDetailTarget(account)}
-                  {...handlers}
-                />
-              )}
-            />
-            <AccountRow
-              isFirst={cashAccounts.length === 0}
-              name="Cash"
-              balance={cashOnHand}
-              variant="cashOnHand"
-              isMasked={isMasked}
-              onPress={() => setDetailTarget('cash')}
-            />
-          </AccountSection>
+            <View>
+              <ReorderableList
+                items={cashAccounts}
+                keyExtractor={(account) => account.account_id}
+                onDragStateChange={setIsDragging}
+                onReorder={(next) => accountOrder.setOrder(next.map((a) => a.account_id))}
+                renderItem={(account, { handlers }) => (
+                  <RowGap>
+                    <AccountRow
+                      name={account.name}
+                      subtitle={account.institutionName}
+                      balance={account.balances?.current ?? 0}
+                      variant="cash"
+                      logo={account.institutionLogo}
+                      itemId={account.itemId}
+                      isMasked={isMasked}
+                      onPress={() => setDetailTarget(account)}
+                      {...handlers}
+                    />
+                  </RowGap>
+                )}
+              />
+              <AccountRow
+                name="Cash"
+                subtitle="On hand"
+                balance={cashOnHand}
+                variant="cashOnHand"
+                isMasked={isMasked}
+                onPress={() => setDetailTarget('cash')}
+              />
+            </View>
+          </AccountGroup>
 
           {investmentAccounts.length > 0 ? (
-            <AccountSection
+            <AccountGroup
               title="Investments"
-              group="investment"
               total={investmentsValue}
               isMasked={isMasked}
               isOpen={investOpen}
@@ -262,30 +271,31 @@ export function NetWorthScreen() {
                 onDragStateChange={setIsDragging}
                 onReorder={(next) => accountOrder.setOrder(next.map((a) => a.account_id))}
                 renderItem={(account, { handlers }) => (
-                  <AccountRow
-                    isFirst={account === investmentAccounts[0]}
-                    name={account.name}
-                    balance={account.balances?.current ?? 0}
-                    variant="investment"
-                    logo={account.institutionLogo}
-                    itemId={account.itemId}
-                    isMasked={isMasked}
-                    // Straight to the account's performance: the Investments view, filtered to it.
-                    onPress={() => {
-                      setInvestmentAccountFilter(account.account_id)
-                      setNetWorthScope('investments')
-                    }}
-                    {...handlers}
-                  />
+                  <RowGap>
+                    <AccountRow
+                      name={account.name}
+                      subtitle={account.institutionName}
+                      balance={account.balances?.current ?? 0}
+                      variant="investment"
+                      logo={account.institutionLogo}
+                      itemId={account.itemId}
+                      isMasked={isMasked}
+                      // Straight to the account's performance: the Investments view, filtered to it.
+                      onPress={() => {
+                        setInvestmentAccountFilter(account.account_id)
+                        setNetWorthScope('investments')
+                      }}
+                      {...handlers}
+                    />
+                  </RowGap>
                 )}
               />
-            </AccountSection>
+            </AccountGroup>
           ) : null}
 
           {creditAccounts.length > 0 ? (
-            <AccountSection
-              title="Credit Accounts"
-              group="liability"
+            <AccountGroup
+              title="Credit"
               total={totalLiabilities}
               isMasked={isMasked}
               isOpen={creditOpen}
@@ -297,23 +307,25 @@ export function NetWorthScreen() {
                 onDragStateChange={setIsDragging}
                 onReorder={(next) => accountOrder.setOrder(next.map((a) => a.account_id))}
                 renderItem={(account, { handlers }) => (
-                  <AccountRow
-                    isFirst={account === creditAccounts[0]}
-                    name={account.name}
-                    balance={account.balances?.current ?? 0}
-                    variant="credit"
-                    limit={account.balances?.limit ?? null}
-                    logo={account.institutionLogo}
-                    itemId={account.itemId}
-                    isMasked={isMasked}
-                    onPress={() => setDetailTarget(account)}
-                    {...handlers}
-                  />
+                  <RowGap>
+                    <AccountRow
+                      name={account.name}
+                      subtitle={account.institutionName}
+                      balance={account.balances?.current ?? 0}
+                      variant="credit"
+                      limit={account.balances?.limit ?? null}
+                      logo={account.institutionLogo}
+                      itemId={account.itemId}
+                      isMasked={isMasked}
+                      onPress={() => setDetailTarget(account)}
+                      {...handlers}
+                    />
+                  </RowGap>
                 )}
               />
-            </AccountSection>
+            </AccountGroup>
           ) : null}
-        </AccountConsole>
+        </View>
         <TabBarSpacer />
       </ScrollView>
 

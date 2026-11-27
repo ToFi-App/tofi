@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fittedExtent, formatAxisAmount, formatTick, monotoneLine, niceExtent, niceScale, skewedExtent, smoothLine } from './lineChart'
+import { fittedExtent, formatAxisAmount, formatTick, monotoneLine, niceExtent, niceScale, skewedExtent, smoothLine, straightLine } from './lineChart'
 
 describe('niceScale', () => {
   it('produces a top tick that covers the max', () => {
@@ -182,6 +182,23 @@ describe('fittedExtent: minimum span', () => {
 
   it('leaves a range already wider than the minimum alone', () => {
     expect(fittedExtent([40_000, 60_000], 0.1, 1000)).toEqual({ min: 38_000, max: 62_000 })
+  })
+})
+
+describe('straightLine', () => {
+  it('joins the points with straight segments, in order', () => {
+    expect(
+      straightLine([
+        { x: 0, y: 50 },
+        { x: 10, y: 10 },
+        { x: 20, y: 30 },
+      ]),
+    ).toBe('M 0 50 L 10 10 L 20 30')
+  })
+
+  it('draws nothing for fewer than two points', () => {
+    expect(straightLine([])).toBe('')
+    expect(straightLine([{ x: 4, y: 4 }])).toBe('')
   })
 })
 

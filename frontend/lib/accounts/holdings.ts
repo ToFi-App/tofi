@@ -184,9 +184,18 @@ export function formatGainPct(gainPct: number | null): string {
  */
 export function performanceColor(gainPct: number | null): { base: string; fill: string } {
   if (gainPct == null) return { base: colors.textMuted, fill: colors.surfaceRaised }
-  const base = gainPct >= 0 ? colors.income : colors.expense
+  const base = gainPct >= 0 ? colors.gain : colors.loss
   const alpha = 0.12 + Math.min(Math.abs(gainPct) / 0.25, 1) * 0.38
   return { base, fill: hexToRgba(base, alpha) }
+}
+
+/**
+ * The colour of a change in value on the Net Worth tab: gain green up, loss red down, and the
+ * secondary text colour for no change at all, which is neither.
+ */
+export function changeColor(change: number | null | undefined): string {
+  if (change == null || change === 0) return colors.textSecondary
+  return change > 0 ? colors.gain : colors.loss
 }
 
 /** 1-2 character monogram: "VTI" -> "VT", "Bitcoin" -> "BI". */

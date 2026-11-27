@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Pressable, ScrollView, Text, View } from 'react-native'
+import { ScrollView, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { router, useLocalSearchParams } from 'expo-router'
@@ -11,6 +11,7 @@ import { FreshnessInfo } from '@/components/investments/FreshnessInfo'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { TabBarSpacer } from '@/components/navigation/FloatingTabs'
 import { PageBackdrop } from '@/components/ui/PageBackdrop'
+import { HeaderIconButton } from '@/components/networth/NetWorthHeader'
 
 /**
  * One holding's page, pushed from the Investments screen. It reads one account's investments when
@@ -34,16 +35,14 @@ export default function HoldingScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: pageBackdrop.stops[0] }} edges={['top']}>
       <PageBackdrop />
-      <View className="flex-row items-center gap-2 px-5 pb-2 pt-3">
-        <Pressable onPress={() => router.back()} hitSlop={10} accessibilityLabel="Back">
-          <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-        </Pressable>
-        <Text className="font-display text-lg text-textPrimary" numberOfLines={1}>
-          {holding ? (holding.ticker ?? holding.name ?? '') : ''}
-        </Text>
+      {/* Just the way back: the holding's symbol and name head the page itself, over its price. */}
+      <View className="flex-row items-center px-3 pt-1">
+        <HeaderIconButton onPress={() => router.back()} accessibilityLabel="Back">
+          <Ionicons name="arrow-back" size={18} color={colors.textPrimary} />
+        </HeaderIconButton>
       </View>
       {holding ? (
-        <ScrollView contentInsetAdjustmentBehavior="automatic" className="px-5" contentContainerClassName="pb-10">
+        <ScrollView contentInsetAdjustmentBehavior="automatic" className="px-5" contentContainerClassName="pb-10 pt-3">
           <HoldingDetail
             holding={holding}
             inputs={investmentHistory.inputs}

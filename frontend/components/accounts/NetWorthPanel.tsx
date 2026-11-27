@@ -1,11 +1,9 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { Text, View } from 'react-native'
-import { Ionicons } from '@expo/vector-icons'
-import { colors, spacing } from '@/constants/theme'
-import { MASKED_AMOUNT, formatAmount, formatMaskableAmount } from '@/lib/format/money'
-import { formatGainPct } from '@/lib/accounts/holdings'
+import { spacing } from '@/constants/theme'
 import {
   computeFullTrend,
+  formatTrendLabel,
   overlayAccountHistories,
   trendNetWorth,
   type Granularity,
@@ -15,9 +13,9 @@ import { dayOf, viewportBuckets, visiblePoints } from '@/lib/accounts/trendViewp
 import { useNetWorthTrendInputs } from '@/hooks/useNetWorthTrendInputs'
 import { TrendChart } from '@/components/visualizations/TrendChart'
 import { useTrendViewport } from '@/hooks/useTrendViewport'
-import { RangePills } from '@/components/ui/RangePills'
-import { MaskToggle } from '@/components/ui/MaskToggle'
-import { NetWorthScopePills } from '@/components/networth/NetWorthScopePills'
+import { RANGE_LABELS, RangeTabs } from '@/components/networth/RangeTabs'
+import { BalanceHeadline } from '@/components/networth/BalanceHeadline'
+import { SectionTitle } from '@/components/networth/ListCard'
 import type { FeedItem } from '@/lib/transactions/resolveFeed'
 import type { Account } from '@/types/domain'
 import { TAB_CHART_HEIGHT } from '@/components/networth/chartLayout'
@@ -35,25 +33,17 @@ const DEFAULT_RANGE: TrendRange = '1M'
 
 const NO_OVERLAYS = new Map<string, Array<{ date: string; value: number }>>()
 
-function changeColor(change: number): string {
-  if (change > 0) return colors.income
-  if (change < 0) return colors.expense
-  return colors.textMuted
-}
-
 interface NetWorthPanelProps {
   accounts: Account[]
   feed: FeedItem[]
   netWorth: number
-  totalAssets: number
-  totalLiabilities: number
   /** Balances are still loading: the headline shows a placeholder. */
   isLoading: boolean
   /** The feed is still loading: the chart says so rather than "No history yet". */
   isHistoryLoading: boolean
   isMasked: boolean
-  /** The screen's own controls (adding an account), at the end of the Net Worth | Investments row. */
-  actions?: ReactNode
+  /** The tab's header (NetWorthHeader), above the figure. */
+  header?: ReactNode
   /**
    * Investment accounts' rebuilt daily values (useInvestmentHistories), by account id. Their bands
    * take these in place of the walk's, which can't see the market (overlayAccountHistories).
@@ -68,18 +58,17 @@ interface NetWorthPanelProps {
  * is made of is the account list under it, so there's no separate breakdown.
  *
  * Honours the app-wide hide toggle: every dollar figure reads as the mask. What stays is what
- * discloses no balance — the chart's shape and the change as a percentage.
+ * discloses no balance — the chart's shape and the change as a percentage. What it is made of is
+ * the account groups under it, each with its own total.
  */
 export function NetWorthPanel({
   accounts,
   feed,
   netWorth,
-  totalAssets,
-  totalLiabilities,
   isLoading,
   isHistoryLoading,
   isMasked,
-  actions,
+  header,
   investmentHistories,
 }: NetWorthPanelProps) {
   const { linkedAccountIds, anchors, expectedSign } = useNetWorthTrendInputs(accounts, feed)
@@ -125,49 +114,39 @@ export function NetWorthPanel({
   // The point in view: today's figure until a point on the chart is read.
   const headline = reading?.netWorth ?? netWorth
 
+  // What the change is measured over: the window's name, or the day being read off the chart.
+  const caption = selectedIndex != null && accountPoints[readIndex]
+    ? formatTrendLabel(accountPoints[readIndex].start, granularity, 'long')
+    : activeRange
+      ? RANGE_LABELS[activeRange]
+      : undefined
+
   return (
-    // Edge to edge: the negative margin cancels the screen's side padding, so the panel and its
-    // chart use the full width of the screen. No background, corners or shadow — it's the top of
-    // the page itself, not a card on it.
+    // Edge to edge: the negative margin cancels the screen's side padding, so the chart and the
+    // range tabs run the full width of the screen. It's the top of the page itself, not a card on it.
     <View
-      className="pb-2 pt-1"
+      className="pb-2"
       style={{ marginHorizontal: -spacing[5] }}
       onLayout={(e) => setPanelWidth(e.nativeEvent.layout.width)}
     >
-      {/* The tab's Overview | Investments switch, with the screen's controls at the other end of the row. */}
-      <View className="flex-row items-center justify-between px-5">
-        <NetWorthScopePills />
-        <View className="flex-row items-center gap-4">
-          {actions}
-        </View>
+      {header}
+
+      <View className="mt-6">
+        <BalanceHeadline
+          label="Your net worth"
+          value={headline}
+          isLoading={isLoading}
+          change={reading ? { amount: headlineChange, pct: headlinePct } : null}
+          caption={caption}
+          isMasked={isMasked}
+        />
       </View>
 
-      <View className="mt-5 gap-1 px-5">
-        {isLoading ? (
-          <View className="h-9 w-36 rounded-md bg-surfaceRaised" />
-        ) : (
-          <MaskToggle>
-            <Text className="shrink font-display text-2xl text-textPrimary" numberOfLines={1} adjustsFontSizeToFit>
-              {formatMaskableAmount(headline, isMasked)}
-            </Text>
-          </MaskToggle>
-        )}
-        {reading ? (
-          <View className="flex-row items-center gap-1.5">
-            {headlineChange !== 0 ? (
-              <Ionicons name={headlineChange > 0 ? 'caret-up' : 'caret-down'} size={12} color={changeColor(headlineChange)} />
-            ) : null}
-            {/* Hidden, only the percentage is left: direction without magnitude. */}
-            <Text className="font-sansSemi text-sm" style={{ color: changeColor(headlineChange) }}>
-              {isMasked
-                ? formatGainPct(headlinePct)
-                : `${formatAmount(Math.abs(headlineChange))}${headlinePct != null ? ` (${formatGainPct(headlinePct)})` : ''}`}
-            </Text>
-          </View>
-        ) : null}
+      <View className="mt-7 px-5">
+        <SectionTitle title="Trend" />
       </View>
 
-      <View className="mt-3" style={{ height: TAB_CHART_HEIGHT }}>
+      <View className="mt-2" style={{ height: TAB_CHART_HEIGHT }}>
         {points.length === 0 || panelWidth === 0 ? (
           <View className="flex-1 items-center justify-center">
             <Text className="font-sans text-sm text-textMuted">{isHistoryLoading ? 'Loading history…' : 'No history yet'}</Text>
@@ -192,25 +171,7 @@ export function NetWorthPanel({
         )}
       </View>
 
-      <View className="px-4 pt-3">
-        <RangePills ranges={TREND_RANGES} value={activeRange} onChange={chooseRange} />
-      </View>
-
-      {/* Labelled figures in the app's own type: a dark label over an Inter figure with even digits. */}
-      <View className="flex-row justify-between px-5 pt-5">
-        <View className="gap-1">
-          <Text className="font-sansMed text-xs text-textPrimary">Total assets</Text>
-          <Text className="font-sansSemi text-base text-textPrimary" style={{ fontVariant: ['tabular-nums'] }}>
-            {isMasked ? MASKED_AMOUNT : formatAmount(totalAssets)}
-          </Text>
-        </View>
-        <View className="items-end gap-1">
-          <Text className="font-sansMed text-xs text-textPrimary">Total liabilities</Text>
-          <Text className="font-sansSemi text-base text-textPrimary" style={{ fontVariant: ['tabular-nums'] }}>
-            {isMasked ? MASKED_AMOUNT : formatAmount(totalLiabilities)}
-          </Text>
-        </View>
-      </View>
+      <RangeTabs ranges={TREND_RANGES} value={activeRange} onChange={chooseRange} />
     </View>
   )
 }
