@@ -3,6 +3,7 @@ import { protectedProcedure, router } from '../trpc/trpc.js'
 import { transactionSyncService } from '../services/transactionSyncService.js'
 import { transactionOverrideRepository } from '../repositories/transactionOverrideRepository.js'
 import { transferRepository } from '../repositories/transferRepository.js'
+import { transactionGroupRepository } from '../repositories/transactionGroupRepository.js'
 
 const migrationEntry = z.object({ oldId: z.string().min(1), newId: z.string().min(1) })
 
@@ -19,6 +20,7 @@ export const transactionsRouter = router({
       await Promise.all([
         transactionOverrideRepository.migrateTransactionIds(ctx.jwt, input.migrations),
         transferRepository.migrateTransactionIds(ctx.jwt, input.migrations),
+        transactionGroupRepository.migrateTransactionIds(ctx.jwt, input.migrations),
       ])
     }),
 })

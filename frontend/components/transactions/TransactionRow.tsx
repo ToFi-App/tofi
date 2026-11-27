@@ -28,9 +28,30 @@ interface TransactionRowProps {
    * the memo below — which is the whole reason opening a sheet used to re-render the month.
    */
   onPress?: (item: FeedItem) => void
+  /**
+   * The group this row belongs to, shown as a tappable pill on its second line
+   * (docs/transaction-groups.md §2). Primitives rather than an object so the memo's shallow
+   * compare still holds.
+   */
+  groupId?: string | null
+  groupName?: string | null
+  groupColor?: string | null
+  /** Takes the id rather than closing over it, for the same reason as onPress. */
+  onGroupPress?: (groupId: string) => void
 }
 
-function TransactionRowComponent({ item, categoryName, categoryColor, categoryIcon, reimbursementCategoryName, onPress }: TransactionRowProps) {
+function TransactionRowComponent({
+  item,
+  categoryName,
+  categoryColor,
+  categoryIcon,
+  reimbursementCategoryName,
+  onPress,
+  groupId,
+  groupName,
+  groupColor,
+  onGroupPress,
+}: TransactionRowProps) {
   // Resolved here rather than passed in, so EVERY surface that renders an entry — the
   // transactions list, account/category detail sheets, anything added later — shows the
   // bank badge without each parent re-wiring it. Rides the shared accounts query cache.
@@ -145,6 +166,24 @@ function TransactionRowComponent({ item, categoryName, categoryColor, categoryIc
               {badge.label}
             </Text>
           </View>
+        ) : null}
+        {groupId && groupName && groupColor ? (
+          // Its own Pressable inside the row's: a tap on the pill opens the group, a tap anywhere
+          // else still opens the transaction. In the right column with the other badges rather
+          // than beside the merchant, where it squeezed the name the row is recognised by.
+          <Pressable
+            onPress={() => onGroupPress?.(groupId)}
+            hitSlop={6}
+            accessibilityRole="button"
+            accessibilityLabel={`Open group ${groupName}`}
+            className="flex-row items-center gap-0.5 rounded-full px-2 py-0.5"
+            style={{ backgroundColor: hexToRgba(groupColor, 0.14), maxWidth: 160 }}
+          >
+            <Text className="shrink font-sansMed text-xs" numberOfLines={1} style={{ color: groupColor }}>
+              {groupName}
+            </Text>
+            <Ionicons name="chevron-forward" size={10} color={groupColor} />
+          </Pressable>
         ) : null}
       </View>
     </Pressable>

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { GroupField } from '@/components/groups/GroupField'
 import { Keyboard, Platform, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native'
 import DateTimePicker from '@react-native-community/datetimepicker'
 import { Ionicons } from '@expo/vector-icons'
@@ -254,6 +255,11 @@ export function ManualTransactionSheet({
           onFocus={handleNoteFocus}
           onBlur={() => setIsNoteFocused(false)}
         />
+
+        {/* Only once the transaction exists: a new one has no id to group yet. */}
+        {transaction && !isTransfer ? (
+          <GroupField itemId={transaction.id} memberRef={{ plaidTransactionId: null, manualTransactionId: transaction.id }} />
+        ) : null}
 
         {canMark ? (
           <View className="flex-row items-center justify-between py-3">

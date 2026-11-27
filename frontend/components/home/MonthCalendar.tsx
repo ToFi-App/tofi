@@ -33,6 +33,10 @@ import {
   type CalendarFilter,
 } from '@/lib/transactions/calendarFilter'
 import { CalendarFilterSheet } from '@/components/transactions/CalendarFilterSheet'
+import { GroupsCard } from '@/components/groups/GroupsCard'
+import { useTransactionGroups } from '@/hooks/useTransactionGroups'
+import { hideActiveGroupMembers, summarizeGroup } from '@/lib/groups/groups'
+import type { RowGroup } from '@/components/transactions/DayGroupedTransactions'
 
 /** Shared empty values, so a quiet day passes the same objects every render. */
 const NO_SQUARES: DaySquare[] = []
@@ -57,6 +61,8 @@ interface MonthCalendarProps {
   onFilterSheetClose: () => void
   /** The filter button, shown again on the bar the calendar collapses into. */
   filterButton: ReactNode
+  /** Opens a group's sheet: from the Groups card, or a resolved row's group pill. */
+  onOpenGroup: (groupId: string) => void
 }
 
 function MonthCalendarContent({
@@ -70,6 +76,7 @@ function MonthCalendarContent({
   filterSheetOpen,
   onFilterSheetClose,
   filterButton,
+  onOpenGroup,
 }: MonthCalendarProps & { feedState: TransactionFeedState }) {
   const [suggestionsSheetOpen, setSuggestionsSheetOpen] = useState(false)
   // Only for the suggestion actions below. Everything the edit sheets can fail at reports through
@@ -112,7 +119,34 @@ function MonthCalendarContent({
 
   // After the month, before aggregation: a filter narrows what the days and totals add up, but
   // aggregateMonth still decides what counts among the rows it's given.
-  const filteredFeed = useMemo(() => applyCalendarFilter(monthFeed, filter), [monthFeed, filter])
+  const filterMatches = useMemo(() => applyCalendarFilter(monthFeed, filter), [monthFeed, filter])
+  // An active group's transactions sit in the Groups card until it's resolved, so they leave the
+  // day cards — and with them the day totals and shading built from the same rows
+  // (docs/transaction-groups.md §2). Same array back when nothing is hidden.
+  const transactionGroups = useTransactionGroups()
+  const filteredFeed = useMemo(
+    () => hideActiveGroupMembers(filterMatches, transactionGroups.groups, transactionGroups.members),
+    [filterMatches, transactionGroups.groups, transactionGroups.members],
+  )
+  // Whole-group figures, from the whole feed: a trip's card shows the trip, not this month's slice
+  // of it or one account's.
+  const feedById = useMemo(() => new Map(feed.map((item) => [item.id, item])), [feed])
+  const activeGroupSummaries = useMemo(
+    () =>
+      transactionGroups.groups
+        .filter((group) => group.resolvedAt === null)
+        .map((group) => summarizeGroup(group, transactionGroups.members, feedById)),
+    [transactionGroups.groups, transactionGroups.members, feedById],
+  )
+  // The pill on a resolved group's rows. Stable while groups don't change, so the list memo holds.
+  const groupFor = useCallback(
+    (item: FeedItem): RowGroup | null => {
+      const groupId = transactionGroups.groupIdByItem.get(item.id)
+      const group = groupId ? transactionGroups.groupById.get(groupId) : undefined
+      return group ? { id: group.id, name: group.name, color: group.color } : null
+    },
+    [transactionGroups.groupIdByItem, transactionGroups.groupById],
+  )
   const isFiltered = activeFilterCount(filter) > 0
   // The filter isn't tied to a month: these are the months worth stepping to with it on.
   const availableMonths = useMemo(
@@ -342,6 +376,8 @@ function MonthCalendarContent({
             </View>
           ) : null}
 
+          <GroupsCard summaries={activeGroupSummaries} onOpen={onOpenGroup} />
+
           {/* Transaction list grouped by date */}
           {filteredFeed.length === 0 ? (
             <View className="px-5 py-8">
@@ -361,6 +397,8 @@ function MonthCalendarContent({
               reimbursementCategoryNameFor={reimbursementCategoryNameFor}
               onItemPress={openTransaction}
               onDayLayout={recordDayOffset}
+              groupFor={groupFor}
+              onGroupPress={onOpenGroup}
             />
           )}
           <TabBarSpacer />
