@@ -18,6 +18,32 @@ const memberRefSchema = z
   })
 
 /**
+ * A table the schema doesn't have yet: Postgres says 42P01, PostgREST (Supabase) PGRST205. Means
+ * migration 0015 hasn't been applied to this database. Surfaced as its own error rather than the
+ * redacted INTERNAL_SERVER_ERROR every other failure becomes, because it is a deploy step to fix,
+ * not a bug to report, and the app can say so.
+ */
+function isMissingTable(error: unknown): boolean {
+  const code = (error as { code?: string })?.code
+  return code === '42P01' || code === 'PGRST205'
+}
+
+async function withSetupCheck<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run()
+  } catch (error) {
+    if (isMissingTable(error)) {
+      throw new TRPCError({
+        code: 'PRECONDITION_FAILED',
+        message: "Groups aren't set up on the server yet (database migration 0015 hasn't been applied).",
+        cause: error,
+      })
+    }
+    throw error
+  }
+}
+
+/**
  * The group id comes from the client, and the member insert's FK check runs as the system —
  * it would happily attach a row to another user's group. Resolving the group through the
  * caller's own RLS scope first closes that, the same way assertOwnedRefs does for manual ids.
@@ -28,11 +54,11 @@ async function assertOwnedGroup(jwt: string, groupId: string): Promise<void> {
 }
 
 export const transactionGroupsRouter = router({
-  list: protectedProcedure.query(({ ctx }) => transactionGroupRepository.list(ctx.jwt)),
+  list: protectedProcedure.query(({ ctx }) => withSetupCheck(() => transactionGroupRepository.list(ctx.jwt))),
 
   create: protectedProcedure
     .input(z.object({ name: nameSchema, color: colorSchema, icon: iconSchema }))
-    .mutation(({ ctx, input }) => transactionGroupRepository.create(ctx.jwt, ctx.userId, input)),
+    .mutation(({ ctx, input }) => withSetupCheck(() => transactionGroupRepository.create(ctx.jwt, ctx.userId, input))),
 
   update: protectedProcedure
     .input(z.object({ id: z.string().uuid(), name: nameSchema.optional(), color: colorSchema.optional(), icon: iconSchema.optional() }))
