@@ -57,13 +57,13 @@ export interface GroupSummary {
  * linked to it as a reimbursement already has that payback in the group as its own row; netting
  * the expense as well would count the money back twice.
  */
-export function summarizeGroup(group: TransactionGroup, members: TransactionGroupMember[], feedById: Map<string, FeedItem>): GroupSummary {
+export function summarizeGroup(group: TransactionGroup, groupIdByItem: Map<string, string>, feedById: Map<string, FeedItem>): GroupSummary {
   const items: FeedItem[] = []
   let out = 0
   let income = 0
-  for (const member of members) {
-    if (member.groupId !== group.id) continue
-    const item = feedById.get(memberItemId(member))
+  for (const [itemId, groupId] of groupIdByItem) {
+    if (groupId !== group.id) continue
+    const item = feedById.get(itemId)
     if (!item) continue
     items.push(item)
     if (item.amount > 0) out += item.amount
@@ -77,10 +77,33 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100
 }
 
-/** Feed id → the group it is in. One group per transaction, so a plain map. */
+/** Feed id → the group it is in, from the stored member rows only. One group per transaction. */
 export function groupIdByItemId(members: TransactionGroupMember[]): Map<string, string> {
   const map = new Map<string, string>()
   for (const member of members) map.set(memberItemId(member), member.groupId)
+  return map
+}
+
+/**
+ * Feed id → group, counting what a group really holds: its stored members, plus every payback
+ * linked as a reimbursement to one of its member EXPENSES. A Venmo that paid back the Airbnb is
+ * part of the trip whether or not the user also added it, and leaving it out had the group charge
+ * the full $100.76 while the day header (which nets reimbursements) said $31.50.
+ *
+ * Derived, never stored: unlinking the reimbursement takes the payback out with it. A payback the
+ * user put in another group explicitly stays there. Only expense → income: an ungrouped expense
+ * doesn't join a group because a grouped Venmo happens to be linked to it.
+ */
+export function effectiveGroupIdByItemId(members: TransactionGroupMember[], feedById: Map<string, FeedItem>): Map<string, string> {
+  const map = groupIdByItemId(members)
+  for (const member of members) {
+    const item = feedById.get(memberItemId(member))
+    if (!item || item.amount <= 0) continue
+    for (const link of item.links) {
+      if (link.kind !== 'reimbursement' || !link.itemId || map.has(link.itemId)) continue
+      map.set(link.itemId, member.groupId)
+    }
+  }
   return map
 }
 
@@ -90,11 +113,11 @@ export function groupIdByItemId(members: TransactionGroupMember[]): Map<string, 
  * Groups card and the group's own sheet meanwhile. A resolved group's transactions are ordinary
  * rows again. Returns the input array itself when nothing is hidden, so memos downstream hold.
  */
-export function hideActiveGroupMembers(items: FeedItem[], groups: TransactionGroup[], members: TransactionGroupMember[]): FeedItem[] {
+export function hideActiveGroupMembers(items: FeedItem[], groups: TransactionGroup[], groupIdByItem: Map<string, string>): FeedItem[] {
   const active = new Set(groups.filter((g) => g.resolvedAt === null).map((g) => g.id))
   if (active.size === 0) return items
   const hidden = new Set<string>()
-  for (const member of members) if (active.has(member.groupId)) hidden.add(memberItemId(member))
+  for (const [itemId, groupId] of groupIdByItem) if (active.has(groupId)) hidden.add(itemId)
   if (hidden.size === 0) return items
   return items.filter((item) => !hidden.has(item.id))
 }
@@ -131,8 +154,7 @@ export interface PickerCandidate {
   otherGroupId: string | null
 }
 
-export function pickerCandidates(feed: FeedItem[], groupId: string, members: TransactionGroupMember[], query: string): PickerCandidate[] {
-  const byItem = groupIdByItemId(members)
+export function pickerCandidates(feed: FeedItem[], groupId: string, byItem: Map<string, string>, query: string): PickerCandidate[] {
   const q = query.trim().toLowerCase()
   const out: PickerCandidate[] = []
   for (const item of feed) {

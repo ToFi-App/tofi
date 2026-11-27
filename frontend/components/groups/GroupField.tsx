@@ -19,15 +19,30 @@ export function GroupField({ itemId, memberRef }: { itemId: string; memberRef: M
   const [error, setError] = useState<string | null>(null)
   const currentGroupId = groups.groupIdByItem.get(itemId) ?? null
   const options = groups.groups.filter((g) => g.resolvedAt === null || g.id === currentGroupId)
+  const storedMember = currentGroupId
+    ? groups.members.find((m) => m.groupId === currentGroupId && (m.plaidTransactionId ?? m.manualTransactionId) === itemId)
+    : undefined
   if (options.length === 0) return null
+
+  // In the group only through the reimbursement it pays back (effectiveGroupIdByItemId): there's no
+  // membership of its own to change here, so say where it is and how to take it out.
+  if (currentGroupId && !storedMember) {
+    const name = groups.groupById.get(currentGroupId)?.name ?? 'a group'
+    return (
+      <View className="gap-1">
+        <Text className="font-sansMed text-sm text-textSecondary">Group</Text>
+        <Text className="font-sans text-base text-textPrimary">In {name}</Text>
+        <Text className="font-sans text-sm text-textSecondary">Because it pays back an expense in that group. Unlink the reimbursement to take it out.</Text>
+      </View>
+    )
+  }
 
   async function choose(groupId: string | null) {
     if (groupId === currentGroupId) return
     setError(null)
     try {
-      if (currentGroupId) {
-        const member = groups.members.find((m) => m.groupId === currentGroupId && (m.plaidTransactionId ?? m.manualTransactionId) === itemId)
-        if (member) await groups.removeMembers({ groupId: currentGroupId, memberIds: [member.id] })
+      if (currentGroupId && storedMember) {
+        await groups.removeMembers({ groupId: currentGroupId, memberIds: [storedMember.id] })
       }
       if (groupId) await groups.addMembers({ groupId, members: [memberRef] })
     } catch (err) {

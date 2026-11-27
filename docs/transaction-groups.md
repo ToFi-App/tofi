@@ -62,6 +62,12 @@ CREATE UNIQUE INDEX ON transaction_group_members (user_id, manual_transaction_id
 
 Both tables get the user-scoped RLS policy every other table has (`auth.uid() = user_id`).
 
+**Linked paybacks join automatically.** An income linked as a reimbursement to a member expense
+counts as part of that group without a member row of its own (`effectiveGroupIdByItemId`), so a
+reimbursed expense never shows at full cost inside its group. It is derived from the link: unlinking
+the reimbursement takes the payback out, and a payback the user put in another group stays there.
+Its Group field says which group it's in and why, instead of offering chips.
+
 Whether a member is an expense or an income is not stored; it comes from the transaction's sign in
 the feed, like everywhere else.
 

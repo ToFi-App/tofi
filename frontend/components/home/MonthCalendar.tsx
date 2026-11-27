@@ -125,18 +125,17 @@ function MonthCalendarContent({
   // (docs/transaction-groups.md §2). Same array back when nothing is hidden.
   const transactionGroups = useTransactionGroups()
   const filteredFeed = useMemo(
-    () => hideActiveGroupMembers(filterMatches, transactionGroups.groups, transactionGroups.members),
-    [filterMatches, transactionGroups.groups, transactionGroups.members],
+    () => hideActiveGroupMembers(filterMatches, transactionGroups.groups, transactionGroups.groupIdByItem),
+    [filterMatches, transactionGroups.groups, transactionGroups.groupIdByItem],
   )
   // Whole-group figures, from the whole feed: a trip's card shows the trip, not this month's slice
   // of it or one account's.
-  const feedById = useMemo(() => new Map(feed.map((item) => [item.id, item])), [feed])
   const activeGroupSummaries = useMemo(
     () =>
       transactionGroups.groups
         .filter((group) => group.resolvedAt === null)
-        .map((group) => summarizeGroup(group, transactionGroups.members, feedById)),
-    [transactionGroups.groups, transactionGroups.members, feedById],
+        .map((group) => summarizeGroup(group, transactionGroups.groupIdByItem, transactionGroups.feedById)),
+    [transactionGroups.groups, transactionGroups.groupIdByItem, transactionGroups.feedById],
   )
   // The pill on a resolved group's rows. Stable while groups don't change, so the list memo holds.
   const groupFor = useCallback(
