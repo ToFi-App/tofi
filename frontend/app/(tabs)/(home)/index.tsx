@@ -38,7 +38,6 @@ import { GlassSwitch } from '@/components/ui/GlassSwitch'
 import { HeroSurfaceContext } from '@/components/ui/HeroGlass'
 import { PageBackdrop } from '@/components/ui/PageBackdrop'
 import { SwipeViews } from '@/components/ui/SwipeViews'
-import { useTransactionEditorActions } from '@/components/transactions/TransactionEditorProvider'
 import type { YearMonth } from '@/lib/transactions/filterByMonth'
 
 const VIEW_OPTIONS: Array<IconSwitchOption<'grid' | 'chart'>> = [
@@ -72,7 +71,6 @@ export default function DashboardScreen() {
   const refreshControl = usePullToRefresh(refresh)
   const accounts = useAccounts()
   const categories = useCategories()
-  const { openNewManual } = useTransactionEditorActions()
 
   const {
     accountFilteredFeed,
@@ -172,7 +170,7 @@ export default function DashboardScreen() {
   }
 
   // The Summary/Charts switch, at the left of the header both views share — so the way between them,
-  // and the month, filter and pen beside it, stay in the same place whichever view is showing.
+  // and the month and filter beside it, stay in the same place whichever view is showing.
   const viewSwitch = <GlassSwitch options={VIEW_OPTIONS} value={view} onChange={(next) => changeView(next)} />
   const summaryHeader = (
     <HomeHeader
@@ -181,7 +179,6 @@ export default function DashboardScreen() {
       accounts={accounts.data ?? []}
       selectedAccountId={selectedAccountId}
       onAccountChange={setSelectedAccountId}
-      onWrite={openNewManual}
       leading={viewSwitch}
     />
   )

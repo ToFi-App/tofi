@@ -1,6 +1,6 @@
 import { useRef, type ReactNode } from 'react'
 import { View } from 'react-native'
-import { Plus, SquarePen } from 'lucide-react-native'
+import { Plus } from 'lucide-react-native'
 import { colors } from '@/constants/theme'
 import { MonthNavigator } from '@/components/transactions/MonthNavigator'
 import { AccountsFilterDropdown } from '@/components/ui/AccountsFilterDropdown'
@@ -17,11 +17,10 @@ interface HomeHeaderProps {
   onAccountChange: (accountId: string | null) => void
   /**
    * The write button. Handed the button's frame in window coordinates, so a caller that opens a
-   * menu (Calendar's "+": New transaction / New group) can anchor it; Home just opens the editor.
+   * menu (Calendar's "+": New transaction / New group) can anchor it. Absent on Home, which has no
+   * write button: creating lives on the Calendar tab.
    */
-  onWrite: (anchor: WriteAnchor) => void
-  /** Calendar's variant: a "+" that opens a create menu, rather than Home's pen. */
-  writeVariant?: 'pen' | 'plus'
+  onWrite?: (anchor: WriteAnchor) => void
   /** A small dot on the write button: there's something new behind it the user hasn't opened yet. */
   writeDot?: boolean
   /** The screen's own control, at the left of the row — Home's Summary/Charts switch. */
@@ -58,7 +57,6 @@ export function HomeHeader({
   selectedAccountId,
   onAccountChange,
   onWrite,
-  writeVariant = 'pen',
   writeDot = false,
   leading,
   filterButton,
@@ -70,6 +68,7 @@ export function HomeHeader({
   const writeRef = useRef<View>(null)
   const handleWrite = () => {
     const node = writeRef.current
+    if (!onWrite) return
     if (!node) return onWrite({ x: 0, y: 0, width: 0, height: 0 })
     node.measureInWindow((x, y, width, height) => onWrite({ x, y, width, height }))
   }
@@ -91,16 +90,13 @@ export function HomeHeader({
       </View>
       <View className="flex-row items-center gap-2">
         {accountFilter}
+        {onWrite ? (
         <View ref={writeRef} collapsable={false}>
           <GlassButton
             onPress={handleWrite}
-            accessibilityLabel={writeVariant === 'plus' ? (writeDot ? 'Create, new: groups' : 'Create') : 'Write a transaction'}
+            accessibilityLabel={writeDot ? 'Create, new: groups' : 'Create'}
           >
-            {writeVariant === 'plus' ? (
-              <Plus size={20} strokeWidth={2.2} color={ink} />
-            ) : (
-              <SquarePen size={18} strokeWidth={2} color={ink} />
-            )}
+            <Plus size={20} strokeWidth={2.2} color={ink} />
           </GlassButton>
           {writeDot ? (
             // Ringed in the page colour so it reads as sitting on the button's edge, not inside it.
@@ -111,6 +107,7 @@ export function HomeHeader({
             />
           ) : null}
         </View>
+        ) : null}
       </View>
     </View>
   )
