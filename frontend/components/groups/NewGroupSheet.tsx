@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { describeGroupError } from '@/lib/groups/groupErrors'
 import { reportError } from '@/lib/observability/log'
 import { View } from 'react-native'
 import { BottomSheet, useSheetScroll } from '@/components/ui/BottomSheet'
@@ -39,7 +38,7 @@ export function NewGroupSheet({ visible, onClose, onCreated }: { visible: boolea
       onCreated(group.id)
     } catch (err) {
       reportError('group-create', err)
-      setError(describeGroupError(err, "Couldn't create the group. Try again."))
+      setError("Couldn't create the group. Try again.")
     }
   }
 

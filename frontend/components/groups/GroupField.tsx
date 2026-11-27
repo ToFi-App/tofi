@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { describeGroupError } from '@/lib/groups/groupErrors'
 import { reportError } from '@/lib/observability/log'
 import { Pressable, Text, View } from 'react-native'
 import { colors, hexToRgba } from '@/constants/theme'
@@ -33,7 +32,7 @@ export function GroupField({ itemId, memberRef }: { itemId: string; memberRef: M
       if (groupId) await groups.addMembers({ groupId, members: [memberRef] })
     } catch (err) {
       reportError('group-field', err)
-      setError(describeGroupError(err, "Couldn't update the group."))
+      setError("Couldn't update the group.")
     }
   }
 

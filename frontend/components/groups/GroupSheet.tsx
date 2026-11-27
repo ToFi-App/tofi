@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { describeGroupError } from '@/lib/groups/groupErrors'
 import { reportError } from '@/lib/observability/log'
 import { Alert, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
@@ -90,7 +89,7 @@ function GroupDetail({ groupId, onClose, onAdd }: { groupId: string; onClose: ()
       await action()
     } catch (err) {
       reportError('group-action', err)
-      setError(describeGroupError(err, failure))
+      setError(failure)
     }
   }
 
@@ -273,7 +272,7 @@ function GroupPicker({ groupId, onClose, onBack }: { groupId: string; onClose: (
       onBack()
     } catch (err) {
       reportError('group-add-members', err)
-      setError(describeGroupError(err, "Couldn't add these. One may already be in another group."))
+      setError("Couldn't add these. One may already be in another group.")
     }
   }
 
