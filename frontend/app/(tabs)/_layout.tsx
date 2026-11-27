@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { Ionicons } from '@expo/vector-icons'
 import { Redirect, usePathname } from 'expo-router'
 import { NativeTabs } from 'expo-router/unstable-native-tabs'
@@ -12,6 +13,7 @@ import { LoadingScreen } from '@/components/ui/LoadingScreen'
 import { colors } from '@/constants/theme'
 import { FloatingTabs } from '@/components/navigation/FloatingTabs'
 import { requestHomeTop } from '@/hooks/useHomeTabReselect'
+import { haptics } from '@/lib/ui/haptics'
 
 // Rendered (not called) inside the authed layout so its data hooks never run logged-out.
 function BudgetAlertWatcher() {
@@ -64,6 +66,9 @@ const HOME_PATHS = new Set(['/', '/budgets'])
 export default function TabsLayout() {
   const { session, isLoading } = useSession()
   const pathname = usePathname()
+  // The tab on screen, kept by each tab's focus event. NativeTabs emits tabPress for a re-tap of
+  // the current tab as well as a switch, and only a switch should tick.
+  const focusedTab = useRef<string | null>(null)
 
   if (isLoading) return <LoadingScreen />
   if (!session) return <Redirect href="/(auth)/login" />
@@ -95,6 +100,15 @@ export default function TabsLayout() {
       <NativeTabs
         tintColor={colors.primary}
         disableTransparentOnScrollEdge
+        // The same select tick FloatingTabs gives on a switch; a re-tap stays silent there too.
+        screenListeners={({ route }) => ({
+          focus: () => {
+            focusedTab.current = route.name
+          },
+          tabPress: (e) => {
+            if (!e.data.isPrevented && focusedTab.current !== route.name) haptics.select()
+          },
+        })}
       >
         {/* Home is where the money goes (with budgets inside it), Calendar the same month day by day,
             Net Worth what there is — the overview, and the invested part of it, behind one switch. */}
