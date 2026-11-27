@@ -186,14 +186,14 @@ menu (§4), not from this card.
 
 ### 4. Creating a group and adding to it (screens 2, 3, 5, 6, 7)
 
-- **"+" menu (screens 5, 6):** on the Calendar tab the header's write button becomes a "+"
-  (Home keeps its pen) and opens a small anchored menu (`components/groups/CreateMenu.tsx`, built
+- **"+" menu (screens 5, 6):** the Calendar tab's header button is a "+" (`useCreateFlow`)
+  and is the app's only write button: Home no longer has one. It opens a small anchored menu (`components/groups/CreateMenu.tsx`, built
   like the month picker's popover): "New transaction" and "New group" (with a NEW tag and the
   line "Keep a trip's spending and paybacks together").
   - **New-feature dot:** a small teal dot on the "+" button until the user opens the menu once.
     Opening the menu clears it for good (`useGroupsMenuSeen`, an MMKV preference). The NEW tag
     shows on that first opening only.
-  - "New transaction" does what the pen did before.
+  - "New transaction" does what the old pen button did.
 - **New group** (`NewGroupSheet`): from the "+" menu. It asks only for a name
   (colour and icon picked automatically, changeable later), then opens the new, empty group page
   (screen 7).
