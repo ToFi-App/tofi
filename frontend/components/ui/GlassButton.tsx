@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { Pressable } from 'react-native'
 import { HeroGlass } from './HeroGlass'
+import { haptics } from '@/lib/ui/haptics'
 
 /** Matches the month pill between Home's two header buttons, so the row reads as one set. */
 export const GLASS_BUTTON_SIZE = 40
@@ -20,7 +21,12 @@ export function GlassButton({
   children: ReactNode
 }) {
   return (
-    <Pressable onPress={onPress} hitSlop={4} accessibilityRole="button" accessibilityLabel={accessibilityLabel}>
+    <Pressable
+      onPress={() => {
+        haptics.tap()
+        onPress()
+      }}
+      hitSlop={4} accessibilityRole="button" accessibilityLabel={accessibilityLabel}>
       {({ pressed }) => (
         <HeroGlass
           interactive

@@ -8,6 +8,7 @@ import { OnboardingStepHeader } from '@/components/onboarding/OnboardingStepHead
 import { Button } from '@/components/ui/Button'
 import { ErrorBanner } from '@/components/ui/ErrorBanner'
 import { colors } from '@/constants/theme'
+import { haptics } from '@/lib/ui/haptics'
 
 type StepKey = 'categories' | 'transactions' | 'mappings'
 
@@ -41,6 +42,7 @@ export default function SeedingScreen() {
       })
       setCompleted((prev) => new Set(prev).add('mappings'))
 
+      haptics.success()
       router.replace('/(tabs)')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong setting up your account.')

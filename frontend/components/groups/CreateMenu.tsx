@@ -3,6 +3,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { SquarePen } from 'lucide-react-native'
 import { colors, hexToRgba, shadow } from '@/constants/theme'
 import type { WriteAnchor } from '@/components/home/HomeHeader'
+import { haptics } from '@/lib/ui/haptics'
 
 const MENU_WIDTH = 272
 const SCREEN_MARGIN = 20
@@ -94,7 +95,10 @@ function MenuItem({
 }) {
   return (
     <Pressable
-      onPress={onPress}
+      onPress={() => {
+        haptics.tap()
+        onPress()
+      }}
       accessibilityRole="menuitem"
       className="flex-row items-center gap-3 rounded-md px-2.5 py-2.5 active:opacity-70"
       style={{ minHeight: 52 }}

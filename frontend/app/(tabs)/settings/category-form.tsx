@@ -8,6 +8,7 @@ import { CategoryForm } from '@/components/categories/CategoryForm'
 import { ErrorBanner } from '@/components/ui/ErrorBanner'
 import { LoadingScreen } from '@/components/ui/LoadingScreen'
 import { PFC_TAXONOMY } from '@/constants/plaid'
+import { haptics } from '@/lib/ui/haptics'
 
 function primaryForCode(detailedCode: string): string {
   const group = PFC_TAXONOMY.find((g) => g.detailedCodes.includes(detailedCode))
@@ -51,6 +52,7 @@ export default function CategoryFormScreen() {
         }
       }
 
+      haptics.success()
       router.back()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save this category.')
@@ -59,6 +61,7 @@ export default function CategoryFormScreen() {
 
   function handleDelete() {
     if (!category) return
+    haptics.warn()
     Alert.alert(
       `Delete "${category.name}"?`,
       'Transactions using this category will become uncategorized. This cannot be undone.',

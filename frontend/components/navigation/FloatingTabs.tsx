@@ -6,6 +6,7 @@ import { TabList, TabSlot, TabTrigger, Tabs, type TabTriggerSlotProps } from 'ex
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { isLiquidGlassAvailable } from 'expo-glass-effect'
 import { colors, shadow } from '@/constants/theme'
+import { haptics } from '@/lib/ui/haptics'
 
 /** The capsule's height, and its distance from the screen's sides and from the home indicator. */
 const BAR_HEIGHT = 64
@@ -118,6 +119,7 @@ function TabButton({
       {...props}
       onPress={(e) => {
         if (isFocused) onReselect?.()
+        else haptics.select()
         onPress?.(e)
       }}
       accessibilityRole="tab"

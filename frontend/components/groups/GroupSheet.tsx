@@ -24,6 +24,7 @@ import {
   type PickerCandidate,
 } from '@/lib/groups/groups'
 import type { FeedItem } from '@/lib/transactions/resolveFeed'
+import { haptics } from '@/lib/ui/haptics'
 
 /** How many picker rows to draw before "Show more": a year of feed is thousands of rows. */
 const PICKER_PAGE = 60
@@ -105,7 +106,8 @@ function GroupDetail({ groupId, onClose, onAdd }: { groupId: string; onClose: ()
         'plain-text',
         group.name,
       )
-    const remove = () =>
+    const remove = () => {
+      haptics.warn()
       Alert.alert('Delete group?', 'The transactions stay; only the group goes.', [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -118,6 +120,7 @@ function GroupDetail({ groupId, onClose, onAdd }: { groupId: string; onClose: ()
             }, "Couldn't delete the group."),
         },
       ])
+    }
     Alert.alert(group.name, undefined, [
       ...(Platform.OS === 'ios' ? [{ text: 'Rename', onPress: rename }] : []),
       { text: 'Delete group', style: 'destructive' as const, onPress: remove },
@@ -202,7 +205,12 @@ function GroupDetail({ groupId, onClose, onAdd }: { groupId: string; onClose: ()
                   loading={groups.isSaving}
                   onPress={() =>
                     void run(
-                      () => (summary.resolved ? groups.reopen({ id: group.id }) : groups.resolve({ id: group.id })),
+                      async () => {
+                        if (summary.resolved) return groups.reopen({ id: group.id })
+                        await groups.resolve({ id: group.id })
+                        // Closing out a group is the feature's finish line; it lands with a success.
+                        haptics.success()
+                      },
                       summary.resolved ? "Couldn't reopen the group." : "Couldn't mark the group resolved.",
                     )
                   }
@@ -268,6 +276,7 @@ function GroupPicker({ groupId, onClose, onBack }: { groupId: string; onClose: (
     setError(null)
     try {
       await groups.addMembers({ groupId, members: selectedItems.map(memberRefFor) })
+      haptics.success()
       onBack()
     } catch (err) {
       reportError('group-add-members', err)
@@ -375,7 +384,10 @@ function PickerRow({
   const disabled = otherGroupName != null
   return (
     <Pressable
-      onPress={() => onToggle(item.id)}
+      onPress={() => {
+        haptics.select()
+        onToggle(item.id)
+      }}
       disabled={disabled}
       accessibilityRole="checkbox"
       accessibilityState={{ checked, disabled }}

@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button'
 import { ErrorBanner } from '@/components/ui/ErrorBanner'
 import { useTransactionGroups } from '@/hooks/useTransactionGroups'
 import { nextGroupColor } from '@/lib/groups/groups'
+import { haptics } from '@/lib/ui/haptics'
 
 /**
  * "New group" from the Calendar's "+" menu: a name and nothing else. The colour is picked for the
@@ -35,6 +36,7 @@ export function NewGroupSheet({ visible, onClose, onCreated }: { visible: boolea
     setError(null)
     try {
       const group = await groups.create({ name: trimmed, color: nextGroupColor(groups.groups), icon: null })
+      haptics.success()
       onCreated(group.id)
     } catch (err) {
       reportError('group-create', err)

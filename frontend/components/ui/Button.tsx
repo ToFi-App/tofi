@@ -1,5 +1,6 @@
 import { ActivityIndicator, Pressable, Text } from 'react-native'
 import { colors } from '@/constants/theme'
+import { haptics } from '@/lib/ui/haptics'
 
 interface ButtonProps {
   label: string
@@ -28,7 +29,10 @@ export function Button({ label, onPress, variant = 'primary', disabled, loading 
 
   return (
     <Pressable
-      onPress={onPress}
+      onPress={() => {
+        haptics.tap()
+        onPress()
+      }}
       disabled={isDisabled}
       accessibilityRole="button"
       accessibilityState={{ disabled: isDisabled }}

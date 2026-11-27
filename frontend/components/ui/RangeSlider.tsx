@@ -3,9 +3,12 @@ import { View } from 'react-native'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from 'react-native-reanimated'
 import { colors } from '@/constants/theme'
+import { haptics } from '@/lib/ui/haptics'
 
 const THUMB = 28
 const TRACK = 4
+/** A drag ticks as it crosses each of this many even steps along the track, the ends included. */
+const DETENTS = 20
 
 interface RangeSliderProps {
   /** Both ends as positions along the track, 0 to 1. */
@@ -29,6 +32,9 @@ export function RangeSlider({ low, high, onChange, accessibilityLabel }: RangeSl
   const highPos = useSharedValue(high)
   const dragging = useSharedValue(false)
   const startPos = useSharedValue(0)
+  // The step the dragged thumb last ticked at, so a drag ticks once per step rather than per frame.
+  const lastStep = useSharedValue(-1)
+  const tick = useCallback(() => haptics.select(), [])
 
   // Follow the props while nobody is dragging — a reset, or the sheet reopening.
   useEffect(() => {
@@ -53,6 +59,7 @@ export function RangeSlider({ low, high, onChange, accessibilityLabel }: RangeSl
       .onStart(() => {
         dragging.value = true
         startPos.value = which === 'low' ? lowPos.value : highPos.value
+        lastStep.value = Math.round(startPos.value * DETENTS)
       })
       .onUpdate((event) => {
         if (width.value <= 0) return
@@ -60,6 +67,11 @@ export function RangeSlider({ low, high, onChange, accessibilityLabel }: RangeSl
         if (which === 'low') lowPos.value = Math.min(Math.max(0, next), highPos.value)
         else highPos.value = Math.max(Math.min(1, next), lowPos.value)
         runOnJS(emit)(lowPos.value, highPos.value)
+        const step = Math.round((which === 'low' ? lowPos.value : highPos.value) * DETENTS)
+        if (step !== lastStep.value) {
+          lastStep.value = step
+          runOnJS(tick)()
+        }
       })
       .onFinalize(() => {
         dragging.value = false

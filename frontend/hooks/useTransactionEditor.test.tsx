@@ -15,6 +15,10 @@ import type { FeedItem } from '@/lib/transactions/resolveFeed'
 // react-native cannot be imported under vitest's node environment, and the hook only reaches for
 // Alert (the manual-delete confirmation, which this file never triggers).
 vi.mock('react-native', () => ({ Alert: { alert: vi.fn() } }))
+// expo-haptics is a native module and can't load under node; the haptics are fire-and-forget anyway.
+vi.mock('@/lib/ui/haptics', () => ({
+  haptics: { tap: vi.fn(), select: vi.fn(), lift: vi.fn(), success: vi.fn(), warn: vi.fn(), error: vi.fn() },
+}))
 
 const noopMutations = {
   create: vi.fn(async () => {}),

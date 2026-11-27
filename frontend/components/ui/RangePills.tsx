@@ -1,6 +1,7 @@
 import { Pressable, Text, View } from 'react-native'
 import { colors, hexToRgba } from '@/constants/theme'
 import type { TrendRange } from '@/lib/accounts/netWorthHistory'
+import { haptics } from '@/lib/ui/haptics'
 
 export const RANGE_LABELS: Record<TrendRange, string> = {
   '1W': 'Past week',
@@ -34,7 +35,10 @@ export function Pill({
   const isInverse = tone === 'inverse'
   return (
     <Pressable
-      onPress={onPress}
+      onPress={() => {
+        if (!isSelected) haptics.select()
+        onPress()
+      }}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
       accessibilityState={{ selected: isSelected }}

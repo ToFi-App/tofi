@@ -19,6 +19,7 @@ import {
 import type { PendingTransfer } from '@/lib/transfers/buildTransferInputs'
 import type { FeedItem, FeedLink } from '@/lib/transactions/resolveFeed'
 import type { Account, Category, ManualTransaction, Subcategory, TransferKind } from '@/types/domain'
+import { haptics } from '@/lib/ui/haptics'
 
 // Handoffs between the sheets are synchronous. They used to be deferred behind a setTimeout
 // because each sheet was its own native modal and iOS will not present one while another is
@@ -203,6 +204,7 @@ export function useTransactionEditor(feed: FeedItem[]): TransactionEditor {
           tasks.push(...buildTransferInputs(activeSheetItem, pendingTransfer, feed).map((input) => transfers.create(input)))
         }
         await Promise.all(tasks)
+        haptics.success()
         if (pendingTransfer) setPendingTransfer(null)
         setActiveSheetItem(null)
       } catch (err) {
@@ -251,6 +253,7 @@ export function useTransactionEditor(feed: FeedItem[]): TransactionEditor {
           }
         }
         await Promise.all(tasks)
+        haptics.success()
         if (pendingTransfer && editingManual) setPendingTransfer(null)
         setManualSheetOpen(false)
         setEditingManual(null)
@@ -411,6 +414,7 @@ export function useTransactionEditor(feed: FeedItem[]): TransactionEditor {
     const isReimbursed = feedItem?.reimbursedAmount != null || feedItem?.isReimbursementIncome === true
     const isTransferLeg = feedItem?.transferKind != null
 
+    haptics.warn()
     Alert.alert(
       isTransferLeg
         ? 'This transaction is part of a transfer. Deleting it also removes the transfer. Delete anyway?'

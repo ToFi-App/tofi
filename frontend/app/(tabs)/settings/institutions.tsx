@@ -13,6 +13,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { StatusPill } from '@/components/settings/SettingsBlocks'
 import type { Account } from '@/types/domain'
 import { TabBarSpacer } from '@/components/navigation/FloatingTabs'
+import { haptics } from '@/lib/ui/haptics'
 
 // One card per institution — guaranteed by clean-slate linking: relinking an institution
 // replaces its previous connection, so duplicates can't accumulate here.
@@ -68,6 +69,7 @@ export default function InstitutionsScreen() {
   const busy = disconnectMutation.isLoading || reconnectMutation.isLoading || removeMutation.isLoading || isConnecting
 
   function confirmDelete(itemId: string, name: string) {
+    haptics.warn()
     Alert.alert(
       'Delete Permanently?',
       `This revokes access to ${name} at Plaid and cannot be undone. Reconnecting it later will use up another Plaid connection.`,
