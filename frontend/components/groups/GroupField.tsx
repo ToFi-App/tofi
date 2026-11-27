@@ -4,6 +4,7 @@ import { Pressable, Text, View } from 'react-native'
 import { colors, hexToRgba } from '@/constants/theme'
 import { useTransactionGroups } from '@/hooks/useTransactionGroups'
 import type { MemberRef } from '@/lib/groups/groups'
+import { haptics } from '@/lib/ui/haptics'
 
 /**
  * The transaction sheets' Group field: put this one transaction in a group, move it, or take it
@@ -39,6 +40,7 @@ export function GroupField({ itemId, memberRef }: { itemId: string; memberRef: M
 
   async function choose(groupId: string | null) {
     if (groupId === currentGroupId) return
+    haptics.select()
     setError(null)
     try {
       if (currentGroupId && storedMember) {
@@ -47,6 +49,8 @@ export function GroupField({ itemId, memberRef }: { itemId: string; memberRef: M
       if (groupId) await groups.addMembers({ groupId, members: [memberRef] })
     } catch (err) {
       reportError('group-field', err)
+      // Shown as plain text rather than an ErrorBanner, so it buzzes here itself.
+      haptics.error()
       setError("Couldn't update the group.")
     }
   }

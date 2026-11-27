@@ -3,6 +3,7 @@ import { Pressable } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { colors } from '@/constants/theme'
 import { useAmountsMasked } from '@/hooks/useAmountsMasked'
+import { haptics } from '@/lib/ui/haptics'
 
 /**
  * A screen's headline amount with the eye beside it, the two as one tap target: tapping the number
@@ -22,7 +23,10 @@ export function MaskToggle({
   const { isMasked, toggleMask } = useAmountsMasked()
   return (
     <Pressable
-      onPress={toggleMask}
+      onPress={() => {
+        haptics.tap()
+        toggleMask()
+      }}
       hitSlop={10}
       accessibilityRole="button"
       accessibilityLabel={isMasked ? 'Show amounts' : 'Hide amounts'}

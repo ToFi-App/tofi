@@ -7,6 +7,7 @@ import { borderRadius, colors } from '@/constants/theme'
 import { useHasSheetHost } from '@/components/ui/SheetHost'
 import { getHostPresented, removeSheetLayer, setSheetLayer, subscribeHostPresented } from '@/lib/ui/sheetRegistry'
 import { DRAG_START_THRESHOLD_PX, shouldDismissOnRelease } from '@/lib/ui/sheetDrag'
+import { haptics } from '@/lib/ui/haptics'
 
 const SCREEN_HEIGHT = Dimensions.get('window').height
 
@@ -136,7 +137,11 @@ export function BottomSheet({
     onCloseRef.current = onClose
   })
   /** Stable identity for runOnJS — a gesture worklet cannot read a React ref. */
-  const requestClose = useCallback(() => onCloseRef.current(), [])
+  // Only a drag reaches here, so the tap marks the sheet being flicked away.
+  const requestClose = useCallback(() => {
+    haptics.tap()
+    onCloseRef.current()
+  }, [])
 
   // Mounting and animating are two effects, deliberately. Doing both at once started the entrance
   // on the UI thread in the same tick that queued the mount — so on any slow mount the sheet was

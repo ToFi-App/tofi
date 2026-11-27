@@ -1,4 +1,5 @@
 import { Pressable, Text, View } from 'react-native'
+import { haptics } from '@/lib/ui/haptics'
 
 interface SegmentedControlProps<T extends string> {
   options: Array<{ label: string; value: T }>
@@ -16,7 +17,11 @@ export function SegmentedControl<T extends string>({ options, value, onChange }:
         return (
           <Pressable
             key={option.value}
-            onPress={() => onChange(option.value)}
+            onPress={() => {
+              if (option.value === value) return
+              haptics.select()
+              onChange(option.value)
+            }}
             accessibilityRole="button"
             accessibilityState={{ selected: isSelected }}
             className={`h-11 flex-1 items-center justify-center rounded-md border ${

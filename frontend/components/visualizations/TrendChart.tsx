@@ -10,6 +10,7 @@ import { formatTrendLabel, type Granularity, type TrendPoint } from '@/lib/accou
 /** What the chart reads of a point's position: its bucket for x, its first day for the label. */
 export type TrendSlot = Pick<TrendPoint, 'bucket' | 'start'>
 import { LineLayer, LiveDot } from '@/components/visualizations/TrendLine'
+import { haptics } from '@/lib/ui/haptics'
 
 interface TrendChartProps {
   /** The line's value per point — the same points as `slots`. */
@@ -159,11 +160,20 @@ export function TrendChart({
   const tapAt = useCallback((x: number) => {
     const { nearestIndex: nearest, selectedIndex: current, onSelect: select } = handlers.current
     const tapped = nearest(x)
+    if (tapped != null) haptics.select()
     select(tapped != null && tapped === current ? null : tapped)
   }, [])
   // Press-and-hold, then drag: scrubs; wherever it ends stays selected. The gesture works out the
-  // index itself and only calls this when it changes.
-  const selectIndex = useCallback((index: number) => handlers.current.onSelect(index), [])
+  // index itself and only calls this when it changes — so each point crossed is one selection tick,
+  // and the hold that starts the scrub lands with a firmer tap.
+  const selectIndex = useCallback((index: number) => {
+    haptics.select()
+    handlers.current.onSelect(index)
+  }, [])
+  const startScrub = useCallback((index: number) => {
+    haptics.tap()
+    handlers.current.onSelect(index)
+  }, [])
   // The last index the scrub reported, on the UI thread — so a finger moving within one bar's slot
   // (dozens of frames at daily resolution) crosses to JS zero times instead of every frame.
   const lastScrub = useSharedValue(-1)
@@ -199,7 +209,7 @@ export function TrendChart({
         // since this runs on the UI thread; a finger over an empty slot past today reads the last point.
         const index = Math.min(Math.max(Math.round((e.x / usableW) * span) - firstOffset, 0), count - 1)
         lastScrub.value = index
-        runOnJS(selectIndex)(index)
+        runOnJS(startScrub)(index)
       })
       .onUpdate((e) => {
         const index = Math.min(Math.max(Math.round((e.x / usableW) * span) - firstOffset, 0), count - 1)
@@ -223,7 +233,7 @@ export function TrendChart({
       // onEnd runs for every gesture that reached onStart, cancelled or not, so the count balances.
       .onEnd(() => runOnJS(zoomEnd)())
     return Gesture.Race(Gesture.Simultaneous(pinch, drift), Gesture.Race(scrub, slide), tap)
-  }, [usableW, span, firstOffset, count, lastScrub, tapAt, selectIndex, zoomStart, zoomEnd, zoomTo])
+  }, [usableW, span, firstOffset, count, lastScrub, tapAt, selectIndex, startScrub, zoomStart, zoomEnd, zoomTo])
 
   if (points.length === 0) return null
 

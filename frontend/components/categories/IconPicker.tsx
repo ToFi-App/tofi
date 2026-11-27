@@ -2,6 +2,7 @@ import { Pressable, View } from 'react-native'
 import { colors, hexToRgba } from '@/constants/theme'
 import { SELECTABLE_ICON_SLUGS } from '@/lib/categories/icons'
 import { CategoryIcon } from './CategoryIcon'
+import { haptics } from '@/lib/ui/haptics'
 
 interface IconPickerProps {
   selectedSlug: string
@@ -18,7 +19,10 @@ export function IconPicker({ selectedSlug, color, onSelect }: IconPickerProps) {
         return (
           <Pressable
             key={slug}
-            onPress={() => onSelect(slug)}
+            onPress={() => {
+              if (!isSelected) haptics.select()
+              onSelect(slug)
+            }}
             accessibilityRole="button"
             accessibilityLabel={slug}
             accessibilityState={{ selected: isSelected }}

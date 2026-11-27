@@ -4,6 +4,7 @@ import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-na
 import type { ReactNode } from 'react'
 import { colors } from '@/constants/theme'
 import { targetForOffset } from '@/lib/accounts/order'
+import { haptics } from '@/lib/ui/haptics'
 
 /** How long a press must be held before the row lifts. Matches the iOS drag idiom. */
 const LIFT_DELAY_MS = 250
@@ -90,6 +91,8 @@ export function ReorderableList<T>({
     setLiftedIndex(null)
     setTargetIndex(null)
     onDragStateChange?.(false)
+    // Set down: the firmer lift at pickup gets a lighter answer at the drop.
+    if (from != null) haptics.tap()
     if (commit && from != null && to != null && from !== to) {
       const next = [...itemsRef.current]
       const [moved] = next.splice(from, 1)
@@ -111,6 +114,7 @@ export function ReorderableList<T>({
           dragY.value = gesture.dy
           const next = targetForOffset(heightsRef.current, from, gesture.dy)
           if (next !== targetRef.current) {
+            haptics.select()
             targetRef.current = next
             setTargetIndex(next)
           }
@@ -144,6 +148,7 @@ export function ReorderableList<T>({
         const handlers: DragHandlers = {
           delayLongPress: LIFT_DELAY_MS,
           onLongPress: () => {
+            haptics.lift()
             armedRef.current = true
             liftedRef.current = index
             targetRef.current = index

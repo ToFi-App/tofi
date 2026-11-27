@@ -3,6 +3,7 @@ import { Pressable, Text } from 'react-native'
 import { colors } from '@/constants/theme'
 import type { DayHeat, DaySquare } from '@/lib/transactions/daySquares'
 import { DayShade } from './DayShade'
+import { haptics } from '@/lib/ui/haptics'
 
 interface CalendarCellProps {
   /** Passed back to onPress so the grid can share one callback across all 42 cells. */
@@ -34,7 +35,10 @@ function CalendarCellComponent({
 
   return (
     <Pressable
-      onPress={() => onPress(dateKey)}
+      onPress={() => {
+        if (!isSelected) haptics.select()
+        onPress(dateKey)
+      }}
       accessibilityRole="button"
       accessibilityState={{ selected: isSelected }}
       className="items-center justify-center py-2"

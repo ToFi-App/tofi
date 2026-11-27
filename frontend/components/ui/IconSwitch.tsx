@@ -2,6 +2,7 @@ import type { ComponentProps } from 'react'
 import { Pressable, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { colors, hexToRgba } from '@/constants/theme'
+import { haptics } from '@/lib/ui/haptics'
 
 export interface IconSwitchOption<T extends string> {
   value: T
@@ -42,7 +43,11 @@ export function IconSwitch<T extends string>({
         return (
           <Pressable
             key={option.value}
-            onPress={() => onChange(option.value)}
+            onPress={() => {
+              if (option.value === value) return
+              haptics.select()
+              onChange(option.value)
+            }}
             accessibilityRole="button"
             accessibilityLabel={option.label}
             accessibilityState={{ selected }}

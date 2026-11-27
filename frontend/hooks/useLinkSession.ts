@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react'
 import { createPlaidLinkSession } from '@/lib/plaid/createLinkSession'
 import { api } from '@/lib/api/client'
+import { haptics } from '@/lib/ui/haptics'
 
 interface OpenOptions {
   /** Runs after the session succeeds and queries are invalidated. */
@@ -83,6 +84,7 @@ export function useLinkSession() {
         async (publicToken) => {
           await exchangeToken.mutateAsync({ publicToken })
           await refreshConnections()
+          haptics.success()
           await options.onCompleted?.()
         },
         'Could not finish linking this account.',
@@ -101,6 +103,7 @@ export function useLinkSession() {
         () => createUpdateToken.mutateAsync({ itemId, accountSelection: options.accountSelection }),
         async () => {
           await refreshConnections()
+          haptics.success()
           await options.onCompleted?.()
         },
         'Could not update this connection.',

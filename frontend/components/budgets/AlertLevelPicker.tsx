@@ -1,6 +1,7 @@
 import { Pressable, Text, View } from 'react-native'
 import { colors, shadow } from '@/constants/theme'
 import { budgetDollars } from './BudgetRows'
+import { haptics } from '@/lib/ui/haptics'
 
 export type AlertLevel = 'off' | number | 'custom'
 
@@ -29,7 +30,10 @@ export function AlertLevelPicker({ presets, value, onChange, disabled }: AlertLe
         return (
           <Pressable
             key={String(option.level)}
-            onPress={() => onChange(option.level)}
+            onPress={() => {
+              if (!isSelected) haptics.select()
+              onChange(option.level)
+            }}
             disabled={isDisabled}
             accessibilityRole="button"
             accessibilityLabel={option.accessibilityLabel}

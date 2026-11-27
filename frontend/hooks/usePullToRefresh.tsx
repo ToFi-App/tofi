@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react'
 import { RefreshControl } from 'react-native'
 import { api } from '@/lib/api/client'
 import { colors } from '@/constants/theme'
+import { haptics } from '@/lib/ui/haptics'
 
 /**
  * Wires a pull-down gesture to a full data refresh: re-runs the Plaid transaction sync
@@ -16,6 +17,8 @@ export function usePullToRefresh(refresh: () => Promise<void>) {
   const [refreshing, setRefreshing] = useState(false)
 
   const onRefresh = useCallback(async () => {
+    // The pull has passed the point where it refreshes: a tap marks the catch, as in Mail.
+    haptics.tap()
     setRefreshing(true)
     try {
       await Promise.all([refresh(), utils.accounts.list.invalidate()])

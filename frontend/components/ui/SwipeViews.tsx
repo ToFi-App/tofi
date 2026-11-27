@@ -2,6 +2,7 @@ import { Children, useEffect, useRef, type ReactNode } from 'react'
 import { View, useWindowDimensions } from 'react-native'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated'
+import { haptics } from '@/lib/ui/haptics'
 
 /** How far a finger travels sideways before the pager claims it. Wider than a chart's own pan
  *  (TrendChart claims at 8pt, the spending tile's scrub at 4pt), so a drag on a chart stays the chart's. */
@@ -53,6 +54,7 @@ export function SwipeViews({ index, onIndexChange, enabled = true, children }: S
   }, [index, width, offset])
 
   function turnTo(next: number) {
+    haptics.select()
     swipedTo.current = next
     onIndexChange(next)
   }

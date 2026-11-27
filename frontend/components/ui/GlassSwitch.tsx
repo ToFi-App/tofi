@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { colors } from '@/constants/theme'
 import { GLASS_BUTTON_SIZE } from './GlassButton'
 import { HeroGlass, useHeroInk } from './HeroGlass'
+import { haptics } from '@/lib/ui/haptics'
 
 export interface GlassSwitchOption<T extends string> {
   value: T
@@ -48,7 +49,11 @@ export function GlassSwitch<T extends string>({
         return (
           <Pressable
             key={option.value}
-            onPress={() => onChange(option.value)}
+            onPress={() => {
+              if (option.value === value) return
+              haptics.select()
+              onChange(option.value)
+            }}
             hitSlop={4}
             accessibilityRole="button"
             accessibilityLabel={option.label}

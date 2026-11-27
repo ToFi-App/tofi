@@ -4,6 +4,7 @@ import { Dimensions, Modal, Pressable, Text, View } from 'react-native'
 import { colors, hexToRgba, shadow } from '@/constants/theme'
 import { HeroGlass, useHeroInk } from '@/components/ui/HeroGlass'
 import { currentMonth, monthLabel, type YearMonth } from '@/lib/transactions/filterByMonth'
+import { haptics } from '@/lib/ui/haptics'
 
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
@@ -70,12 +71,22 @@ export function MonthNavigator({
   const isInverse = tone === 'inverse'
   const arrowColor = isInverse ? hexToRgba(colors.textInverse, 0.72) : colors.textSecondary
   const previous = (
-    <Pressable onPress={onPrevious} accessibilityLabel="Previous month" hitSlop={8}>
+    <Pressable
+      onPress={() => {
+        haptics.select()
+        onPrevious()
+      }}
+      accessibilityLabel="Previous month" hitSlop={8}>
       <Ionicons name="chevron-back" size={20} color={arrowColor} />
     </Pressable>
   )
   const next = (
-    <Pressable onPress={onNext} accessibilityLabel="Next month" hitSlop={8}>
+    <Pressable
+      onPress={() => {
+        haptics.select()
+        onNext()
+      }}
+      accessibilityLabel="Next month" hitSlop={8}>
       <Ionicons name="chevron-forward" size={20} color={arrowColor} />
     </Pressable>
   )
@@ -207,6 +218,7 @@ export function MonthNavigator({
                     <View key={name} style={{ width: '33.33%', padding: 3 }}>
                       <Pressable
                         onPress={() => {
+                          if (!isSelected) haptics.select()
                           onSelect({ year: pickerYear, month: value })
                           close()
                         }}

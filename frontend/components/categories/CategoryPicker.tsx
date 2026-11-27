@@ -2,6 +2,7 @@ import { Pressable, ScrollView, Text } from 'react-native'
 import { hexToRgba } from '@/constants/theme'
 import { CategoryIcon } from '@/components/categories/CategoryIcon'
 import type { Category } from '@/types/domain'
+import { haptics } from '@/lib/ui/haptics'
 
 interface CategoryPickerProps {
   categories: Category[]
@@ -17,7 +18,10 @@ export function CategoryPicker({ categories, selectedCategoryId, onSelect }: Cat
         return (
           <Pressable
             key={category.id}
-            onPress={() => onSelect(category.id)}
+            onPress={() => {
+              if (!isSelected) haptics.select()
+              onSelect(category.id)
+            }}
             accessibilityRole="button"
             accessibilityState={{ selected: isSelected }}
             className="w-20 items-center gap-2 rounded-md p-3"
